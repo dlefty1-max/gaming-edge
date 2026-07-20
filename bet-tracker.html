@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0049)file:///C:/Users/dleft/Downloads/bet-tracker.html -->
+<!-- saved from url=(0051)file:///C:/Users/dleft/Downloads/bet-tracker_1.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -700,16 +700,20 @@ async function loadTrends(game, containerId) {
   const el = document.getElementById(containerId);
   el.innerHTML = '<div class="refresh-note">Loading team trends…</div>';
   try {
-    const [away, home] = await Promise.all([
-      fetchTeamRecord(state.league, game.awayId),
-      fetchTeamRecord(state.league, game.homeId),
-    ]);
-    if (!away || !home || away.avgPF == null || home.avgPF == null) {
-      throw new Error("incomplete stats");
-    }
+    let away = null, home = null;
+    try {
+      [away, home] = await Promise.all([
+        fetchTeamRecord(state.league, game.awayId),
+        fetchTeamRecord(state.league, game.homeId),
+      ]);
+    } catch (e) { /* record fetch failed — continue, Elo doesn't need it */ }
 
-    // Elo model — primary prediction, built from this season's actual results,
-    // seeded by last season's final 6 weeks (regressed toward neutral)
+    // Fall back to schedule names if the record fetch didn't provide them
+    const awayName = (away && away.name) || game.away;
+    const homeName = (home && home.name) || game.home;
+    const haveScoring = away && home && away.avgPF != null && home.avgPF != null && (away.avgPF > 0 || away.avgPA > 0 || home.avgPF > 0 || home.avgPA > 0);
+
+    // Elo model — primary prediction, built from game results (works in offseason via last-season carryover)
     let eloHtml;
     if (state.seasonType !== 2) {
       eloHtml = `<div class="trend-note">Elo model only runs for the regular season — not enough game history yet for preseason/postseason weeks.</div>`;
@@ -720,53 +724,62 @@ async function loadTrends(game, containerId) {
       const diff = (rh + 55) - ra;
       const winProbHome = 1 / (1 + Math.pow(10, -diff / 400));
       const impliedLine = Math.abs(diff / 25).toFixed(1);
-      const favorite = diff >= 0 ? home.name : away.name;
+      const favorite = diff >= 0 ? homeName : awayName;
       const seedNote = state.week <= 1
         ? `<div class="trend-note">Week 1 rating is seeded from each team's final 6 weeks of last season, regressed toward neutral for offseason turnover — not from this season's results yet.</div>`
         : "";
       eloHtml = `
-        <div class="trend-score">${home.name} ${(winProbHome * 100).toFixed(0)}% — ${((1 - winProbHome) * 100).toFixed(0)}% ${away.name}</div>
+        <div class="trend-score">${homeName} ${(winProbHome * 100).toFixed(0)}% — ${((1 - winProbHome) * 100).toFixed(0)}% ${awayName}</div>
         <div class="trend-sub">Implied line: <b>${favorite} -${impliedLine}</b></div>
-        <div class="trend-line" style="margin-top:6px;">Elo ratings — ${home.name}: ${rh.toFixed(0)} · ${away.name}: ${ra.toFixed(0)}</div>
+        <div class="trend-line" style="margin-top:6px;">Elo ratings — ${homeName}: ${rh.toFixed(0)} · ${awayName}: ${ra.toFixed(0)}</div>
         ${seedNote}
       `;
       // cache for Kelly stake sizing in the pick form
-      state.trendsCache[game.id] = { winProbHome, homeName: home.name, awayName: away.name };
+      state.trendsCache[game.id] = { winProbHome, homeName, awayName };
     }
 
-    const HOME_BONUS = 1.5;
-    const projAway = (away.avgPF + home.avgPA) / 2;
-    const projHome = (home.avgPF + away.avgPA) / 2 + HOME_BONUS;
-    const total = projAway + projHome;
-
-    el.innerHTML = `
-      <div class="trend-box">
-        <div class="trend-title">Elo Rating Model</div>
-        ${eloHtml}
-        <div class="trend-note">Ratings are built from this season's actual results, weighted by margin of victory — same core method as public models like FiveThirtyEight's NFL Elo. Ratings reset to neutral each new season and don't know about this week's injuries, weather, or matchup-specific factors, so treat this as one input, not a pick.</div>
-
-        <div class="trend-ats">
-          <div class="trend-title" style="margin-top:10px;">Scoring Average Projection</div>
-          <div class="trend-score">${away.name} ${projAway.toFixed(1)} — ${projHome.toFixed(1)} ${home.name}</div>
-          <div class="trend-note">Simple blend of season scoring averages, shown alongside Elo as a second, independent signal — projected total: ${total.toFixed(1)}.</div>
-        </div>
-
+    // Scoring section — degrades gracefully when the season hasn't produced stats yet
+    let scoringHtml, colsHtml = "";
+    if (haveScoring) {
+      const HOME_BONUS = 1.5;
+      const projAway = (away.avgPF + home.avgPA) / 2;
+      const projHome = (home.avgPF + away.avgPA) / 2 + HOME_BONUS;
+      const total = projAway + projHome;
+      scoringHtml = `
+        <div class="trend-score">${awayName} ${projAway.toFixed(1)} — ${projHome.toFixed(1)} ${homeName}</div>
+        <div class="trend-note">Simple blend of season scoring averages, shown alongside Elo as a second, independent signal — projected total: ${total.toFixed(1)}.</div>`;
+      colsHtml = `
         <div class="trend-cols">
           <div>
-            <div class="trend-team-name">${away.name} (away)</div>
+            <div class="trend-team-name">${awayName} (away)</div>
             <div class="trend-line">Record: ${away.overallSummary || "—"}</div>
             <div class="trend-line">Away record: ${away.awaySummary || "—"}</div>
             <div class="trend-line">Streak: ${away.streak || "—"}</div>
             <div class="trend-line">${away.avgPF.toFixed(1)} PF/g · ${away.avgPA.toFixed(1)} PA/g</div>
           </div>
           <div>
-            <div class="trend-team-name">${home.name} (home)</div>
+            <div class="trend-team-name">${homeName} (home)</div>
             <div class="trend-line">Record: ${home.overallSummary || "—"}</div>
             <div class="trend-line">Home record: ${home.homeSummary || "—"}</div>
             <div class="trend-line">Streak: ${home.streak || "—"}</div>
             <div class="trend-line">${home.avgPF.toFixed(1)} PF/g · ${home.avgPA.toFixed(1)} PA/g</div>
           </div>
+        </div>`;
+    } else {
+      scoringHtml = `<div class="trend-note">No season stats yet — this section fills in once ${state.year} games are played. (Records, streaks, and scoring averages all come from the current season, so they're empty in the offseason.)</div>`;
+    }
+
+    el.innerHTML = `
+      <div class="trend-box">
+        <div class="trend-title">Elo Rating Model</div>
+        ${eloHtml}
+        <div class="trend-note">Ratings are built from game results, weighted by margin of victory — same core method as public models like FiveThirtyEight's NFL Elo. The model doesn't know about this week's injuries, weather, or matchup-specific factors, so treat this as one input, not a pick.</div>
+
+        <div class="trend-ats">
+          <div class="trend-title" style="margin-top:10px;">Scoring Average Projection</div>
+          ${scoringHtml}
         </div>
+        ${colsHtml}
         <div class="trend-ats">
           <div class="trend-title" style="margin-top:10px;">Head-to-Head (last 3 seasons)</div>
           <div id="h2h-${game.id}"><div class="refresh-note">Loading…</div></div>
