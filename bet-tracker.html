@@ -1,0 +1,1738 @@
+<!DOCTYPE html>
+<!-- saved from url=(0049)file:///C:/Users/dleft/Downloads/bet-tracker.html -->
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bet Tracker</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #F4F6F8; color: #1A2530; font-family: ui-sans-serif, system-ui, sans-serif; }
+  header { background: #1A2530; padding: 20px 16px 12px; position: sticky; top: 0; z-index: 10; }
+  .header-row { display: flex; align-items: center; justify-content: space-between; max-width: 640px; margin: 0 auto; }
+  h1 { color: #fff; font-size: 22px; margin: 0; }
+  .bankroll-label { font-size: 10px; text-transform: uppercase; color: #9AA3AC; text-align: right; }
+  .bankroll-value { font-size: 18px; font-weight: 700; text-align: right; }
+  nav { display: flex; gap: 8px; max-width: 640px; margin: 16px auto 0; }
+  nav button { flex: 1; padding: 10px; font-size: 14px; font-weight: 700; border-radius: 8px; border: none; background: #26333F; color: #fff; cursor: pointer; }
+  nav button.active { background: #3B7DD8; }
+  main { max-width: 640px; margin: 0 auto; padding: 20px 16px; }
+  select, input { background: #fff; color: #1A2530; border: 1px solid #CBD3DA; border-radius: 8px; padding: 8px; font-size: 14px; width: 100%; }
+  label { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #5C6B78; display: block; margin-bottom: 4px; }
+  .row { display: flex; gap: 8px; margin-bottom: 12px; }
+  .row > div { flex: 1; }
+  .league-toggle { display: flex; gap: 8px; margin-bottom: 12px; }
+  .league-toggle button { flex: 1; padding: 8px; border-radius: 8px; border: 1px solid #CBD3DA; background: #fff; font-weight: 700; font-size: 14px; cursor: pointer; }
+  .league-toggle button.active { background: #1A2530; color: #fff; }
+  .card { background: #fff; border: 1px solid #E1E6EA; border-radius: 10px; margin-bottom: 8px; overflow: hidden; }
+  .game-header { display: flex; align-items: center; justify-content: space-between; padding: 14px; cursor: pointer; }
+  .game-title { font-weight: 700; font-size: 14px; }
+  .game-sub { font-size: 12px; color: #5C6B78; margin-top: 2px; }
+  .pill { font-size: 12px; font-weight: 700; padding: 6px 12px; border-radius: 8px; background: #3B7DD8; color: #fff; }
+  .pill.close { background: #E1E6EA; color: #1A2530; }
+  .pick-form { padding: 0 14px 14px; border-top: 1px solid #E1E6EA; }
+  .pick-form-inner { padding-top: 12px; }
+  .save-btn { background: #1A2530; color: #fff; border: none; border-radius: 8px; padding: 10px 18px; font-weight: 700; font-size: 14px; cursor: pointer; }
+  .save-btn.full { width: 100%; padding: 12px; }
+  .to-win { font-size: 12px; color: #5C6B78; }
+  .between { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+  .empty { text-align: center; color: #5C6B78; font-size: 14px; padding: 24px 0; }
+  .error { background: #FCEBE9; color: #B4463A; padding: 12px; border-radius: 8px; margin-bottom: 16px; font-size: 14px; }
+  .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; text-align: center; }
+  .stat-num { font-size: 18px; font-weight: 700; }
+  .stat-label { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #5C6B78; }
+  .divider { border-top: 1px solid #E1E6EA; margin-top: 12px; padding-top: 12px; }
+  .between-sm { display: flex; justify-content: space-between; font-size: 14px; margin-top: 4px; }
+  .result-btns { display: flex; gap: 6px; }
+  .result-btns button { font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 5px 10px; border-radius: 8px; border: none; cursor: pointer; background: #F4F6F8; color: #5C6B78; }
+  .delete-link { font-size: 12px; color: #B4463A; background: none; border: none; cursor: pointer; }
+  .manual-toggle { width: 100%; text-align: left; padding: 14px; background: none; border: none; font-weight: 700; font-size: 14px; cursor: pointer; display: flex; justify-content: space-between; }
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1A2530; color: #fff; padding: 10px 16px; border-radius: 8px; font-size: 14px; }
+  .refresh-note { font-size: 12px; color: #5C6B78; margin-bottom: 12px; }
+  .trend-box { background: #F4F6F8; border-radius: 8px; padding: 12px; margin-top: 4px; }
+  .trend-title { font-size: 12px; font-weight: 700; text-transform: uppercase; color: #1A2530; }
+  .trend-score { font-size: 16px; font-weight: 700; margin-top: 4px; }
+  .trend-sub { font-size: 13px; color: #3B7DD8; margin-top: 2px; font-weight: 600; }
+  .trend-note { font-size: 11px; color: #8A96A1; margin-top: 6px; font-style: italic; }
+  .trend-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+  .trend-team-name { font-size: 12px; font-weight: 700; margin-bottom: 4px; }
+  .trend-line { font-size: 12px; color: #5C6B78; }
+  .trend-ats { border-top: 1px solid #E1E6EA; margin-top: 12px; padding-top: 4px; }
+  .load-trends-btn { background: none; border: 1px solid #CBD3DA; color: #1A2530; font-size: 12px; font-weight: 700; padding: 6px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 10px; }
+  .kelly-hint { font-size: 12px; color: #3B7DD8; font-weight: 600; margin-top: 4px; }
+  .toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
+  .toolbar button { flex: 1; padding: 8px; border-radius: 8px; border: 1px solid #CBD3DA; background: #fff; font-weight: 700; font-size: 12px; cursor: pointer; }
+  .filter-row { display: flex; gap: 8px; margin-bottom: 12px; }
+  .filter-row input { flex: 2; }
+  .filter-row select { flex: 1; }
+  .suggest-badge { display: flex; align-items: center; justify-content: space-between; background: #EAF1FB; border-radius: 8px; padding: 8px 10px; margin-top: 8px; font-size: 12px; }
+  .suggest-badge button { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 6px; border: none; background: #3B7DD8; color: #fff; cursor: pointer; }
+  .chart-empty { text-align: center; color: #5C6B78; font-size: 12px; padding: 20px 0; }
+  .roster-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
+  .roster-player { font-size: 13px; padding: 7px 8px; border-radius: 6px; background: #fff; border: 1px solid #E1E6EA; cursor: pointer; margin-bottom: 4px; }
+  .roster-player:hover { background: #EAF1FB; }
+  .roster-pos { color: #5C6B78; font-size: 11px; }
+  .player-panel { background: #fff; border: 1px solid #CBD3DA; border-radius: 8px; padding: 12px; margin-top: 8px; }
+  .player-name { font-size: 15px; font-weight: 700; }
+  .back-link { font-size: 12px; font-weight: 700; color: #3B7DD8; background: none; border: none; cursor: pointer; padding: 0; margin-bottom: 8px; }
+  .statline-table { width: 100%; font-size: 12px; border-collapse: collapse; margin-top: 6px; }
+  .statline-table th { text-align: left; color: #5C6B78; font-weight: 700; font-size: 10px; text-transform: uppercase; padding: 4px 6px; border-bottom: 1px solid #E1E6EA; }
+  .statline-table td { padding: 4px 6px; border-bottom: 1px solid #F4F6F8; }
+  .vs-highlight { background: #FFF7E0; }
+</style>
+</head>
+<body>
+<header>
+  <div class="header-row">
+    <h1>🏈 Bet Tracker</h1>
+    <div>
+      <div class="bankroll-label">Bankroll</div>
+      <div class="bankroll-value" id="bankrollValue" style="color: rgb(111, 207, 142);">$0.00</div>
+    </div>
+  </div>
+  <nav>
+    <button id="tabScheduleBtn" class="active">Schedule</button>
+    <button id="tabLedgerBtn">My Bets</button>
+    <button id="tabBacktestBtn">Backtest</button>
+    <button id="tabEdgeBtn">Edge</button>
+  </nav>
+</header>
+
+<main>
+  <div id="scheduleTab">
+    <div class="league-toggle">
+      <button id="leagueNflBtn" class="active">NFL</button>
+      <button id="leagueCfbBtn">College Football</button>
+    </div>
+    <div class="row">
+      <div>
+        <label>Season</label>
+        <select id="seasonTypeSelect">
+          <option value="2">Regular Season</option>
+          <option value="1">Preseason</option>
+          <option value="3">Postseason</option>
+        </select>
+      </div>
+      <div>
+        <label>Week</label>
+        <select id="weekSelect"><option value="1">Week 1</option><option value="2">Week 2</option><option value="3">Week 3</option><option value="4">Week 4</option><option value="5">Week 5</option><option value="6">Week 6</option><option value="7">Week 7</option><option value="8">Week 8</option><option value="9">Week 9</option><option value="10">Week 10</option><option value="11">Week 11</option><option value="12">Week 12</option><option value="13">Week 13</option><option value="14">Week 14</option><option value="15">Week 15</option><option value="16">Week 16</option><option value="17">Week 17</option><option value="18">Week 18</option></select>
+      </div>
+      <div>
+        <label>Year</label>
+        <select id="yearSelect">
+          <option value="2025">2025</option>
+          <option value="2026" selected="">2026</option>
+        </select>
+      </div>
+    </div>
+    <div id="scheduleError"></div>
+    <div id="gamesList"><div class="card">
+      <div class="game-header" data-id="401772510">
+        <div>
+          <div class="game-title">Cowboys @ Eagles</div>
+          <div class="game-sub">Final</div>
+        </div>
+        <span class="pill ">Add Pick</span>
+      </div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401772714">
+        <div>
+          <div class="game-title">Chiefs @ Chargers</div>
+          <div class="game-sub">Final</div>
+        </div>
+        <span class="pill ">Add Pick</span>
+      </div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401772830">
+        <div>
+          <div class="game-title">Buccaneers @ Falcons</div>
+          <div class="game-sub">Final</div>
+        </div>
+        <span class="pill ">Add Pick</span>
+      </div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401772829">
+        <div>
+          <div class="game-title">Bengals @ Browns</div>
+          <div class="game-sub">Final</div>
+        </div>
+        <span class="pill ">Add Pick</span>
+      </div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401772719">
+        <div>
+          <div class="game-title">Dolphins @ Colts</div>
+          <div class="game-sub">Final</div>
+        </div>
+        <span class="pill ">Add Pick</span>
+      </div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401772720">
+        <div>
+          <div class="game-title">Raiders @ Patriots</div>
+          <div class="game-sub">Final</div>
+        </div>
+        <span class="pill ">Add Pick</span>
+      </div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401772718">
+        <div>
+          <div class="game-title">Cardinals @ Saints</div>
+          <div class="game-sub">Final</div>
+        </div>
+        <span class="pill ">Add Pick</span>
+      </div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401772721">
+        <div>
+          <div class="game-title">Steelers @ Jets</div>
+          <div class="game-sub">Final</div>
+        </div>
+        <span class="pill ">Add Pick</span>
+      </div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401772827">
+        <div>
+          <div class="game-title">Giants @ Commanders</div>
+          <div class="game-sub">Final</div>
+        </div>
+        <span class="pill ">Add Pick</span>
+      </div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401772828">
+        <div>
+          <div class="game-title">Panthers @ Jaguars</div>
+          <div class="game-sub">Final</div>
+        </div>
+        <span class="pill ">Add Pick</span>
+      </div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401772832">
+        <div>
+          <div class="game-title">Titans @ Broncos</div>
+          <div class="game-sub">Final</div>
+        </div>
+        <span class="pill ">Add Pick</span>
+      </div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401772831">
+        <div>
+          <div class="game-title">49ers @ Seahawks</div>
+          <div class="game-sub">Final</div>
+        </div>
+        <span class="pill ">Add Pick</span>
+      </div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401772722">
+        <div>
+          <div class="game-title">Lions @ Packers</div>
+          <div class="game-sub">Final</div>
+        </div>
+        <span class="pill ">Add Pick</span>
+      </div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401772723">
+        <div>
+          <div class="game-title">Texans @ Rams</div>
+          <div class="game-sub">Final</div>
+        </div>
+        <span class="pill ">Add Pick</span>
+      </div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401772918">
+        <div>
+          <div class="game-title">Ravens @ Bills</div>
+          <div class="game-sub">Final</div>
+        </div>
+        <span class="pill ">Add Pick</span>
+      </div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401772810">
+        <div>
+          <div class="game-title">Vikings @ Bears</div>
+          <div class="game-sub">Final</div>
+        </div>
+        <span class="pill ">Add Pick</span>
+      </div>
+      
+    </div></div>
+
+    <div class="card" style="margin-top: 20px;">
+      <button class="manual-toggle" id="manualToggleBtn">Add a pick manually <span id="manualCaret">+</span></button>
+      <div class="pick-form" id="manualForm" style="display:none;">
+        <div class="pick-form-inner">
+          <label>Matchup</label>
+          <input id="manualMatchup" placeholder="e.g. Bills @ Chiefs" style="margin-bottom:12px;">
+          <div class="row">
+            <div>
+              <label>Bet Type</label>
+              <select id="manualBetType">
+                <option>Spread</option><option>Moneyline</option><option>Total</option><option>Player Prop</option><option>Team Prop</option>
+              </select>
+            </div>
+            <div>
+              <label>Odds</label>
+              <input id="manualOdds" value="-110">
+            </div>
+          </div>
+          <label>Selection</label>
+          <input id="manualSelection" placeholder="e.g. Mahomes o275.5 pass yds" style="margin-bottom:12px;">
+          <div class="row">
+            <div>
+              <label>Stake ($)</label>
+              <input id="manualStake" placeholder="25" inputmode="decimal">
+            </div>
+            <div>
+              <label>Notes</label>
+              <input id="manualNotes" placeholder="optional">
+            </div>
+          </div>
+          <button class="save-btn full" id="manualSaveBtn">Save Pick</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="ledgerTab" style="display:none;">
+    <div class="card" style="padding: 16px; margin-bottom: 16px;">
+      <div class="between" style="margin-bottom:12px;">
+        <label style="margin:0;">Starting Bankroll</label>
+        <input id="startingBankrollInput" style="width: 100px; text-align: right;" placeholder="0" inputmode="decimal">
+      </div>
+      <div class="stat-grid">
+        <div><div class="stat-num" id="statWin" style="color:#4C8B5A;">0</div><div class="stat-label">Win</div></div>
+        <div><div class="stat-num" id="statLoss" style="color:#C4564B;">0</div><div class="stat-label">Loss</div></div>
+        <div><div class="stat-num" id="statPush">0</div><div class="stat-label">Push</div></div>
+        <div><div class="stat-num" id="statPending" style="color:#3B7DD8;">0</div><div class="stat-label">Open</div></div>
+      </div>
+      <div class="divider">
+        <div class="between-sm"><span style="color:#5C6B78;">Open exposure</span><span id="openExposure">$0.00</span></div>
+        <div class="between-sm" style="font-weight:700;"><span style="color:#5C6B78;">Net profit</span><span id="netProfit" style="color: rgb(76, 139, 90);">$0.00</span></div>
+      </div>
+      <div class="divider" id="bankrollChartContainer"><div class="chart-empty">Settle a few bets to see your bankroll trend here.</div></div>
+    </div>
+    <div class="toolbar">
+      <button id="checkResultsBtn">🔄 Check Results</button>
+      <button id="exportCsvBtn">⬇ Export CSV</button>
+    </div>
+    <div class="filter-row">
+      <input id="ledgerSearch" placeholder="Search team, selection, notes…">
+      <select id="ledgerResultFilter">
+        <option value="All">All</option>
+        <option value="Pending">Pending</option>
+        <option value="Win">Win</option>
+        <option value="Loss">Loss</option>
+        <option value="Push">Push</option>
+      </select>
+    </div>
+    <div id="ledgerList"><div class="empty">No picks yet. Head to Schedule to add one.</div></div>
+  </div>
+
+  <div id="backtestTab" style="display:none;">
+    <div class="card" style="padding:16px; margin-bottom:16px;">
+      <div class="trend-title" style="margin-bottom:8px;">Model Backtest</div>
+      <div class="refresh-note">Replays a past season week by week. For each week, the model is built only from games completed <b>before</b> that week (walk-forward — no peeking ahead), predicts every game, then grades itself against the real results.</div>
+      <div class="row">
+        <div>
+          <label>League</label>
+          <select id="btLeague">
+            <option value="nfl" selected="">NFL</option>
+            <option value="cfb">College Football</option>
+          </select>
+        </div>
+        <div>
+          <label>Season</label>
+          <select id="btYear">
+            <option value="2025" selected="">2025</option>
+            <option value="2024">2024</option>
+          </select>
+        </div>
+      </div>
+      <button class="save-btn full" id="runBacktestBtn">Run Backtest</button>
+    </div>
+    <div id="backtestResults"></div>
+  </div>
+
+  <div id="edgeTab" style="display:none;">
+    <div class="card" style="padding:16px; margin-bottom:16px;">
+      <div class="trend-title" style="margin-bottom:6px;">Game Line Edge Finder</div>
+      <div class="refresh-note">Compares the Elo model's win probability against the market's implied probability on every game this week, and flags meaningful gaps. Needs your odds API connected to see market lines.</div>
+      <div class="row">
+        <div>
+          <label>Odds API Key</label>
+          <input id="oddsApiKey" placeholder="Paste key when you have it">
+        </div>
+      </div>
+      <button class="save-btn full" id="runEdgeScanBtn">Scan This Week for Edges</button>
+      <div id="edgeScanResults" style="margin-top:12px;"></div>
+    </div>
+
+    <div class="card" style="padding:16px;">
+      <div class="trend-title" style="margin-bottom:6px;">Player Prop Edge Calculator</div>
+      <div class="refresh-note">Enter the book's line/odds and <b>your own projection</b> for the player. The calculator shows what the book's price implies, whether your number represents an edge, and what Kelly staking suggests. The projection quality is on you — this does the math honestly, it doesn't know football.</div>
+      <div class="row">
+        <div>
+          <label>Prop description</label>
+          <input id="propDesc" placeholder="e.g. Mahomes passing yds">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Book line</label>
+          <input id="propLine" placeholder="275.5" inputmode="decimal">
+        </div>
+        <div>
+          <label>Over odds</label>
+          <input id="propOverOdds" placeholder="-110">
+        </div>
+        <div>
+          <label>Under odds</label>
+          <input id="propUnderOdds" placeholder="-110">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Your projection (expected value)</label>
+          <input id="propProjection" placeholder="e.g. 292" inputmode="decimal">
+        </div>
+        <div>
+          <label>Your confidence the over hits (%)</label>
+          <input id="propProb" placeholder="e.g. 58" inputmode="decimal">
+        </div>
+      </div>
+      <button class="save-btn full" id="calcPropEdgeBtn">Calculate Edge</button>
+      <div id="propEdgeResults" style="margin-top:12px;"></div>
+    </div>
+  </div>
+</main>
+
+<div id="toast" class="toast" style="display:none;"></div>
+
+<script>
+const NFL_BASE = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard";
+const CFB_BASE = "https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard";
+const RESULTS = ["Pending", "Win", "Loss", "Push"];
+const SEASON_WEEKS = { 2: 18, 1: 4, 3: 5 };
+
+// Fallback data used only when the live ESPN fetch can't run (e.g. previewing inside Claude).
+// Once this page is hosted for real, the live fetch above succeeds and this is ignored.
+// Key format: "<league>-<year>-<seasontype>-<week>"
+const EMBEDDED_SCHEDULE = {
+  "nfl-2026-2-1": [
+    { away: "Patriots", home: "Seahawks", display: "Wed, Sep 9 · 8:20 PM ET" },
+    { away: "49ers", home: "Rams", display: "Thu, Sep 10 · 8:35 PM ET (Melbourne, AUS)" },
+    { away: "Bears", home: "Panthers", display: "Sun, Sep 13 · 1:00 PM ET" },
+    { away: "Buccaneers", home: "Bengals", display: "Sun, Sep 13 · 1:00 PM ET" },
+    { away: "Saints", home: "Lions", display: "Sun, Sep 13 · 1:00 PM ET" },
+    { away: "Bills", home: "Texans", display: "Sun, Sep 13 · 1:00 PM ET" },
+    { away: "Ravens", home: "Colts", display: "Sun, Sep 13 · 1:00 PM ET" },
+    { away: "Browns", home: "Jaguars", display: "Sun, Sep 13 · 1:00 PM ET" },
+    { away: "Falcons", home: "Steelers", display: "Sun, Sep 13 · 1:00 PM ET" },
+    { away: "Jets", home: "Titans", display: "Sun, Sep 13 · 1:00 PM ET" },
+    { away: "Cardinals", home: "Chargers", display: "Sun, Sep 13 · 4:25 PM ET" },
+    { away: "Dolphins", home: "Raiders", display: "Sun, Sep 13 · 4:25 PM ET" },
+    { away: "Packers", home: "Vikings", display: "Sun, Sep 13 · 4:25 PM ET" },
+    { away: "Commanders", home: "Eagles", display: "Sun, Sep 13 · 4:25 PM ET" },
+    { away: "Cowboys", home: "Giants", display: "Sun, Sep 13 · 8:20 PM ET (SNF)" },
+    { away: "Broncos", home: "Chiefs", display: "Mon, Sep 14 · 8:15 PM ET" },
+  ],
+};
+
+let state = {
+  tab: "schedule",
+  league: "nfl",
+  year: 2026,
+  seasonType: 2,
+  week: 1,
+  games: [],
+  openGameId: null,
+  ledger: [],
+  startingBankroll: 0,
+  trendsCache: {},
+};
+
+// ---------- persistence (localStorage, safe on a real hosted page) ----------
+function loadData() {
+  try {
+    const raw = localStorage.getItem("bettracker-data");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      state.ledger = parsed.bets || [];
+      state.startingBankroll = parsed.startingBankroll || 0;
+    }
+  } catch (e) {}
+}
+function saveData() {
+  try {
+    localStorage.setItem("bettracker-data", JSON.stringify({ bets: state.ledger, startingBankroll: state.startingBankroll }));
+  } catch (e) {
+    showToast("Couldn't save — your browser may be blocking storage.");
+  }
+}
+
+function showToast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.style.display = "block";
+  setTimeout(() => { t.style.display = "none"; }, 2200);
+}
+
+function americanProfit(oddsStr, stake) {
+  const odds = parseFloat(oddsStr);
+  if (isNaN(odds) || !stake) return 0;
+  if (odds > 0) return stake * (odds / 100);
+  return stake * (100 / Math.abs(odds));
+}
+function fmtMoney(n) {
+  const sign = n < 0 ? "-" : "";
+  return sign + "$" + Math.abs(n).toFixed(2);
+}
+function fmtKick(iso) {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  } catch { return iso; }
+}
+// ---------- Elo rating model ----------
+// Same core methodology as well-known public NFL Elo models: ratings start at 1500,
+// update after every completed game weighted by margin of victory, home field is a
+// fixed rating bonus. This is a real statistical model of team strength, not a stat average.
+async function fetchWeekResults(league, year, week, seasonType) {
+  const base = league === "nfl" ? NFL_BASE : CFB_BASE;
+  const params = new URLSearchParams({ week, seasontype: seasonType || 2, year });
+  if (league === "cfb") params.set("groups", "80");
+  const res = await fetch(`${base}?${params.toString()}`);
+  if (!res.ok) throw new Error(`status ${res.status}`);
+  const json = await res.json();
+  return (json.events || [])
+    .filter(ev => ev.status && ev.status.type && ev.status.type.completed)
+    .map(ev => {
+      const comp = ev.competitions[0];
+      const home = comp.competitors.find(c => c.homeAway === "home");
+      const away = comp.competitors.find(c => c.homeAway === "away");
+      return {
+        homeId: home.team.id,
+        awayId: away.team.id,
+        homeScore: parseInt(home.score, 10),
+        awayScore: parseInt(away.score, 10),
+      };
+    })
+    .filter(g => !isNaN(g.homeScore) && !isNaN(g.awayScore));
+}
+
+async function buildCarryoverElo(league, priorYear) {
+  const cacheKey = `elo-carryover-${league}-${priorYear}`;
+  try {
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) return JSON.parse(cached);
+  } catch (e) {}
+
+  const HOME_ADV = 55;
+  const K = 20;
+  let elo = {};
+  // Use the final 6 weeks of last season (weeks 13–18) so the seed reflects how teams
+  // were actually playing at the end of the year, not their whole-season average.
+  for (let w = 13; w <= 18; w++) {
+    let results = [];
+    try { results = await fetchWeekResults(league, priorYear, w); } catch (e) { continue; }
+    results.forEach(g => {
+      const rh = elo[g.homeId] != null ? elo[g.homeId] : 1500;
+      const ra = elo[g.awayId] != null ? elo[g.awayId] : 1500;
+      const diff = (rh + HOME_ADV) - ra;
+      const expectedHome = 1 / (1 + Math.pow(10, -diff / 400));
+      const actualHome = g.homeScore > g.awayScore ? 1 : (g.homeScore < g.awayScore ? 0 : 0.5);
+      const margin = Math.abs(g.homeScore - g.awayScore);
+      const movMultiplier = Math.log(margin + 1) * (2.2 / ((Math.abs(rh - ra) * 0.001) + 2.2));
+      const change = K * movMultiplier * (actualHome - expectedHome);
+      elo[g.homeId] = rh + change;
+      elo[g.awayId] = ra - change;
+    });
+  }
+  // Regress two-thirds of the way back toward neutral — an offseason changes rosters,
+  // so last year's form shouldn't carry over at full strength.
+  const REGRESSION = 2 / 3;
+  Object.keys(elo).forEach(id => {
+    elo[id] = 1500 + (elo[id] - 1500) * (1 - REGRESSION);
+  });
+
+  try { localStorage.setItem(cacheKey, JSON.stringify(elo)); } catch (e) {}
+  return elo;
+}
+
+async function buildEloRatings(league, year, uptoWeek) {
+  const cacheKey = `elo-${league}-${year}-through-${uptoWeek}`;
+  try {
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) return JSON.parse(cached);
+  } catch (e) {}
+
+  const HOME_ADV = 55;
+  const K = 20;
+  let elo = await buildCarryoverElo(league, year - 1);
+  for (let w = 1; w < uptoWeek; w++) {
+    let results = [];
+    try { results = await fetchWeekResults(league, year, w); } catch (e) { continue; }
+    results.forEach(g => {
+      const rh = elo[g.homeId] != null ? elo[g.homeId] : 1500;
+      const ra = elo[g.awayId] != null ? elo[g.awayId] : 1500;
+      const diff = (rh + HOME_ADV) - ra;
+      const expectedHome = 1 / (1 + Math.pow(10, -diff / 400));
+      const actualHome = g.homeScore > g.awayScore ? 1 : (g.homeScore < g.awayScore ? 0 : 0.5);
+      const margin = Math.abs(g.homeScore - g.awayScore);
+      const movMultiplier = Math.log(margin + 1) * (2.2 / ((Math.abs(rh - ra) * 0.001) + 2.2));
+      const change = K * movMultiplier * (actualHome - expectedHome);
+      elo[g.homeId] = rh + change;
+      elo[g.awayId] = ra - change;
+    });
+  }
+  try { localStorage.setItem(cacheKey, JSON.stringify(elo)); } catch (e) {}
+  return elo;
+}
+
+function resultColor(r) {
+  if (r === "Win") return "#4C8B5A";
+  if (r === "Loss") return "#C4564B";
+  if (r === "Push") return "#9AA3AC";
+  return "#3B7DD8";
+}
+
+// ---------- team trends & projection (live only — needs hosting, same as schedule) ----------
+async function fetchTeamRecord(league, teamId) {
+  if (!teamId) return null;
+  const base = league === "nfl"
+    ? "https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/"
+    : "https://site.api.espn.com/apis/site/v2/sports/football/college-football/teams/";
+  const res = await fetch(`${base}${teamId}`);
+  if (!res.ok) throw new Error(`status ${res.status}`);
+  const json = await res.json();
+  const items = (json.team && json.team.record && json.team.record.items) || [];
+  const findByType = (t) => items.find(it => it.type === t) || items.find(it => (it.description || "").toLowerCase() === t);
+  const statVal = (item, name) => {
+    if (!item) return null;
+    const s = (item.stats || []).find(x => x.name === name);
+    return s ? s.value : null;
+  };
+  const total = findByType("total");
+  const home = findByType("home");
+  const road = findByType("road") || findByType("away");
+  const pf = statVal(total, "pointsFor");
+  const pa = statVal(total, "pointsAgainst");
+  const wins = statVal(total, "wins");
+  const losses = statVal(total, "losses");
+  const games = (wins != null && losses != null) ? (wins + losses) : null;
+  return {
+    name: json.team && (json.team.shortDisplayName || json.team.displayName),
+    overallSummary: total && total.summary,
+    homeSummary: home && home.summary,
+    awaySummary: road && road.summary,
+    streak: json.team && json.team.record && json.team.record.streak && json.team.record.streak.displayValue,
+    avgPF: (pf != null && games) ? pf / games : null,
+    avgPA: (pa != null && games) ? pa / games : null,
+  };
+}
+
+// ---------- head-to-head history ----------
+async function fetchHeadToHead(league, homeId, awayId, currentYear) {
+  const base = league === "nfl"
+    ? "https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/"
+    : "https://site.api.espn.com/apis/site/v2/sports/football/college-football/teams/";
+  const meetings = [];
+  for (let y = currentYear - 1; y >= currentYear - 3; y--) {
+    try {
+      const res = await fetch(`${base}${homeId}/schedule?season=${y}`);
+      if (!res.ok) continue;
+      const json = await res.json();
+      (json.events || []).forEach(ev => {
+        const comp = ev.competitions && ev.competitions[0];
+        if (!comp || !comp.status || !comp.status.type || !comp.status.type.completed) return;
+        const opp = comp.competitors.find(c => c.team && String(c.team.id) === String(awayId));
+        if (!opp) return;
+        const h = comp.competitors.find(c => c.homeAway === "home");
+        const a = comp.competitors.find(c => c.homeAway === "away");
+        meetings.push({
+          year: y,
+          home: h.team.shortDisplayName || h.team.abbreviation,
+          away: a.team.shortDisplayName || a.team.abbreviation,
+          homeScore: h.score, awayScore: a.score,
+        });
+      });
+    } catch (e) {}
+  }
+  return meetings;
+}
+
+// ---------- weather (outdoor games only, forecast window ~15 days) ----------
+async function fetchWeather(city, state_, gameDateIso) {
+  const gameDate = new Date(gameDateIso);
+  const daysOut = (gameDate - new Date()) / 86400000;
+  if (daysOut < 0 || daysOut > 15) return { unavailable: "outside forecast window (weather only shows within ~15 days of kickoff)" };
+  if (!city) return { unavailable: "venue location not available" };
+  const geo = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&country=US`);
+  const geoJson = await geo.json();
+  const loc = geoJson.results && geoJson.results[0];
+  if (!loc) return { unavailable: "couldn't locate venue city" };
+  const dateStr = gameDate.toISOString().slice(0, 10);
+  const wx = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}&daily=temperature_2m_max,precipitation_probability_max,windspeed_10m_max&timezone=auto&start_date=${dateStr}&end_date=${dateStr}`);
+  const wxJson = await wx.json();
+  if (!wxJson.daily || !wxJson.daily.time || wxJson.daily.time.length === 0) return { unavailable: "no forecast for that date yet" };
+  return {
+    tempMax: wxJson.daily.temperature_2m_max[0],
+    precipProb: wxJson.daily.precipitation_probability_max[0],
+    windMax: wxJson.daily.windspeed_10m_max[0],
+  };
+}
+
+async function loadTrends(game, containerId) {
+  const el = document.getElementById(containerId);
+  el.innerHTML = '<div class="refresh-note">Loading team trends…</div>';
+  try {
+    const [away, home] = await Promise.all([
+      fetchTeamRecord(state.league, game.awayId),
+      fetchTeamRecord(state.league, game.homeId),
+    ]);
+    if (!away || !home || away.avgPF == null || home.avgPF == null) {
+      throw new Error("incomplete stats");
+    }
+
+    // Elo model — primary prediction, built from this season's actual results,
+    // seeded by last season's final 6 weeks (regressed toward neutral)
+    let eloHtml;
+    if (state.seasonType !== 2) {
+      eloHtml = `<div class="trend-note">Elo model only runs for the regular season — not enough game history yet for preseason/postseason weeks.</div>`;
+    } else {
+      const elo = await buildEloRatings(state.league, state.year, state.week);
+      const rh = elo[game.homeId] != null ? elo[game.homeId] : 1500;
+      const ra = elo[game.awayId] != null ? elo[game.awayId] : 1500;
+      const diff = (rh + 55) - ra;
+      const winProbHome = 1 / (1 + Math.pow(10, -diff / 400));
+      const impliedLine = Math.abs(diff / 25).toFixed(1);
+      const favorite = diff >= 0 ? home.name : away.name;
+      const seedNote = state.week <= 1
+        ? `<div class="trend-note">Week 1 rating is seeded from each team's final 6 weeks of last season, regressed toward neutral for offseason turnover — not from this season's results yet.</div>`
+        : "";
+      eloHtml = `
+        <div class="trend-score">${home.name} ${(winProbHome * 100).toFixed(0)}% — ${((1 - winProbHome) * 100).toFixed(0)}% ${away.name}</div>
+        <div class="trend-sub">Implied line: <b>${favorite} -${impliedLine}</b></div>
+        <div class="trend-line" style="margin-top:6px;">Elo ratings — ${home.name}: ${rh.toFixed(0)} · ${away.name}: ${ra.toFixed(0)}</div>
+        ${seedNote}
+      `;
+      // cache for Kelly stake sizing in the pick form
+      state.trendsCache[game.id] = { winProbHome, homeName: home.name, awayName: away.name };
+    }
+
+    const HOME_BONUS = 1.5;
+    const projAway = (away.avgPF + home.avgPA) / 2;
+    const projHome = (home.avgPF + away.avgPA) / 2 + HOME_BONUS;
+    const total = projAway + projHome;
+
+    el.innerHTML = `
+      <div class="trend-box">
+        <div class="trend-title">Elo Rating Model</div>
+        ${eloHtml}
+        <div class="trend-note">Ratings are built from this season's actual results, weighted by margin of victory — same core method as public models like FiveThirtyEight's NFL Elo. Ratings reset to neutral each new season and don't know about this week's injuries, weather, or matchup-specific factors, so treat this as one input, not a pick.</div>
+
+        <div class="trend-ats">
+          <div class="trend-title" style="margin-top:10px;">Scoring Average Projection</div>
+          <div class="trend-score">${away.name} ${projAway.toFixed(1)} — ${projHome.toFixed(1)} ${home.name}</div>
+          <div class="trend-note">Simple blend of season scoring averages, shown alongside Elo as a second, independent signal — projected total: ${total.toFixed(1)}.</div>
+        </div>
+
+        <div class="trend-cols">
+          <div>
+            <div class="trend-team-name">${away.name} (away)</div>
+            <div class="trend-line">Record: ${away.overallSummary || "—"}</div>
+            <div class="trend-line">Away record: ${away.awaySummary || "—"}</div>
+            <div class="trend-line">Streak: ${away.streak || "—"}</div>
+            <div class="trend-line">${away.avgPF.toFixed(1)} PF/g · ${away.avgPA.toFixed(1)} PA/g</div>
+          </div>
+          <div>
+            <div class="trend-team-name">${home.name} (home)</div>
+            <div class="trend-line">Record: ${home.overallSummary || "—"}</div>
+            <div class="trend-line">Home record: ${home.homeSummary || "—"}</div>
+            <div class="trend-line">Streak: ${home.streak || "—"}</div>
+            <div class="trend-line">${home.avgPF.toFixed(1)} PF/g · ${home.avgPA.toFixed(1)} PA/g</div>
+          </div>
+        </div>
+        <div class="trend-ats">
+          <div class="trend-title" style="margin-top:10px;">Head-to-Head (last 3 seasons)</div>
+          <div id="h2h-${game.id}"><div class="refresh-note">Loading…</div></div>
+        </div>
+        <div class="trend-ats">
+          <div class="trend-title" style="margin-top:10px;">Game-Day Weather</div>
+          <div id="wx-${game.id}"><div class="refresh-note">Loading…</div></div>
+        </div>
+        <div class="trend-ats">
+          <div class="trend-title" style="margin-top:10px;">Betting Trends (ATS / O-U)</div>
+          <div class="trend-note">Not available yet — needs historical line data from a paid odds source. Once your odds API is connected, ATS and over/under trends will populate here automatically.</div>
+        </div>
+      </div>
+    `;
+
+    // H2H and weather load after the main panel renders, so the core prediction shows fast
+    fetchHeadToHead(state.league, game.homeId, game.awayId, state.year).then(meetings => {
+      const h2hEl = document.getElementById(`h2h-${game.id}`);
+      if (!h2hEl) return;
+      if (meetings.length === 0) {
+        h2hEl.innerHTML = `<div class="trend-note">No meetings found in the last 3 seasons.</div>`;
+        return;
+      }
+      h2hEl.innerHTML = meetings.slice(0, 5).map(m => {
+        const winner = parseInt(m.homeScore, 10) > parseInt(m.awayScore, 10) ? m.home : m.away;
+        return `<div class="trend-line">${m.year}: ${m.away} ${m.awayScore} @ ${m.home} ${m.homeScore} — <b>${winner}</b> won</div>`;
+      }).join("");
+    }).catch(() => {
+      const h2hEl = document.getElementById(`h2h-${game.id}`);
+      if (h2hEl) h2hEl.innerHTML = `<div class="trend-note">Couldn't load head-to-head history.</div>`;
+    });
+
+    if (game.indoor) {
+      const wxEl = document.getElementById(`wx-${game.id}`);
+      if (wxEl) wxEl.innerHTML = `<div class="trend-note">Indoor stadium — weather isn't a factor.</div>`;
+    } else {
+      fetchWeather(game.venueCity, game.venueState, game.date).then(wx => {
+        const wxEl = document.getElementById(`wx-${game.id}`);
+        if (!wxEl) return;
+        if (wx.unavailable) {
+          wxEl.innerHTML = `<div class="trend-note">Forecast unavailable — ${wx.unavailable}.</div>`;
+        } else {
+          wxEl.innerHTML = `<div class="trend-line">${wx.tempMax}°F high · ${wx.precipProb}% chance of precipitation · wind up to ${wx.windMax} mph</div><div class="trend-note">High wind or precipitation can push a game's actual total below the projection above.</div>`;
+        }
+      }).catch(() => {
+        const wxEl = document.getElementById(`wx-${game.id}`);
+        if (wxEl) wxEl.innerHTML = `<div class="trend-note">Couldn't load weather.</div>`;
+      });
+    }
+  } catch (e) {
+    el.innerHTML = `<div class="error">Trends need the live connection (same limitation as the schedule) — this'll work once the page is hosted. (${e.message})</div>`;
+  }
+}
+
+// ---------- schedule fetch (direct — works on a real hosted page) ----------
+async function loadSchedule() {
+  const errorEl = document.getElementById("scheduleError");
+  const listEl = document.getElementById("gamesList");
+  errorEl.innerHTML = "";
+  listEl.innerHTML = '<div class="empty">Loading games…</div>';
+  state.openGameId = null;
+  try {
+    const base = state.league === "nfl" ? NFL_BASE : CFB_BASE;
+    const params = new URLSearchParams({ week: state.week, seasontype: state.seasonType, year: state.year });
+    if (state.league === "cfb") params.set("groups", "80");
+    const res = await fetch(`${base}?${params.toString()}`);
+    if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+    const json = await res.json();
+    state.games = (json.events || []).map(ev => {
+      const comp = ev.competitions && ev.competitions[0];
+      const home = comp && comp.competitors && comp.competitors.find(c => c.homeAway === "home");
+      const away = comp && comp.competitors && comp.competitors.find(c => c.homeAway === "away");
+      return {
+        id: ev.id,
+        date: ev.date,
+        home: (home && home.team && (home.team.shortDisplayName || home.team.abbreviation)) || "TBD",
+        away: (away && away.team && (away.team.shortDisplayName || away.team.abbreviation)) || "TBD",
+        homeId: home && home.team && home.team.id,
+        awayId: away && away.team && away.team.id,
+        status: (ev.status && ev.status.type && ev.status.type.shortDetail) || "",
+        indoor: !!(comp && comp.venue && comp.venue.indoor),
+        venueCity: comp && comp.venue && comp.venue.address && comp.venue.address.city,
+        venueState: comp && comp.venue && comp.venue.address && comp.venue.address.state,
+      };
+    });
+    if (state.games.length === 0) {
+      errorEl.innerHTML = '<div class="error">No games found for that week. Try a different week.</div>';
+    }
+  } catch (e) {
+    const key = `${state.league}-${state.year}-${state.seasonType}-${state.week}`;
+    if (EMBEDDED_SCHEDULE[key]) {
+      state.games = EMBEDDED_SCHEDULE[key].map((g, i) => ({ id: `embedded-${key}-${i}`, ...g }));
+      errorEl.innerHTML = `<div class="refresh-note">Showing saved schedule data (live fetch isn't available in this preview — will auto-switch to live data once hosted).</div>`;
+    } else {
+      errorEl.innerHTML = `<div class="error">Couldn't reach the schedule source (${e.message}), and no saved data for this week yet. You can still add picks manually below.</div>`;
+      state.games = [];
+    }
+  }
+  renderGames();
+}
+
+function renderGames() {
+  const listEl = document.getElementById("gamesList");
+  listEl.innerHTML = "";
+  state.games.forEach(g => {
+    const card = document.createElement("div");
+    card.className = "card";
+    const isOpen = state.openGameId === g.id;
+    const statusText = g.display ? g.display : ((g.status && g.status.toLowerCase().includes("final")) ? g.status : fmtKick(g.date));
+    card.innerHTML = `
+      <div class="game-header" data-id="${g.id}">
+        <div>
+          <div class="game-title">${g.away} @ ${g.home}</div>
+          <div class="game-sub">${statusText}</div>
+        </div>
+        <span class="pill ${isOpen ? 'close' : ''}">${isOpen ? 'Close' : 'Add Pick'}</span>
+      </div>
+      ${isOpen ? `
+      <div class="pick-form">
+        <div class="pick-form-inner">
+          <button class="load-trends-btn" id="loadTrendsBtn">📊 Load Trends & Projection</button>
+          <button class="load-trends-btn" id="viewPlayersBtn">👤 View Players</button>
+          <div id="trendsContainer-${g.id}"></div>
+          <div id="playersContainer-${g.id}"></div>
+          <div class="row">
+            <div>
+              <label>Bet Type</label>
+              <select id="formBetType">
+                <option>Spread</option><option>Moneyline</option><option>Total</option><option>Player Prop</option><option>Team Prop</option>
+              </select>
+            </div>
+            <div>
+              <label>Odds</label>
+              <input id="formOdds" value="-110">
+            </div>
+          </div>
+          <label>Selection</label>
+          <input id="formSelection" placeholder="e.g. Chiefs -3.5" style="margin-bottom:12px;">
+          <div class="row">
+            <div>
+              <label>Stake ($)</label>
+              <input id="formStake" placeholder="25" inputmode="decimal">
+            </div>
+            <div>
+              <label>Notes</label>
+              <input id="formNotes" placeholder="optional">
+            </div>
+          </div>
+          <div class="between">
+            <span class="to-win" id="formToWin">To win: $0.00</span>
+            <button class="save-btn" id="formSaveBtn">Save Pick</button>
+          </div>
+          <div id="formKellyHint"></div>
+        </div>
+      </div>` : ""}
+    `;
+    listEl.appendChild(card);
+
+    card.querySelector(".game-header").addEventListener("click", () => {
+      state.openGameId = isOpen ? null : g.id;
+      renderGames();
+    });
+
+    if (isOpen) {
+      document.getElementById("loadTrendsBtn").addEventListener("click", () => {
+        loadTrends(g, `trendsContainer-${g.id}`);
+      });
+      document.getElementById("viewPlayersBtn").addEventListener("click", () => {
+        showRoster(g, `playersContainer-${g.id}`);
+      });
+      const updateKellyHint = () => {
+        const hintEl = document.getElementById("formKellyHint");
+        const cached = state.trendsCache[g.id];
+        const betType = document.getElementById("formBetType").value;
+        const selection = document.getElementById("formSelection").value.toLowerCase();
+        const oddsStr = document.getElementById("formOdds").value;
+        if (!cached || betType !== "Moneyline" || !selection) { hintEl.innerHTML = ""; return; }
+        let p;
+        if (selection.includes(cached.homeName.toLowerCase())) p = cached.winProbHome;
+        else if (selection.includes(cached.awayName.toLowerCase())) p = 1 - cached.winProbHome;
+        else { hintEl.innerHTML = ""; return; }
+        const odds = parseFloat(oddsStr);
+        if (isNaN(odds)) { hintEl.innerHTML = ""; return; }
+        const decimal = odds > 0 ? 1 + odds / 100 : 1 + 100 / Math.abs(odds);
+        const b = decimal - 1;
+        const q = 1 - p;
+        const kellyFraction = (b * p - q) / b;
+        const bankroll = state.startingBankroll + state.ledger.reduce((sum, x) => {
+          if (x.result === "Win") return sum + americanProfit(x.odds, x.stake);
+          if (x.result === "Loss") return sum - x.stake;
+          return sum;
+        }, 0);
+        if (kellyFraction <= 0) {
+          hintEl.innerHTML = `<div class="kelly-hint">💡 Model doesn't see an edge on this side at these odds — Kelly suggests skipping or looking at the other side.</div>`;
+        } else {
+          const quarterKelly = bankroll * kellyFraction * 0.25;
+          hintEl.innerHTML = `<div class="kelly-hint">💡 Model win probability: ${(p * 100).toFixed(0)}%. Quarter-Kelly suggests ~${fmtMoney(quarterKelly)} (full Kelly: ${fmtMoney(bankroll * kellyFraction)} — most people size down from full Kelly since it's high-variance).</div>`;
+        }
+      };
+      document.getElementById("formBetType").addEventListener("change", updateKellyHint);
+      document.getElementById("formSelection").addEventListener("input", updateKellyHint);
+      const updateToWin = () => {
+        const odds = document.getElementById("formOdds").value;
+        const stake = parseFloat(document.getElementById("formStake").value) || 0;
+        document.getElementById("formToWin").textContent = "To win: " + fmtMoney(americanProfit(odds, stake));
+        updateKellyHint();
+      };
+      document.getElementById("formOdds").addEventListener("input", updateToWin);
+      document.getElementById("formStake").addEventListener("input", updateToWin);
+      document.getElementById("formSaveBtn").addEventListener("click", () => {
+        const selection = document.getElementById("formSelection").value;
+        const stake = document.getElementById("formStake").value;
+        if (!selection || !stake) { showToast("Add a selection and stake first."); return; }
+        const entry = {
+          id: Date.now() + Math.random(),
+          matchup: `${g.away} @ ${g.home}`,
+          betType: document.getElementById("formBetType").value,
+          selection, odds: document.getElementById("formOdds").value,
+          stake: parseFloat(stake) || 0,
+          notes: document.getElementById("formNotes").value,
+          result: "Pending",
+          placedAt: new Date().toISOString(),
+          gameId: g.id, league: state.league, year: state.year, week: state.week, seasonType: state.seasonType,
+          homeTeam: g.home, awayTeam: g.away, homeId: g.homeId, awayId: g.awayId,
+        };
+        state.ledger.unshift(entry);
+        saveData();
+        state.openGameId = null;
+        renderGames();
+        showToast("Pick added to My Bets.");
+      });
+    }
+  });
+}
+
+// ---------- auto-grading (suggests results, never sets them without confirmation) ----------
+function suggestResult(bet, homeScore, awayScore) {
+  const sel = (bet.selection || "").toLowerCase();
+  const home = (bet.homeTeam || "").toLowerCase();
+  const away = (bet.awayTeam || "").toLowerCase();
+  if (bet.betType === "Moneyline") {
+    if (sel.includes(home)) return homeScore > awayScore ? "Win" : (homeScore === awayScore ? "Push" : "Loss");
+    if (sel.includes(away)) return awayScore > homeScore ? "Win" : (homeScore === awayScore ? "Push" : "Loss");
+    return null;
+  }
+  if (bet.betType === "Spread") {
+    const m = sel.match(/([+-]\d+(\.\d+)?)\s*$/);
+    if (!m) return null;
+    const line = parseFloat(m[1]);
+    if (sel.includes(home)) {
+      const adj = homeScore + line;
+      if (adj > awayScore) return "Win"; if (adj < awayScore) return "Loss"; return "Push";
+    }
+    if (sel.includes(away)) {
+      const adj = awayScore + line;
+      if (adj > homeScore) return "Win"; if (adj < homeScore) return "Loss"; return "Push";
+    }
+    return null;
+  }
+  if (bet.betType === "Total") {
+    const m = sel.match(/(over|under)\D*([\d.]+)/i);
+    if (!m) return null;
+    const total = homeScore + awayScore;
+    const line = parseFloat(m[2]);
+    const isOver = m[1].toLowerCase() === "over";
+    if (total === line) return "Push";
+    if (isOver) return total > line ? "Win" : "Loss";
+    return total < line ? "Win" : "Loss";
+  }
+  return null; // props need manual grading — no player stat data available
+}
+
+async function checkResults() {
+  const btn = document.getElementById("checkResultsBtn");
+  btn.textContent = "Checking…";
+  const pending = state.ledger.filter(b => b.result === "Pending" && b.gameId && b.league && b.year && b.week != null);
+  const cache = {};
+  for (const bet of pending) {
+    const key = `${bet.league}-${bet.year}-${bet.seasonType}-${bet.week}`;
+    if (!cache[key]) {
+      try { cache[key] = await fetchWeekResults(bet.league, bet.year, bet.week, bet.seasonType); } catch (e) { cache[key] = []; }
+      // note: Elo build calls fetchWeekResults without a 4th arg, defaulting to regular season — that's intentional there
+    }
+    const game = cache[key].find(g => String(g.homeId) === String(bet.homeId) && String(g.awayId) === String(bet.awayId));
+    if (game) {
+      const suggested = suggestResult(bet, game.homeScore, game.awayScore);
+      bet._finalScore = `${bet.awayTeam} ${game.awayScore} @ ${bet.homeTeam} ${game.homeScore}`;
+      bet._suggested = suggested;
+    }
+  }
+  btn.textContent = "🔄 Check Results";
+  renderLedger();
+}
+
+function downloadCsv() {
+  const rows = [["Date", "Matchup", "Bet Type", "Selection", "Odds", "Stake", "Result", "Notes"]];
+  state.ledger.forEach(b => {
+    rows.push([
+      new Date(b.placedAt).toLocaleDateString(),
+      b.matchup, b.betType, b.selection, b.odds, b.stake, b.result, (b.notes || "").replace(/,/g, ";"),
+    ]);
+  });
+  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "bet-tracker-export.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function renderBankrollChart() {
+  const container = document.getElementById("bankrollChartContainer");
+  const settled = state.ledger.filter(b => b.result !== "Pending").slice().sort((a, b) => new Date(a.placedAt) - new Date(b.placedAt));
+  if (settled.length === 0) {
+    container.innerHTML = `<div class="chart-empty">Settle a few bets to see your bankroll trend here.</div>`;
+    return;
+  }
+  let running = state.startingBankroll;
+  const points = [running];
+  settled.forEach(b => {
+    if (b.result === "Win") running += americanProfit(b.odds, b.stake);
+    else if (b.result === "Loss") running -= b.stake;
+    points.push(running);
+  });
+  const w = 300, h = 80, pad = 4;
+  const min = Math.min(...points), max = Math.max(...points);
+  const range = (max - min) || 1;
+  const stepX = (w - pad * 2) / (points.length - 1 || 1);
+  const coords = points.map((p, i) => {
+    const x = pad + i * stepX;
+    const y = h - pad - ((p - min) / range) * (h - pad * 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  const lineColor = points[points.length - 1] >= points[0] ? "#4C8B5A" : "#C4564B";
+  container.innerHTML = `
+    <div class="trend-title" style="margin-bottom:6px;">Bankroll Over Time</div>
+    <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:80px;">
+      <polyline points="${coords}" fill="none" stroke="${lineColor}" stroke-width="2" />
+    </svg>
+  `;
+}
+
+// ---------- player stats ----------
+async function fetchRoster(league, teamId) {
+  const sport = league === "nfl" ? "nfl" : "college-football";
+  const res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/${sport}/teams/${teamId}/roster`);
+  if (!res.ok) throw new Error(`roster fetch failed: ${res.status}`);
+  const json = await res.json();
+  const players = [];
+  (json.athletes || []).forEach(group => {
+    (group.items || []).forEach(a => {
+      players.push({
+        id: a.id,
+        name: a.displayName || a.fullName,
+        pos: (a.position && a.position.abbreviation) || "",
+        jersey: a.jersey || "",
+      });
+    });
+  });
+  // skill positions first — those are the prop-relevant ones
+  const posOrder = { QB: 1, RB: 2, WR: 3, TE: 4, K: 5 };
+  players.sort((a, b) => (posOrder[a.pos] || 99) - (posOrder[b.pos] || 99));
+  return players;
+}
+
+async function fetchPlayerGameLog(league, athleteId, season) {
+  const sport = league === "nfl" ? "nfl" : "college-football";
+  const res = await fetch(`https://site.web.api.espn.com/apis/common/v3/sports/football/${sport}/athletes/${athleteId}/gamelog?season=${season}`);
+  if (!res.ok) throw new Error(`gamelog fetch failed: ${res.status}`);
+  const json = await res.json();
+  const labels = json.labels || [];
+  const events = json.events || {};
+  const games = [];
+  (json.seasonTypes || []).forEach(st => {
+    (st.categories || []).forEach(cat => {
+      (cat.events || []).forEach(evt => {
+        const meta = events[evt.eventId];
+        if (!meta) return;
+        games.push({
+          season,
+          date: meta.gameDate,
+          opponentId: meta.opponent && meta.opponent.id,
+          opponent: meta.opponent && (meta.opponent.abbreviation || meta.opponent.displayName),
+          result: meta.gameResult,
+          score: meta.score,
+          stats: evt.stats || [],
+          labels,
+        });
+      });
+    });
+  });
+  return games;
+}
+
+async function showPlayerDetail(game, teamId, player, containerId) {
+  const el = document.getElementById(containerId);
+  const opponentId = String(teamId) === String(game.homeId) ? game.awayId : game.homeId;
+  const opponentName = String(teamId) === String(game.homeId) ? game.away : game.home;
+  el.innerHTML = `<div class="player-panel"><button class="back-link" id="backToRoster">← Back to roster</button><div class="player-name">${player.name} <span class="roster-pos">${player.pos}${player.jersey ? " · #" + player.jersey : ""}</span></div><div class="refresh-note" style="margin-top:6px;">Loading game logs…</div></div>`;
+  document.getElementById("backToRoster").addEventListener("click", () => showRoster(game, containerId));
+
+  try {
+    // pull up to 3 seasons of game logs
+    const seasons = [state.year - 1, state.year - 2, state.year - 3];
+    const logs = [];
+    for (const s of seasons) {
+      try {
+        const g = await fetchPlayerGameLog(state.league, player.id, s);
+        logs.push(...g);
+      } catch (e) {}
+    }
+    // current season too if underway
+    try {
+      const cur = await fetchPlayerGameLog(state.league, player.id, state.year);
+      logs.unshift(...cur);
+    } catch (e) {}
+
+    if (logs.length === 0) {
+      el.innerHTML = `<div class="player-panel"><button class="back-link" id="backToRoster2">← Back to roster</button><div class="player-name">${player.name}</div><div class="trend-note" style="margin-top:6px;">No game log data available for this player (common for rookies, linemen, and most defensive players — ESPN's free feed mainly covers skill-position stats).</div></div>`;
+      document.getElementById("backToRoster2").addEventListener("click", () => showRoster(game, containerId));
+      return;
+    }
+
+    const labels = logs[0].labels || [];
+    const vsOpp = logs.filter(g => String(g.opponentId) === String(opponentId));
+    const recent = logs.slice(0, 8);
+
+    const tableFor = (games, highlight) => `
+      <table class="statline-table">
+        <tr><th>Date</th><th>Opp</th><th>Res</th>${labels.slice(0, 6).map(l => `<th>${l}</th>`).join("")}</tr>
+        ${games.map(g => `<tr class="${highlight ? "vs-highlight" : ""}">
+          <td>${g.date ? new Date(g.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit" }) : "—"}</td>
+          <td>${g.opponent || "—"}</td>
+          <td>${g.result || ""} ${g.score || ""}</td>
+          ${g.stats.slice(0, 6).map(s => `<td>${s}</td>`).join("")}
+        </tr>`).join("")}
+      </table>`;
+
+    el.innerHTML = `
+      <div class="player-panel">
+        <button class="back-link" id="backToRoster3">← Back to roster</button>
+        <div class="player-name">${player.name} <span class="roster-pos">${player.pos}${player.jersey ? " · #" + player.jersey : ""}</span></div>
+        <div class="trend-title" style="margin-top:10px;">vs ${opponentName} (last 3 seasons)</div>
+        ${vsOpp.length > 0 ? tableFor(vsOpp, true) : `<div class="trend-note">No games against ${opponentName} in the available logs.</div>`}
+        <div class="trend-title" style="margin-top:12px;">Recent Games</div>
+        ${tableFor(recent, false)}
+        <div class="trend-note">Logs cover roughly the last 3 seasons from ESPN's free feed — not full career history. Stat columns vary by position.</div>
+      </div>
+    `;
+    document.getElementById("backToRoster3").addEventListener("click", () => showRoster(game, containerId));
+  } catch (e) {
+    el.innerHTML = `<div class="player-panel"><button class="back-link" id="backToRoster4">← Back to roster</button><div class="error" style="margin-top:8px;">Couldn't load player data (${e.message}).</div></div>`;
+    document.getElementById("backToRoster4").addEventListener("click", () => showRoster(game, containerId));
+  }
+}
+
+async function showRoster(game, containerId) {
+  const el = document.getElementById(containerId);
+  el.innerHTML = '<div class="refresh-note">Loading rosters…</div>';
+  try {
+    const [awayRoster, homeRoster] = await Promise.all([
+      fetchRoster(state.league, game.awayId),
+      fetchRoster(state.league, game.homeId),
+    ]);
+    const renderCol = (teamName, roster, teamId) => `
+      <div>
+        <div class="trend-team-name">${teamName}</div>
+        ${roster.slice(0, 25).map(p => `<div class="roster-player" data-team="${teamId}" data-player='${JSON.stringify({ id: p.id, name: p.name, pos: p.pos, jersey: p.jersey }).replace(/'/g, "&#39;")}'>${p.name} <span class="roster-pos">${p.pos}</span></div>`).join("")}
+      </div>`;
+    el.innerHTML = `
+      <div class="player-panel">
+        <div class="trend-title">Tap a player for stats & history vs opponent</div>
+        <div class="roster-cols">
+          ${renderCol(game.away, awayRoster, game.awayId)}
+          ${renderCol(game.home, homeRoster, game.homeId)}
+        </div>
+        <div class="trend-note">Showing top 25 per team, skill positions first.</div>
+      </div>
+    `;
+    el.querySelectorAll(".roster-player").forEach(div => {
+      div.addEventListener("click", () => {
+        const player = JSON.parse(div.getAttribute("data-player"));
+        const teamId = div.getAttribute("data-team");
+        showPlayerDetail(game, teamId, player, containerId);
+      });
+    });
+  } catch (e) {
+    el.innerHTML = `<div class="error">Rosters need the live connection — works once hosted. (${e.message})</div>`;
+  }
+}
+
+// ---------- edge finder ----------
+function impliedProb(americanOdds) {
+  const o = parseFloat(americanOdds);
+  if (isNaN(o)) return null;
+  return o > 0 ? 100 / (o + 100) : Math.abs(o) / (Math.abs(o) + 100);
+}
+// Remove the book's vig so we get their true probability estimate
+function noVigProbs(probA, probB) {
+  const total = probA + probB;
+  return [probA / total, probB / total];
+}
+
+async function runEdgeScan() {
+  const out = document.getElementById("edgeScanResults");
+  const apiKey = document.getElementById("oddsApiKey").value.trim();
+  if (apiKey) { try { localStorage.setItem("odds-api-key", apiKey); } catch (e) {} }
+  if (!apiKey) {
+    out.innerHTML = `<div class="trend-note">No API key yet. This scaffolding is built for The Odds API (the-odds-api.com) format — paste your key here when you subscribe and the scan will go live. Until then, the prop calculator below works standalone.</div>`;
+    return;
+  }
+  out.innerHTML = '<div class="refresh-note">Fetching market lines and building model probabilities…</div>';
+  try {
+    const sportKey = state.league === "nfl" ? "americanfootball_nfl" : "americanfootball_ncaaf";
+    const res = await fetch(`https://api.the-odds-api.com/v4/sports/${sportKey}/odds/?apiKey=${apiKey}&regions=us&markets=h2h&oddsFormat=american`);
+    if (!res.ok) throw new Error(`Odds API returned ${res.status} — check your key/plan`);
+    const oddsData = await res.json();
+    const elo = await buildEloRatings(state.league, state.year, state.week);
+
+    // map team names in odds feed to our schedule games
+    const rows = [];
+    state.games.forEach(g => {
+      if (!g.homeId) return;
+      const match = oddsData.find(o =>
+        o.home_team && (o.home_team.toLowerCase().includes(g.home.toLowerCase()) || g.home.toLowerCase().includes(o.home_team.toLowerCase().split(" ").pop()))
+      );
+      if (!match || !match.bookmakers || match.bookmakers.length === 0) return;
+      const mkt = match.bookmakers[0].markets && match.bookmakers[0].markets.find(m => m.key === "h2h");
+      if (!mkt) return;
+      const homeOutcome = mkt.outcomes.find(o => o.name === match.home_team);
+      const awayOutcome = mkt.outcomes.find(o => o.name === match.away_team);
+      if (!homeOutcome || !awayOutcome) return;
+      const rawHome = impliedProb(homeOutcome.price);
+      const rawAway = impliedProb(awayOutcome.price);
+      if (rawHome == null || rawAway == null) return;
+      const [mktHome] = noVigProbs(rawHome, rawAway);
+      const rh = elo[g.homeId] != null ? elo[g.homeId] : 1500;
+      const ra = elo[g.awayId] != null ? elo[g.awayId] : 1500;
+      const modelHome = 1 / (1 + Math.pow(10, -((rh + 55) - ra) / 400));
+      const gap = modelHome - mktHome;
+      rows.push({
+        game: `${g.away} @ ${g.home}`,
+        modelHome: (modelHome * 100).toFixed(0),
+        mktHome: (mktHome * 100).toFixed(0),
+        gap,
+        gapPct: (Math.abs(gap) * 100).toFixed(1),
+        side: gap > 0 ? g.home : g.away,
+        odds: gap > 0 ? homeOutcome.price : awayOutcome.price,
+      });
+    });
+    if (rows.length === 0) {
+      out.innerHTML = '<div class="trend-note">Couldn\'t match any games between the odds feed and this week\'s schedule — check that the right league/week is selected on the Schedule tab.</div>';
+      return;
+    }
+    rows.sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap));
+    out.innerHTML = rows.map(r => {
+      const meaningful = Math.abs(r.gap) >= 0.05;
+      return `<div class="trend-line" style="${meaningful ? "font-weight:700;" : ""}">${r.game}: model ${r.modelHome}% home vs market ${r.mktHome}% — ${meaningful ? `⚑ ${r.gapPct}% gap toward <b>${r.side}</b> (${r.odds})` : `${r.gapPct}% gap, below threshold`}</div>`;
+    }).join("") + `<div class="trend-note">⚑ = model and market disagree by 5%+ — worth a look, not an auto-bet. When a simple model disagrees with the market, the market is usually the one that's right; treat flags as research prompts. Market prob shown has the vig removed.</div>`;
+  } catch (e) {
+    out.innerHTML = `<div class="error">${e.message}</div>`;
+  }
+}
+
+function calcPropEdge() {
+  const out = document.getElementById("propEdgeResults");
+  const line = parseFloat(document.getElementById("propLine").value);
+  const overOdds = document.getElementById("propOverOdds").value;
+  const underOdds = document.getElementById("propUnderOdds").value;
+  const projection = parseFloat(document.getElementById("propProjection").value);
+  const probPct = parseFloat(document.getElementById("propProb").value);
+  const desc = document.getElementById("propDesc").value || "this prop";
+
+  const rawOver = impliedProb(overOdds);
+  const rawUnder = impliedProb(underOdds);
+  if (rawOver == null || rawUnder == null || isNaN(line)) {
+    out.innerHTML = '<div class="error">Need the line and both sides\' odds to compute what the book implies.</div>';
+    return;
+  }
+  const [mktOver, mktUnder] = noVigProbs(rawOver, rawUnder);
+  const vig = ((rawOver + rawUnder - 1) * 100).toFixed(1);
+
+  let html = `
+    <div class="trend-box">
+      <div class="trend-title">${desc} — ${line}</div>
+      <div class="trend-line">Book's no-vig probability: Over ${(mktOver * 100).toFixed(1)}% / Under ${(mktUnder * 100).toFixed(1)}%</div>
+      <div class="trend-line">Vig on this market: ${vig}% (the book's built-in margin you have to beat)</div>
+  `;
+
+  if (!isNaN(probPct)) {
+    const p = probPct / 100;
+    const side = p >= 0.5 ? "Over" : "Under";
+    const yourP = p >= 0.5 ? p : 1 - p;
+    const mktP = p >= 0.5 ? mktOver : mktUnder;
+    const oddsUsed = p >= 0.5 ? overOdds : underOdds;
+    const edge = yourP - mktP;
+    const dec = parseFloat(oddsUsed) > 0 ? 1 + parseFloat(oddsUsed) / 100 : 1 + 100 / Math.abs(parseFloat(oddsUsed));
+    const b = dec - 1;
+    const kellyF = (b * yourP - (1 - yourP)) / b;
+    const bankroll = state.startingBankroll + state.ledger.reduce((sum, x) => {
+      if (x.result === "Win") return sum + americanProfit(x.odds, x.stake);
+      if (x.result === "Loss") return sum - x.stake;
+      return sum;
+    }, 0);
+    if (edge <= 0 || kellyF <= 0) {
+      html += `<div class="trend-sub" style="margin-top:8px;">No edge at your number — your ${(yourP * 100).toFixed(0)}% on the ${side} doesn't beat the book's ${(mktP * 100).toFixed(1)}% plus vig. Kelly says pass.</div>`;
+    } else {
+      html += `
+        <div class="trend-sub" style="margin-top:8px;">Your edge on the ${side}: ${(edge * 100).toFixed(1)}%</div>
+        <div class="trend-line">Quarter-Kelly stake: ${fmtMoney(bankroll * kellyF * 0.25)} · Full Kelly: ${fmtMoney(bankroll * kellyF)}</div>
+        <div class="trend-note">This edge is only as real as your ${(yourP * 100).toFixed(0)}% estimate. Books shade popular props; be honest with yourself about where your number comes from, and grade your prop picks in the ledger over time to see if your projections actually beat the market.</div>
+      `;
+    }
+  } else if (!isNaN(projection)) {
+    const side = projection > line ? "Over" : "Under";
+    html += `<div class="trend-line" style="margin-top:8px;">Your projection (${projection}) is ${Math.abs(projection - line).toFixed(1)} ${side === "Over" ? "above" : "below"} the line, pointing toward the <b>${side}</b>.</div>
+    <div class="trend-note">A projection alone isn't enough for stake sizing — add your confidence % (how often you think the ${side.toLowerCase()} hits) and I'll compute the edge and Kelly stake. Distance from the line matters less than hit probability.</div>`;
+  } else {
+    html += `<div class="trend-note" style="margin-top:8px;">Add your projection and/or confidence % to see your edge against these prices.</div>`;
+  }
+  html += "</div>";
+  out.innerHTML = html;
+}
+
+// ---------- backtest (walk-forward season replay) ----------
+async function runBacktest() {
+  const league = document.getElementById("btLeague").value;
+  const year = parseInt(document.getElementById("btYear").value, 10);
+  const out = document.getElementById("backtestResults");
+  const btn = document.getElementById("runBacktestBtn");
+  btn.disabled = true;
+  out.innerHTML = '<div class="refresh-note">Fetching season data — this pulls every week plus the prior season seed, may take 20–30 seconds…</div>';
+
+  const HOME_ADV = 55;
+  const K = 20;
+
+  try {
+    // seed from prior season's final 6 weeks (regressed), same as live model
+    let elo = await buildCarryoverElo(league, year - 1);
+
+    let totalGames = 0, correct = 0;
+    let brierSum = 0;
+    const weekRows = [];
+    const bigMisses = [];
+    const teamNames = {};
+
+    for (let w = 1; w <= 18; w++) {
+      let results = [];
+      try { results = await fetchWeekResults(league, year, w); } catch (e) { continue; }
+      if (results.length === 0) continue;
+
+      // also grab team names for readable output
+      try {
+        const base = league === "nfl" ? NFL_BASE : CFB_BASE;
+        const params = new URLSearchParams({ week: w, seasontype: 2, year });
+        if (league === "cfb") params.set("groups", "80");
+        const res = await fetch(`${base}?${params.toString()}`);
+        const json = await res.json();
+        (json.events || []).forEach(ev => {
+          const comp = ev.competitions && ev.competitions[0];
+          if (!comp) return;
+          comp.competitors.forEach(c => {
+            if (c.team) teamNames[c.team.id] = c.team.shortDisplayName || c.team.abbreviation;
+          });
+        });
+      } catch (e) {}
+
+      let weekCorrect = 0;
+      results.forEach(g => {
+        // PREDICT using only pre-week ratings
+        const rh = elo[g.homeId] != null ? elo[g.homeId] : 1500;
+        const ra = elo[g.awayId] != null ? elo[g.awayId] : 1500;
+        const diff = (rh + HOME_ADV) - ra;
+        const winProbHome = 1 / (1 + Math.pow(10, -diff / 400));
+        const predictedHome = winProbHome >= 0.5;
+        const actualHomeWon = g.homeScore > g.awayScore;
+        const isTie = g.homeScore === g.awayScore;
+
+        if (!isTie) {
+          totalGames++;
+          const hit = predictedHome === actualHomeWon;
+          if (hit) { correct++; weekCorrect++; }
+          const actual = actualHomeWon ? 1 : 0;
+          brierSum += Math.pow(winProbHome - actual, 2);
+          // track confident misses
+          const conf = Math.max(winProbHome, 1 - winProbHome);
+          if (!hit && conf >= 0.70) {
+            bigMisses.push({
+              week: w,
+              desc: `${teamNames[g.awayId] || "Away"} ${g.awayScore} @ ${teamNames[g.homeId] || "Home"} ${g.homeScore}`,
+              conf: (conf * 100).toFixed(0),
+              pick: predictedHome ? (teamNames[g.homeId] || "Home") : (teamNames[g.awayId] || "Away"),
+            });
+          }
+        }
+
+        // THEN update ratings with the actual result (walk forward)
+        const expectedHome = 1 / (1 + Math.pow(10, -diff / 400));
+        const actualHome = g.homeScore > g.awayScore ? 1 : (g.homeScore < g.awayScore ? 0 : 0.5);
+        const margin = Math.abs(g.homeScore - g.awayScore);
+        const movMultiplier = Math.log(margin + 1) * (2.2 / ((Math.abs(rh - ra) * 0.001) + 2.2));
+        const change = K * movMultiplier * (actualHome - expectedHome);
+        elo[g.homeId] = rh + change;
+        elo[g.awayId] = ra - change;
+      });
+
+      const nonTies = results.filter(g => g.homeScore !== g.awayScore).length;
+      if (nonTies > 0) {
+        weekRows.push({ week: w, games: nonTies, correct: weekCorrect, pct: ((weekCorrect / nonTies) * 100).toFixed(0) });
+      }
+      out.innerHTML = `<div class="refresh-note">Processed through Week ${w}… (${totalGames} games so far)</div>`;
+    }
+
+    if (totalGames === 0) {
+      out.innerHTML = '<div class="error">No completed games found for that season.</div>';
+      btn.disabled = false;
+      return;
+    }
+
+    const accuracy = ((correct / totalGames) * 100).toFixed(1);
+    const brier = (brierSum / totalGames).toFixed(4);
+    // Baselines: coin flip = 50%; picking home team every game ≈ 55%; Vegas favorites ≈ 66-67%
+    out.innerHTML = `
+      <div class="card" style="padding:16px;">
+        <div class="trend-title">Season Result — ${year} ${league.toUpperCase()}</div>
+        <div class="trend-score">${correct} / ${totalGames} correct (${accuracy}%)</div>
+        <div class="trend-line" style="margin-top:6px;">Brier score: ${brier} (lower is better; 0.25 = coin flip)</div>
+        <div class="trend-note">Context for that number: always picking the home team gets ~55%, and Vegas favorites hit ~66–67%. If the model is meaningfully below the mid-60s, its picks alone aren't beating the market — which is normal for a pure Elo model. Its value is as an input, not an oracle.</div>
+        <div class="trend-title" style="margin-top:14px;">Week by Week</div>
+        ${weekRows.map(r => `<div class="trend-line">Week ${r.week}: ${r.correct}/${r.games} (${r.pct}%)</div>`).join("")}
+        ${bigMisses.length > 0 ? `
+          <div class="trend-title" style="margin-top:14px;">Confident Misses (model ≥70% and wrong)</div>
+          ${bigMisses.slice(0, 10).map(m => `<div class="trend-line">Wk ${m.week}: picked ${m.pick} at ${m.conf}% — final ${m.desc}</div>`).join("")}
+          ${bigMisses.length > 10 ? `<div class="trend-note">…and ${bigMisses.length - 10} more.</div>` : ""}
+        ` : ""}
+      </div>
+    `;
+  } catch (e) {
+    out.innerHTML = `<div class="error">Backtest needs the live connection (same limitation as the schedule) — run it from the hosted page. (${e.message})</div>`;
+  }
+  btn.disabled = false;
+}
+
+// ---------- ledger ----------
+function renderLedger() {
+  const totalProfit = state.ledger.reduce((sum, b) => {
+    if (b.result === "Win") return sum + americanProfit(b.odds, b.stake);
+    if (b.result === "Loss") return sum - b.stake;
+    return sum;
+  }, 0);
+  const pendingStake = state.ledger.filter(b => b.result === "Pending").reduce((s, b) => s + b.stake, 0);
+  const currentBankroll = state.startingBankroll + totalProfit;
+  document.getElementById("bankrollValue").textContent = fmtMoney(currentBankroll);
+  document.getElementById("bankrollValue").style.color = currentBankroll >= state.startingBankroll ? "#6FCF8E" : "#E88A80";
+
+  document.getElementById("statWin").textContent = state.ledger.filter(b => b.result === "Win").length;
+  document.getElementById("statLoss").textContent = state.ledger.filter(b => b.result === "Loss").length;
+  document.getElementById("statPush").textContent = state.ledger.filter(b => b.result === "Push").length;
+  document.getElementById("statPending").textContent = state.ledger.filter(b => b.result === "Pending").length;
+  document.getElementById("openExposure").textContent = fmtMoney(pendingStake);
+  const netProfitEl = document.getElementById("netProfit");
+  netProfitEl.textContent = fmtMoney(totalProfit);
+  netProfitEl.style.color = totalProfit >= 0 ? "#4C8B5A" : "#C4564B";
+  document.getElementById("startingBankrollInput").value = state.startingBankroll || "";
+  renderBankrollChart();
+
+  const searchTerm = (document.getElementById("ledgerSearch").value || "").toLowerCase();
+  const resultFilter = document.getElementById("ledgerResultFilter").value;
+  const filtered = state.ledger.filter(b => {
+    if (resultFilter !== "All" && b.result !== resultFilter) return false;
+    if (!searchTerm) return true;
+    const hay = `${b.matchup} ${b.selection} ${b.notes || ""}`.toLowerCase();
+    return hay.includes(searchTerm);
+  });
+
+  const listEl = document.getElementById("ledgerList");
+  listEl.innerHTML = "";
+  if (state.ledger.length === 0) {
+    listEl.innerHTML = '<div class="empty">No picks yet. Head to Schedule to add one.</div>';
+    return;
+  }
+  if (filtered.length === 0) {
+    listEl.innerHTML = '<div class="empty">No bets match your search/filter.</div>';
+    return;
+  }
+  filtered.forEach(b => {
+    const card = document.createElement("div");
+    card.className = "card";
+    card.style.padding = "14px";
+    const suggestBadge = (b.result === "Pending" && b._suggested)
+      ? `<div class="suggest-badge"><span>Final: ${b._finalScore} — suggested: <b>${b._suggested}</b></span><button data-confirm="${b.id}" data-suggested="${b._suggested}">Confirm</button></div>`
+      : (b.result === "Pending" && b._finalScore ? `<div class="suggest-badge"><span>Final: ${b._finalScore} — can't auto-grade this bet type, set it manually below.</span></div>` : "");
+    card.innerHTML = `
+      <div class="between" style="align-items:flex-start;">
+        <div>
+          <div class="game-title">${b.matchup}</div>
+          <div class="game-sub">${b.betType} · ${b.selection} · ${b.odds}</div>
+          ${b.notes ? `<div style="font-size:12px;font-style:italic;color:#8A96A1;margin-top:4px;">${b.notes}</div>` : ""}
+        </div>
+        <div style="text-align:right;">
+          <div style="font-weight:700;font-size:14px;">${fmtMoney(b.stake)}</div>
+          <div style="font-size:12px;color:#5C6B78;">to win ${fmtMoney(americanProfit(b.odds, b.stake))}</div>
+        </div>
+      </div>
+      ${suggestBadge}
+      <div class="between" style="margin-top:12px;">
+        <div class="result-btns">
+          ${RESULTS.map(r => `<button data-id="${b.id}" data-result="${r}" style="${b.result === r ? `background:${resultColor(r)};color:#fff;` : ""}">${r}</button>`).join("")}
+        </div>
+        <button class="delete-link" data-delete="${b.id}">Delete</button>
+      </div>
+    `;
+    listEl.appendChild(card);
+  });
+  listEl.querySelectorAll("button[data-confirm]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = parseFloat(btn.getAttribute("data-confirm"));
+      const result = btn.getAttribute("data-suggested");
+      state.ledger = state.ledger.map(b => b.id === id ? { ...b, result } : b);
+      saveData();
+      renderLedger();
+    });
+  });
+  listEl.querySelectorAll("button[data-result]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = parseFloat(btn.getAttribute("data-id"));
+      const result = btn.getAttribute("data-result");
+      state.ledger = state.ledger.map(b => b.id === id ? { ...b, result } : b);
+      saveData();
+      renderLedger();
+    });
+  });
+  listEl.querySelectorAll("button[data-delete]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = parseFloat(btn.getAttribute("data-delete"));
+      state.ledger = state.ledger.filter(b => b.id !== id);
+      saveData();
+      renderLedger();
+    });
+  });
+}
+
+// ---------- week options ----------
+function populateWeeks() {
+  const sel = document.getElementById("weekSelect");
+  const max = SEASON_WEEKS[state.seasonType] || 18;
+  sel.innerHTML = "";
+  for (let w = 1; w <= max; w++) {
+    const opt = document.createElement("option");
+    opt.value = w;
+    opt.textContent = "Week " + w;
+    if (w === state.week) opt.selected = true;
+    sel.appendChild(opt);
+  }
+}
+
+// ---------- wiring ----------
+function setActiveTab(btnId, tabId) {
+  ["tabScheduleBtn", "tabLedgerBtn", "tabBacktestBtn", "tabEdgeBtn"].forEach(id => {
+    document.getElementById(id).classList.toggle("active", id === btnId);
+  });
+  ["scheduleTab", "ledgerTab", "backtestTab", "edgeTab"].forEach(id => {
+    document.getElementById(id).style.display = id === tabId ? "block" : "none";
+  });
+}
+document.getElementById("tabScheduleBtn").addEventListener("click", () => {
+  state.tab = "schedule";
+  setActiveTab("tabScheduleBtn", "scheduleTab");
+});
+document.getElementById("tabLedgerBtn").addEventListener("click", () => {
+  state.tab = "ledger";
+  setActiveTab("tabLedgerBtn", "ledgerTab");
+  renderLedger();
+});
+document.getElementById("tabBacktestBtn").addEventListener("click", () => {
+  state.tab = "backtest";
+  setActiveTab("tabBacktestBtn", "backtestTab");
+});
+document.getElementById("tabEdgeBtn").addEventListener("click", () => {
+  state.tab = "edge";
+  setActiveTab("tabEdgeBtn", "edgeTab");
+  try {
+    const saved = localStorage.getItem("odds-api-key");
+    if (saved) document.getElementById("oddsApiKey").value = saved;
+  } catch (e) {}
+});
+document.getElementById("runBacktestBtn").addEventListener("click", runBacktest);
+document.getElementById("runEdgeScanBtn").addEventListener("click", runEdgeScan);
+document.getElementById("calcPropEdgeBtn").addEventListener("click", calcPropEdge);
+document.getElementById("leagueNflBtn").addEventListener("click", () => {
+  state.league = "nfl";
+  document.getElementById("leagueNflBtn").classList.add("active");
+  document.getElementById("leagueCfbBtn").classList.remove("active");
+  loadSchedule();
+});
+document.getElementById("leagueCfbBtn").addEventListener("click", () => {
+  state.league = "cfb";
+  document.getElementById("leagueCfbBtn").classList.add("active");
+  document.getElementById("leagueNflBtn").classList.remove("active");
+  loadSchedule();
+});
+document.getElementById("seasonTypeSelect").addEventListener("change", (e) => {
+  state.seasonType = parseInt(e.target.value, 10);
+  state.week = 1;
+  populateWeeks();
+  loadSchedule();
+});
+document.getElementById("weekSelect").addEventListener("change", (e) => {
+  state.week = parseInt(e.target.value, 10);
+  loadSchedule();
+});
+document.getElementById("yearSelect").addEventListener("change", (e) => {
+  state.year = parseInt(e.target.value, 10);
+  loadSchedule();
+});
+document.getElementById("manualToggleBtn").addEventListener("click", () => {
+  const form = document.getElementById("manualForm");
+  const caret = document.getElementById("manualCaret");
+  const isOpen = form.style.display !== "none";
+  form.style.display = isOpen ? "none" : "block";
+  caret.textContent = isOpen ? "+" : "−";
+});
+document.getElementById("manualSaveBtn").addEventListener("click", () => {
+  const matchup = document.getElementById("manualMatchup").value;
+  const selection = document.getElementById("manualSelection").value;
+  const stake = document.getElementById("manualStake").value;
+  if (!matchup || !selection || !stake) { showToast("Fill in matchup, selection, and stake."); return; }
+  const entry = {
+    id: Date.now() + Math.random(),
+    matchup,
+    betType: document.getElementById("manualBetType").value,
+    selection,
+    odds: document.getElementById("manualOdds").value,
+    stake: parseFloat(stake) || 0,
+    notes: document.getElementById("manualNotes").value,
+    result: "Pending",
+    placedAt: new Date().toISOString(),
+  };
+  state.ledger.unshift(entry);
+  saveData();
+  document.getElementById("manualMatchup").value = "";
+  document.getElementById("manualSelection").value = "";
+  document.getElementById("manualStake").value = "";
+  document.getElementById("manualNotes").value = "";
+  document.getElementById("manualForm").style.display = "none";
+  document.getElementById("manualCaret").textContent = "+";
+  showToast("Pick added to My Bets.");
+});
+document.getElementById("startingBankrollInput").addEventListener("change", (e) => {
+  state.startingBankroll = parseFloat(e.target.value) || 0;
+  saveData();
+  renderLedger();
+});
+document.getElementById("checkResultsBtn").addEventListener("click", checkResults);
+document.getElementById("exportCsvBtn").addEventListener("click", downloadCsv);
+document.getElementById("ledgerSearch").addEventListener("input", renderLedger);
+document.getElementById("ledgerResultFilter").addEventListener("change", renderLedger);
+
+// ---------- init ----------
+loadData();
+populateWeeks();
+loadSchedule();
+renderLedger();
+</script>
+
+
+</body></html>
