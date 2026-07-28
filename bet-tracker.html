@@ -1,9 +1,12 @@
 <!DOCTYPE html>
-<!-- saved from url=(0051)file:///C:/Users/dleft/Downloads/bet-tracker_9.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_10.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Bet Tracker</title>
+<meta name="theme-color" content="#1A2530">
+<link rel="manifest" href="data:application/manifest+json;base64,eyJuYW1lIjogIkJldCBUcmFja2VyIiwgInNob3J0X25hbWUiOiAiQmV0cyIsICJzdGFydF91cmwiOiAiLiIsICJkaXNwbGF5IjogInN0YW5kYWxvbmUiLCAiYmFja2dyb3VuZF9jb2xvciI6ICIjMGYxYTEzIiwgInRoZW1lX2NvbG9yIjogIiMxQTI1MzAiLCAiaWNvbnMiOiBbeyJzcmMiOiAiZGF0YTppbWFnZS9zdmcreG1sLCUzQ3N2ZyB4bWxucz0lMjJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyUyMiB2aWV3Qm94PSUyMjAgMCAxMDAgMTAwJTIyJTNFJTNDcmVjdCB3aWR0aD0lMjIxMDAlMjIgaGVpZ2h0PSUyMjEwMCUyMiByeD0lMjIxOCUyMiBmaWxsPSUyMiUyMzFBMjUzMCUyMi8lM0UlM0N0ZXh0IHg9JTIyNTAlMjIgeT0lMjI2NiUyMiBmb250LXNpemU9JTIyNTUlMjIgdGV4dC1hbmNob3I9JTIybWlkZGxlJTIyJTNFJUYwJTlGJThGJTg4JTNDL3RleHQlM0UlM0Mvc3ZnJTNFIiwgInNpemVzIjogIjE5MngxOTIiLCAidHlwZSI6ICJpbWFnZS9zdmcreG1sIiwgInB1cnBvc2UiOiAiYW55In0sIHsic3JjIjogImRhdGE6aW1hZ2Uvc3ZnK3htbCwlM0NzdmcgeG1sbnM9JTIyaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmclMjIgdmlld0JveD0lMjIwIDAgMTAwIDEwMCUyMiUzRSUzQ3JlY3Qgd2lkdGg9JTIyMTAwJTIyIGhlaWdodD0lMjIxMDAlMjIgcng9JTIyMTglMjIgZmlsbD0lMjIlMjMxQTI1MzAlMjIvJTNFJTNDdGV4dCB4PSUyMjUwJTIyIHk9JTIyNjYlMjIgZm9udC1zaXplPSUyMjU1JTIyIHRleHQtYW5jaG9yPSUyMm1pZGRsZSUyMiUzRSVGMCU5RiU4RiU4OCUzQy90ZXh0JTNFJTNDL3N2ZyUzRSIsICJzaXplcyI6ICI1MTJ4NTEyIiwgInR5cGUiOiAiaW1hZ2Uvc3ZnK3htbCIsICJwdXJwb3NlIjogImFueSJ9XX0=">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Crect width=%22100%22 height=%22100%22 rx=%2218%22 fill=%22%231A2530%22/%3E%3Ctext x=%2250%22 y=%2266%22 font-size=%2255%22 text-anchor=%22middle%22%3E%F0%9F%8F%88%3C/text%3E%3C/svg%3E">
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; background: #F4F6F8; color: #1A2530; font-family: ui-sans-serif, system-ui, sans-serif; }
@@ -94,6 +97,7 @@
     <button id="tabLedgerBtn">My Bets</button>
     <button id="tabBacktestBtn">Backtest</button>
     <button id="tabEdgeBtn">Edge</button>
+    <button id="tabPickSixBtn">Pick 6</button>
   </nav>
 </header>
 
@@ -321,6 +325,28 @@
         </div>
       </div>
     </div>
+
+    <div class="card" style="margin-top: 10px;">
+      <button class="manual-toggle" id="parlayToggleBtn">Add a parlay <span id="parlayCaret">+</span></button>
+      <div class="pick-form" id="parlayForm" style="display:none;">
+        <div class="pick-form-inner">
+          <div id="parlayLegs"></div>
+          <button class="load-trends-btn" id="addLegBtn" style="margin-top:6px;">+ Add Leg</button>
+          <div class="row" style="margin-top:10px;">
+            <div>
+              <label>Stake ($)</label>
+              <input id="parlayStake" placeholder="25" inputmode="decimal">
+            </div>
+            <div>
+              <label>Notes</label>
+              <input id="parlayNotes" placeholder="optional">
+            </div>
+          </div>
+          <div class="trend-note" id="parlayPayout" style="margin-top:6px;"></div>
+          <button class="save-btn full" id="parlaySaveBtn" style="margin-top:6px;">Save Parlay</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div id="ledgerTab" style="display:none;">
@@ -359,6 +385,27 @@
   </div>
 
   <div id="backtestTab" style="display:none;">
+    <div class="card" style="padding:16px; margin-bottom:16px;">
+      <div class="trend-title" style="margin-bottom:8px;">This Season So Far</div>
+      <div class="refresh-note">Grades every Elo prediction made for completed games in the current season — the live, ongoing answer to "is this thing actually right this year," updated as more weeks finish.</div>
+      <div class="row">
+        <div>
+          <label>League</label>
+          <select id="liveLeague">
+            <option value="nfl" selected="">NFL</option>
+            <option value="cfb">College Football</option>
+          </select>
+        </div>
+        <div>
+          <label>Season</label>
+          <select id="liveYear">
+            <option value="2026" selected="">2026</option>
+          </select>
+        </div>
+      </div>
+      <button class="save-btn full" id="runLiveAccuracyBtn">Check This Season's Accuracy</button>
+      <div id="liveAccuracyResults" style="margin-top:12px;"></div>
+    </div>
     <div class="card" style="padding:16px; margin-bottom:16px;">
       <div class="trend-title" style="margin-bottom:8px;">Model Backtest</div>
       <div class="refresh-note">Replays a past season week by week. For each week, the model is built only from games completed <b>before</b> that week (walk-forward — no peeking ahead), predicts every game, then grades itself against the real results.</div>
@@ -433,6 +480,26 @@
       <button class="save-btn full" id="calcPropEdgeBtn">Calculate Edge</button>
       <div id="propEdgeResults" style="margin-top:12px;"></div>
     </div>
+  </div>
+
+  <div id="pickSixTab" style="display:none;">
+    <div class="card" style="padding:16px; margin-bottom:16px;">
+      <div class="trend-title" style="margin-bottom:6px;">Pick 6 — This Week's Card</div>
+      <div class="refresh-note">Enter RunYourPool's spread for each of your 6 picks. The model's implied line shows alongside so you can see where it agrees or disagrees with the pool's number — RunYourPool's lines lock Tuesday and don't move, so a gap here is often just the market having moved since, not a model insight.</div>
+      <div class="row">
+        <div>
+          <label>Week</label>
+          <select id="p6Week"></select>
+        </div>
+        <div>
+          <label>Year</label>
+          <select id="p6Year"><option value="2026" selected="">2026</option></select>
+        </div>
+      </div>
+      <div id="p6PickRows"></div>
+      <button class="save-btn full" id="p6SaveBtn" style="margin-top:10px;">Save This Week's Card</button>
+    </div>
+    <div id="p6History"></div>
   </div>
 </main>
 
@@ -1651,8 +1718,9 @@ async function runEdgeScan() {
       const match = oddsData.find(o =>
         o.home_team && (o.home_team.toLowerCase().includes(g.home.toLowerCase()) || g.home.toLowerCase().includes(o.home_team.toLowerCase().split(" ").pop()))
       );
-      if (!match || !match.bookmakers || match.bookmakers.length === 0) return;
-      const book = match.bookmakers[0];
+      // Gather this market across every book returned, not just the first
+      const books = match.bookmakers || [];
+      if (books.length === 0) return;
 
       const rh = elo[g.homeId] != null ? elo[g.homeId] : 1500;
       const ra = elo[g.awayId] != null ? elo[g.awayId] : 1500;
@@ -1660,45 +1728,67 @@ async function runEdgeScan() {
       const modelHomeWinProb = 1 / (1 + Math.pow(10, -diff / 400));
       const modelHomeSpread = -(diff / 25); // negative = model favors home by this many points
 
-      const row = { game: `${g.away} @ ${g.home}` };
+      const row = { game: `${g.away} @ ${g.home}`, bookCount: books.length };
 
-      // --- spread comparison ---
-      const spreadMkt = book.markets && book.markets.find(m => m.key === "spreads");
-      if (spreadMkt) {
-        const homeOutcome = spreadMkt.outcomes.find(o => o.name === match.home_team);
-        if (homeOutcome && homeOutcome.point != null) {
-          const marketHomeSpread = homeOutcome.point;
-          const gap = modelHomeSpread - marketHomeSpread;
-          row.spread = {
-            marketLine: marketHomeSpread <= 0 ? `${g.home} ${marketHomeSpread}` : `${g.away} -${marketHomeSpread}`,
-            modelLine: modelHomeSpread <= 0 ? `${g.home} ${modelHomeSpread.toFixed(1)}` : `${g.away} -${modelHomeSpread.toFixed(1)}`,
-            gapPoints: Math.abs(gap).toFixed(1),
-            side: gap > 0 ? g.away : g.home,
-            meaningful: Math.abs(gap) >= 2,
-          };
-        }
+      // --- spread: consensus line (median across books) + best price shopping ---
+      const spreadEntries = books.map(b => {
+        const mkt = b.markets && b.markets.find(m => m.key === "spreads");
+        const homeOutcome = mkt && mkt.outcomes.find(o => o.name === match.home_team);
+        return homeOutcome && homeOutcome.point != null ? { book: b.title || b.key, point: homeOutcome.point, price: homeOutcome.price } : null;
+      }).filter(Boolean);
+      if (spreadEntries.length > 0) {
+        const sortedPoints = spreadEntries.map(e => e.point).sort((a, b) => a - b);
+        const marketHomeSpread = sortedPoints[Math.floor(sortedPoints.length / 2)]; // median, resistant to one outlier book
+        const gap = modelHomeSpread - marketHomeSpread;
+        // best price for whichever side the model likes: most points for home (if model likes home) or least negative/most positive equivalent for away
+        const favorsHome = gap <= 0;
+        const best = favorsHome
+          ? spreadEntries.reduce((a, b) => (b.point > a.point ? b : a))
+          : spreadEntries.reduce((a, b) => (b.point < a.point ? b : a));
+        row.spread = {
+          marketLine: marketHomeSpread <= 0 ? `${g.home} ${marketHomeSpread}` : `${g.away} -${marketHomeSpread}`,
+          modelLine: modelHomeSpread <= 0 ? `${g.home} ${modelHomeSpread.toFixed(1)}` : `${g.away} -${modelHomeSpread.toFixed(1)}`,
+          gapPoints: Math.abs(gap).toFixed(1),
+          side: gap > 0 ? g.away : g.home,
+          meaningful: Math.abs(gap) >= 2,
+          bestBook: best.book,
+          bestLine: favorsHome ? `${g.home} ${best.point}` : `${g.away} ${-best.point}`,
+          numBooks: spreadEntries.length,
+        };
       }
 
-      // --- moneyline comparison ---
-      const h2hMkt = book.markets && book.markets.find(m => m.key === "h2h");
-      if (h2hMkt) {
-        const homeOutcome = h2hMkt.outcomes.find(o => o.name === match.home_team);
-        const awayOutcome = h2hMkt.outcomes.find(o => o.name === match.away_team);
-        if (homeOutcome && awayOutcome) {
-          const rawHome = impliedProb(homeOutcome.price);
-          const rawAway = impliedProb(awayOutcome.price);
-          if (rawHome != null && rawAway != null) {
-            const [mktHome] = noVigProbs(rawHome, rawAway);
-            const gap = modelHomeWinProb - mktHome;
-            row.moneyline = {
-              modelHome: (modelHomeWinProb * 100).toFixed(0),
-              mktHome: (mktHome * 100).toFixed(0),
-              gapPct: (Math.abs(gap) * 100).toFixed(1),
-              side: gap > 0 ? g.home : g.away,
-              odds: gap > 0 ? homeOutcome.price : awayOutcome.price,
-              meaningful: Math.abs(gap) >= 0.05,
-            };
-          }
+      // --- moneyline: consensus (average no-vig prob across books) + best price shopping ---
+      const h2hEntries = books.map(b => {
+        const mkt = b.markets && b.markets.find(m => m.key === "h2h");
+        const homeOutcome = mkt && mkt.outcomes.find(o => o.name === match.home_team);
+        const awayOutcome = mkt && mkt.outcomes.find(o => o.name === match.away_team);
+        if (!homeOutcome || !awayOutcome) return null;
+        return { book: b.title || b.key, homePrice: homeOutcome.price, awayPrice: awayOutcome.price };
+      }).filter(Boolean);
+      if (h2hEntries.length > 0) {
+        const noVigHomeProbs = h2hEntries.map(e => {
+          const rawHome = impliedProb(e.homePrice);
+          const rawAway = impliedProb(e.awayPrice);
+          if (rawHome == null || rawAway == null) return null;
+          return noVigProbs(rawHome, rawAway)[0];
+        }).filter(v => v != null);
+        if (noVigHomeProbs.length > 0) {
+          const avgMktHome = noVigHomeProbs.reduce((a, b) => a + b, 0) / noVigHomeProbs.length;
+          const gap = modelHomeWinProb - avgMktHome;
+          const favorsHome = gap > 0;
+          const best = favorsHome
+            ? h2hEntries.reduce((a, b) => (b.homePrice > a.homePrice ? b : a))
+            : h2hEntries.reduce((a, b) => (b.awayPrice > a.awayPrice ? b : a));
+          row.moneyline = {
+            modelHome: (modelHomeWinProb * 100).toFixed(0),
+            mktHome: (avgMktHome * 100).toFixed(0),
+            gapPct: (Math.abs(gap) * 100).toFixed(1),
+            side: favorsHome ? g.home : g.away,
+            meaningful: Math.abs(gap) >= 0.05,
+            bestBook: best.book,
+            bestOdds: favorsHome ? best.homePrice : best.awayPrice,
+            numBooks: h2hEntries.length,
+          };
         }
       }
 
@@ -1714,15 +1804,17 @@ async function runEdgeScan() {
       return bv - av;
     });
     out.innerHTML = rows.map(r => {
-      let line = `<div class="trend-line" style="margin-top:6px;"><b>${r.game}</b></div>`;
+      let line = `<div class="trend-line" style="margin-top:6px;"><b>${r.game}</b> <span style="color:#5C6B78;font-weight:400;">(${r.bookCount} book${r.bookCount > 1 ? "s" : ""})</span></div>`;
       if (r.spread) {
-        line += `<div class="trend-line" style="${r.spread.meaningful ? "font-weight:700;" : ""}">Spread — book ${r.spread.marketLine}, model implies ${r.spread.modelLine} — ${r.spread.meaningful ? `⚑ ${r.spread.gapPoints}-pt gap, leans <b>${r.spread.side}</b>` : `${r.spread.gapPoints}-pt gap, below threshold`}</div>`;
+        line += `<div class="trend-line" style="${r.spread.meaningful ? "font-weight:700;" : ""}">Spread — consensus ${r.spread.marketLine}, model implies ${r.spread.modelLine} — ${r.spread.meaningful ? `⚑ ${r.spread.gapPoints}-pt gap, leans <b>${r.spread.side}</b>` : `${r.spread.gapPoints}-pt gap, below threshold`}</div>`;
+        if (r.spread.numBooks > 1) line += `<div class="trend-note">Best line: ${r.spread.bestLine} at ${r.spread.bestBook}</div>`;
       }
       if (r.moneyline) {
-        line += `<div class="trend-line" style="${r.moneyline.meaningful ? "font-weight:700;" : ""}">Moneyline — model ${r.moneyline.modelHome}% home vs market ${r.moneyline.mktHome}% — ${r.moneyline.meaningful ? `⚑ ${r.moneyline.gapPct}% gap, leans <b>${r.moneyline.side}</b> (${r.moneyline.odds})` : `${r.moneyline.gapPct}% gap, below threshold`}</div>`;
+        line += `<div class="trend-line" style="${r.moneyline.meaningful ? "font-weight:700;" : ""}">Moneyline — model ${r.moneyline.modelHome}% vs consensus market ${r.moneyline.mktHome}% — ${r.moneyline.meaningful ? `⚑ ${r.moneyline.gapPct}% gap, leans <b>${r.moneyline.side}</b>` : `${r.moneyline.gapPct}% gap, below threshold`}</div>`;
+        if (r.moneyline.numBooks > 1) line += `<div class="trend-note">Best price: ${r.moneyline.side} ${r.moneyline.bestOdds} at ${r.moneyline.bestBook}</div>`;
       }
       return line;
-    }).join("") + `<div class="trend-note" style="margin-top:10px;">⚑ = model and book disagree meaningfully (2+ pts on spread, 5%+ on moneyline).</div>`;
+    }).join("") + `<div class="trend-note" style="margin-top:10px;">⚑ = model and book disagree meaningfully (2+ pts on spread, 5%+ on moneyline). "Best line/price" shows the most favorable number found across all books returned for that game — worth grabbing regardless of the model's opinion.</div>`;
   } catch (e) {
     out.innerHTML = `<div class="error">${e.message}</div>`;
   }
@@ -1788,7 +1880,236 @@ function calcPropEdge() {
   out.innerHTML = html;
 }
 
+// ---------- Pick 6 pool tracker ----------
+function populateP6Weeks() {
+  const sel = document.getElementById("p6Week");
+  sel.innerHTML = "";
+  for (let w = 1; w <= 18; w++) {
+    const opt = document.createElement("option");
+    opt.value = w;
+    opt.textContent = "Week " + w;
+    sel.appendChild(opt);
+  }
+  sel.value = state.week || 1;
+}
+
+function loadP6Data() {
+  try {
+    const raw = localStorage.getItem("picksix-data");
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) { return {}; }
+}
+function saveP6Data(data) {
+  try { localStorage.setItem("picksix-data", JSON.stringify(data)); } catch (e) {}
+}
+
+function renderP6Rows() {
+  const week = document.getElementById("p6Week").value;
+  const year = document.getElementById("p6Year").value;
+  const data = loadP6Data();
+  const key = `${year}-${week}`;
+  const existing = (data[key] && data[key].picks) || [];
+  const rowsEl = document.getElementById("p6PickRows");
+  rowsEl.innerHTML = "";
+  for (let i = 0; i < 6; i++) {
+    const p = existing[i] || { matchup: "", poolLine: "", pickedTeam: "", result: "Pending" };
+    const row = document.createElement("div");
+    row.className = "card";
+    row.style.padding = "10px";
+    row.style.marginBottom = "8px";
+    row.innerHTML = `
+      <div class="row" style="margin-bottom:6px;">
+        <div style="flex:2;">
+          <label>Matchup ${i + 1}</label>
+          <input class="p6-matchup" data-i="${i}" placeholder="e.g. Bills @ Chiefs" value="${p.matchup}">
+        </div>
+        <div>
+          <label>Pool Line</label>
+          <input class="p6-line" data-i="${i}" placeholder="e.g. Chiefs -3.5" value="${p.poolLine}">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Your Pick (team + side)</label>
+          <input class="p6-pick" data-i="${i}" placeholder="e.g. Chiefs" value="${p.pickedTeam}">
+        </div>
+        <div>
+          <label>Result</label>
+          <select class="p6-result" data-i="${i}">
+            ${RESULTS.map(r => `<option ${p.result === r ? "selected" : ""}>${r}</option>`).join("")}
+          </select>
+        </div>
+      </div>
+      <div id="p6Model-${i}" class="trend-note" style="margin-top:6px;"></div>
+    `;
+    rowsEl.appendChild(row);
+  }
+  // show model's implied line for each row where the matchup matches a scheduled game
+  document.querySelectorAll(".p6-matchup").forEach(input => {
+    const showModelLine = async () => {
+      const i = input.getAttribute("data-i");
+      const val = input.value.trim();
+      const modelEl = document.getElementById(`p6Model-${i}`);
+      if (!val) { modelEl.textContent = ""; return; }
+      const match = state.games.find(g => `${g.away} @ ${g.home}`.toLowerCase() === val.toLowerCase() || val.toLowerCase().includes(g.home.toLowerCase()));
+      if (!match || !match.homeId) { modelEl.textContent = "(model line unavailable — no matching scheduled game found)"; return; }
+      try {
+        const elo = await buildEloRatings(state.league, parseInt(document.getElementById("p6Year").value, 10), parseInt(document.getElementById("p6Week").value, 10));
+        const rh = elo[match.homeId] != null ? elo[match.homeId] : 1500;
+        const ra = elo[match.awayId] != null ? elo[match.awayId] : 1500;
+        const diff = (rh + 55) - ra;
+        const impliedLine = Math.abs(diff / 25).toFixed(1);
+        const favorite = diff >= 0 ? match.home : match.away;
+        modelEl.textContent = `Model implies: ${favorite} -${impliedLine}`;
+      } catch (e) {
+        modelEl.textContent = "(couldn't load model line)";
+      }
+    };
+    input.addEventListener("change", showModelLine);
+    if (input.value) showModelLine();
+  });
+}
+
+function saveP6Week() {
+  const week = document.getElementById("p6Week").value;
+  const year = document.getElementById("p6Year").value;
+  const key = `${year}-${week}`;
+  const picks = [];
+  for (let i = 0; i < 6; i++) {
+    picks.push({
+      matchup: document.querySelector(`.p6-matchup[data-i="${i}"]`).value,
+      poolLine: document.querySelector(`.p6-line[data-i="${i}"]`).value,
+      pickedTeam: document.querySelector(`.p6-pick[data-i="${i}"]`).value,
+      result: document.querySelector(`.p6-result[data-i="${i}"]`).value,
+    });
+  }
+  const data = loadP6Data();
+  data[key] = { week: parseInt(week, 10), year: parseInt(year, 10), picks };
+  saveP6Data(data);
+  showToast("Week saved.");
+  renderP6History();
+}
+
+function renderP6History() {
+  const data = loadP6Data();
+  const el = document.getElementById("p6History");
+  const weeks = Object.values(data).sort((a, b) => b.year - a.year || b.week - a.week);
+  if (weeks.length === 0) {
+    el.innerHTML = `<div class="empty">No weeks saved yet.</div>`;
+    return;
+  }
+  let totalWins = 0, totalGraded = 0;
+  const rows = weeks.map(w => {
+    const graded = w.picks.filter(p => p.result !== "Pending" && p.matchup);
+    const wins = graded.filter(p => p.result === "Win").length;
+    totalWins += wins;
+    totalGraded += graded.length;
+    return `<div class="card" style="padding:12px; margin-bottom:8px;">
+      <div class="game-title">Week ${w.week}, ${w.year} — ${wins}-${graded.length - wins}${graded.length < 6 ? ` (${graded.length}/6 graded)` : ""}</div>
+      ${w.picks.filter(p => p.matchup).map(p => `<div class="trend-line">${p.matchup}: ${p.pickedTeam} (${p.poolLine}) — <b>${p.result}</b></div>`).join("")}
+    </div>`;
+  }).join("");
+  const seasonPct = totalGraded > 0 ? ((totalWins / totalGraded) * 100).toFixed(0) : "—";
+  el.innerHTML = `
+    <div class="card" style="padding:12px; margin-bottom:12px;">
+      <div class="trend-title">Season Record</div>
+      <div class="trend-score">${totalWins}-${totalGraded - totalWins} (${seasonPct}%)</div>
+    </div>
+    ${rows}
+  `;
+}
+
 // ---------- backtest (walk-forward season replay) ----------
+// ---------- live accuracy (current season, ongoing) ----------
+async function runLiveAccuracy() {
+  const league = document.getElementById("liveLeague").value;
+  const year = parseInt(document.getElementById("liveYear").value, 10);
+  const out = document.getElementById("liveAccuracyResults");
+  const btn = document.getElementById("runLiveAccuracyBtn");
+  btn.disabled = true;
+  out.innerHTML = '<div class="refresh-note">Checking completed games so far this season…</div>';
+
+  const HOME_ADV = 55;
+  const K = 20;
+
+  try {
+    let elo = await buildCarryoverElo(league, year - 1);
+    let totalGames = 0, correct = 0;
+    const weekRows = [];
+    const misses = [];
+    const teamNames = {};
+
+    for (let w = 1; w <= 18; w++) {
+      let results = [];
+      try { results = await fetchWeekResults(league, year, w); } catch (e) { continue; }
+      if (results.length === 0) continue;
+
+      try {
+        const base = league === "nfl" ? NFL_BASE : CFB_BASE;
+        const params = new URLSearchParams({ week: w, seasontype: 2, dates: year });
+        if (league === "cfb") params.set("groups", "80");
+        const res = await fetch(`${base}?${params.toString()}`);
+        const json = await res.json();
+        (json.events || []).forEach(ev => {
+          const comp = ev.competitions && ev.competitions[0];
+          if (!comp) return;
+          comp.competitors.forEach(c => { if (c.team) teamNames[c.team.id] = c.team.shortDisplayName || c.team.abbreviation; });
+        });
+      } catch (e) {}
+
+      let weekCorrect = 0;
+      results.forEach(g => {
+        const rh = elo[g.homeId] != null ? elo[g.homeId] : 1500;
+        const ra = elo[g.awayId] != null ? elo[g.awayId] : 1500;
+        const diff = (rh + HOME_ADV) - ra;
+        const winProbHome = 1 / (1 + Math.pow(10, -diff / 400));
+        const predictedHome = winProbHome >= 0.5;
+        const actualHomeWon = g.homeScore > g.awayScore;
+        const isTie = g.homeScore === g.awayScore;
+        if (!isTie) {
+          totalGames++;
+          const hit = predictedHome === actualHomeWon;
+          if (hit) { correct++; weekCorrect++; }
+          const conf = Math.max(winProbHome, 1 - winProbHome);
+          if (!hit && conf >= 0.65) {
+            misses.push({ week: w, desc: `${teamNames[g.awayId] || "Away"} ${g.awayScore} @ ${teamNames[g.homeId] || "Home"} ${g.homeScore}`, conf: (conf * 100).toFixed(0), pick: predictedHome ? (teamNames[g.homeId] || "Home") : (teamNames[g.awayId] || "Away") });
+          }
+        }
+        const expectedHome = 1 / (1 + Math.pow(10, -diff / 400));
+        const actualHome = g.homeScore > g.awayScore ? 1 : (g.homeScore < g.awayScore ? 0 : 0.5);
+        const margin = Math.abs(g.homeScore - g.awayScore);
+        const movMultiplier = Math.log(margin + 1) * (2.2 / ((Math.abs(rh - ra) * 0.001) + 2.2));
+        const change = K * movMultiplier * (actualHome - expectedHome);
+        elo[g.homeId] = rh + change;
+        elo[g.awayId] = ra - change;
+      });
+      const nonTies = results.filter(g => g.homeScore !== g.awayScore).length;
+      if (nonTies > 0) weekRows.push({ week: w, games: nonTies, correct: weekCorrect, pct: ((weekCorrect / nonTies) * 100).toFixed(0) });
+    }
+
+    if (totalGames === 0) {
+      out.innerHTML = `<div class="trend-note">No completed ${year} games yet this season — check back once Week 1 wraps up.</div>`;
+      btn.disabled = false;
+      return;
+    }
+
+    const accuracy = ((correct / totalGames) * 100).toFixed(1);
+    out.innerHTML = `
+      <div class="trend-score">${correct} / ${totalGames} correct (${accuracy}%) through Week ${weekRows[weekRows.length - 1].week}</div>
+      <div class="trend-note">Baseline context: always picking home teams gets ~55%, Vegas favorites hit ~66–67%.</div>
+      <div class="trend-title" style="margin-top:12px;">Week by Week</div>
+      ${weekRows.map(r => `<div class="trend-line">Week ${r.week}: ${r.correct}/${r.games} (${r.pct}%)</div>`).join("")}
+      ${misses.length > 0 ? `
+        <div class="trend-title" style="margin-top:12px;">Confident Misses This Season</div>
+        ${misses.slice(0, 10).map(m => `<div class="trend-line">Wk ${m.week}: picked ${m.pick} at ${m.conf}% — final ${m.desc}</div>`).join("")}
+      ` : ""}
+    `;
+  } catch (e) {
+    out.innerHTML = `<div class="error">${e.message}</div>`;
+  }
+  btn.disabled = false;
+}
+
 async function runBacktest() {
   const league = document.getElementById("btLeague").value;
   const year = parseInt(document.getElementById("btYear").value, 10);
@@ -1907,6 +2228,100 @@ async function runBacktest() {
   btn.disabled = false;
 }
 
+// ---------- parlay support ----------
+let parlayLegsState = [];
+
+function americanToDecimal(odds) {
+  const o = parseFloat(odds);
+  if (isNaN(o)) return 1;
+  return o > 0 ? 1 + o / 100 : 1 + 100 / Math.abs(o);
+}
+function decimalToAmerican(dec) {
+  if (dec <= 1) return "-110";
+  if (dec >= 2) return "+" + Math.round((dec - 1) * 100);
+  return Math.round(-100 / (dec - 1)).toString();
+}
+
+function renderParlayLegs() {
+  const el = document.getElementById("parlayLegs");
+  el.innerHTML = parlayLegsState.map((leg, i) => `
+    <div class="row" style="margin-bottom:6px;">
+      <div style="flex:2;"><label>Leg ${i + 1} Matchup</label><input class="pl-matchup" data-i="${i}" value="${leg.matchup}" placeholder="e.g. Bills @ Chiefs"></div>
+      <div><label>Odds</label><input class="pl-odds" data-i="${i}" value="${leg.odds}" placeholder="-110"></div>
+    </div>
+    <div class="row" style="margin-bottom:10px;">
+      <div style="flex:2;"><label>Selection</label><input class="pl-selection" data-i="${i}" value="${leg.selection}" placeholder="e.g. Chiefs -3.5"></div>
+      <div style="display:flex;align-items:flex-end;"><button class="delete-link" data-remove="${i}" type="button">Remove</button></div>
+    </div>
+  `).join("");
+  el.querySelectorAll(".pl-matchup, .pl-odds, .pl-selection").forEach(input => {
+    input.addEventListener("input", () => {
+      const i = parseInt(input.getAttribute("data-i"), 10);
+      const field = input.classList.contains("pl-matchup") ? "matchup" : input.classList.contains("pl-odds") ? "odds" : "selection";
+      parlayLegsState[i][field] = input.value;
+      updateParlayPayout();
+    });
+  });
+  el.querySelectorAll("button[data-remove]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const i = parseInt(btn.getAttribute("data-remove"), 10);
+      parlayLegsState.splice(i, 1);
+      renderParlayLegs();
+      updateParlayPayout();
+    });
+  });
+}
+
+function addParlayLeg() {
+  parlayLegsState.push({ matchup: "", selection: "", odds: "-110" });
+  renderParlayLegs();
+}
+
+function updateParlayPayout() {
+  const stake = parseFloat(document.getElementById("parlayStake").value) || 0;
+  const validLegs = parlayLegsState.filter(l => l.odds);
+  const payoutEl = document.getElementById("parlayPayout");
+  if (validLegs.length < 2) { payoutEl.textContent = "Add at least 2 legs."; return; }
+  const combinedDecimal = validLegs.reduce((acc, l) => acc * americanToDecimal(l.odds), 1);
+  const toWin = stake * (combinedDecimal - 1);
+  payoutEl.textContent = `${validLegs.length}-leg parlay — combined odds ${decimalToAmerican(combinedDecimal)} — to win ${fmtMoney(toWin)}`;
+}
+
+function saveParlay() {
+  const stake = parseFloat(document.getElementById("parlayStake").value) || 0;
+  const notes = document.getElementById("parlayNotes").value;
+  const validLegs = parlayLegsState.filter(l => l.matchup && l.selection && l.odds);
+  if (validLegs.length < 2 || !stake) { showToast("Need at least 2 complete legs and a stake."); return; }
+  const combinedDecimal = validLegs.reduce((acc, l) => acc * americanToDecimal(l.odds), 1);
+  const entry = {
+    id: Date.now() + Math.random(),
+    matchup: `${validLegs.length}-Leg Parlay`,
+    betType: "Parlay",
+    selection: validLegs.map(l => l.selection).join(" + "),
+    odds: decimalToAmerican(combinedDecimal),
+    stake,
+    notes,
+    result: "Pending",
+    placedAt: new Date().toISOString(),
+    legs: validLegs.map(l => ({ matchup: l.matchup, selection: l.selection, odds: l.odds, result: "Pending" })),
+  };
+  state.ledger.unshift(entry);
+  saveData();
+  parlayLegsState = [];
+  renderParlayLegs();
+  document.getElementById("parlayStake").value = "";
+  document.getElementById("parlayNotes").value = "";
+  document.getElementById("parlayPayout").textContent = "";
+  showToast("Parlay saved to My Bets.");
+}
+
+function computeParlayResult(legs) {
+  if (legs.some(l => l.result === "Loss")) return "Loss";
+  if (legs.some(l => l.result === "Pending")) return "Pending";
+  if (legs.every(l => l.result === "Push")) return "Push";
+  return "Win";
+}
+
 // ---------- ledger ----------
 function renderLedger() {
   const totalProfit = state.ledger.reduce((sum, b) => {
@@ -1953,14 +2368,28 @@ function renderLedger() {
     const card = document.createElement("div");
     card.className = "card";
     card.style.padding = "14px";
-    const suggestBadge = (b.result === "Pending" && b._suggested)
+    const isParlay = b.betType === "Parlay" && Array.isArray(b.legs);
+    const suggestBadge = (!isParlay && b.result === "Pending" && b._suggested)
       ? `<div class="suggest-badge"><span>Final: ${b._finalScore} — suggested: <b>${b._suggested}</b></span><button data-confirm="${b.id}" data-suggested="${b._suggested}">Confirm</button></div>`
-      : (b.result === "Pending" && b._finalScore ? `<div class="suggest-badge"><span>Final: ${b._finalScore} — can't auto-grade this bet type, set it manually below.</span></div>` : "");
+      : (!isParlay && b.result === "Pending" && b._finalScore ? `<div class="suggest-badge"><span>Final: ${b._finalScore} — can't auto-grade this bet type, set it manually below.</span></div>` : "");
+
+    const legsHtml = isParlay ? `
+      <div style="margin-top:8px; padding-top:8px; border-top:1px solid #E1E6EA;">
+        ${b.legs.map((leg, i) => `
+          <div class="between" style="margin-bottom:4px;">
+            <span style="font-size:12px;">${leg.matchup}: ${leg.selection} (${leg.odds})</span>
+            <div class="result-btns">
+              ${RESULTS.map(r => `<button data-parlay-id="${b.id}" data-leg-i="${i}" data-result="${r}" style="font-size:9px;padding:3px 7px;${leg.result === r ? `background:${resultColor(r)};color:#fff;` : ""}">${r}</button>`).join("")}
+            </div>
+          </div>
+        `).join("")}
+      </div>` : "";
+
     card.innerHTML = `
       <div class="between" style="align-items:flex-start;">
         <div>
           <div class="game-title">${b.matchup}</div>
-          <div class="game-sub">${b.betType} · ${b.selection} · ${b.odds}</div>
+          <div class="game-sub">${b.betType} · ${isParlay ? `${b.legs.length} legs` : b.selection} · ${b.odds}</div>
           ${b.notes ? `<div style="font-size:12px;font-style:italic;color:#8A96A1;margin-top:4px;">${b.notes}</div>` : ""}
         </div>
         <div style="text-align:right;">
@@ -1969,14 +2398,30 @@ function renderLedger() {
         </div>
       </div>
       ${suggestBadge}
+      ${legsHtml}
       <div class="between" style="margin-top:12px;">
-        <div class="result-btns">
-          ${RESULTS.map(r => `<button data-id="${b.id}" data-result="${r}" style="${b.result === r ? `background:${resultColor(r)};color:#fff;` : ""}">${r}</button>`).join("")}
-        </div>
+        ${isParlay
+          ? `<span class="pill" style="background:${resultColor(b.result)};">${b.result}</span>`
+          : `<div class="result-btns">${RESULTS.map(r => `<button data-id="${b.id}" data-result="${r}" style="${b.result === r ? `background:${resultColor(r)};color:#fff;` : ""}">${r}</button>`).join("")}</div>`
+        }
         <button class="delete-link" data-delete="${b.id}">Delete</button>
       </div>
     `;
     listEl.appendChild(card);
+  });
+  listEl.querySelectorAll("button[data-parlay-id]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = parseFloat(btn.getAttribute("data-parlay-id"));
+      const legI = parseInt(btn.getAttribute("data-leg-i"), 10);
+      const result = btn.getAttribute("data-result");
+      state.ledger = state.ledger.map(b => {
+        if (b.id !== id) return b;
+        const newLegs = b.legs.map((l, i) => i === legI ? { ...l, result } : l);
+        return { ...b, legs: newLegs, result: computeParlayResult(newLegs) };
+      });
+      saveData();
+      renderLedger();
+    });
   });
   listEl.querySelectorAll("button[data-confirm]").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -2022,10 +2467,10 @@ function populateWeeks() {
 
 // ---------- wiring ----------
 function setActiveTab(btnId, tabId) {
-  ["tabScheduleBtn", "tabLedgerBtn", "tabBacktestBtn", "tabEdgeBtn"].forEach(id => {
+  ["tabScheduleBtn", "tabLedgerBtn", "tabBacktestBtn", "tabEdgeBtn", "tabPickSixBtn"].forEach(id => {
     document.getElementById(id).classList.toggle("active", id === btnId);
   });
-  ["scheduleTab", "ledgerTab", "backtestTab", "edgeTab"].forEach(id => {
+  ["scheduleTab", "ledgerTab", "backtestTab", "edgeTab", "pickSixTab"].forEach(id => {
     document.getElementById(id).style.display = id === tabId ? "block" : "none";
   });
 }
@@ -2050,9 +2495,19 @@ document.getElementById("tabEdgeBtn").addEventListener("click", () => {
     if (saved) document.getElementById("oddsApiKey").value = saved;
   } catch (e) {}
 });
+document.getElementById("tabPickSixBtn").addEventListener("click", () => {
+  state.tab = "picksix";
+  setActiveTab("tabPickSixBtn", "pickSixTab");
+  populateP6Weeks();
+  renderP6Rows();
+  renderP6History();
+});
 document.getElementById("runBacktestBtn").addEventListener("click", runBacktest);
+document.getElementById("runLiveAccuracyBtn").addEventListener("click", runLiveAccuracy);
 document.getElementById("runEdgeScanBtn").addEventListener("click", runEdgeScan);
 document.getElementById("calcPropEdgeBtn").addEventListener("click", calcPropEdge);
+document.getElementById("p6Week").addEventListener("change", renderP6Rows);
+document.getElementById("p6SaveBtn").addEventListener("click", saveP6Week);
 document.getElementById("leagueNflBtn").addEventListener("click", () => {
   state.league = "nfl";
   document.getElementById("leagueNflBtn").classList.add("active");
@@ -2086,6 +2541,20 @@ document.getElementById("manualToggleBtn").addEventListener("click", () => {
   form.style.display = isOpen ? "none" : "block";
   caret.textContent = isOpen ? "+" : "−";
 });
+document.getElementById("parlayToggleBtn").addEventListener("click", () => {
+  const form = document.getElementById("parlayForm");
+  const caret = document.getElementById("parlayCaret");
+  const isOpen = form.style.display !== "none";
+  form.style.display = isOpen ? "none" : "block";
+  caret.textContent = isOpen ? "+" : "−";
+  if (!isOpen && parlayLegsState.length === 0) {
+    parlayLegsState = [{ matchup: "", selection: "", odds: "-110" }, { matchup: "", selection: "", odds: "-110" }];
+    renderParlayLegs();
+  }
+});
+document.getElementById("addLegBtn").addEventListener("click", addParlayLeg);
+document.getElementById("parlaySaveBtn").addEventListener("click", saveParlay);
+document.getElementById("parlayStake").addEventListener("input", updateParlayPayout);
 document.getElementById("manualSaveBtn").addEventListener("click", () => {
   const matchup = document.getElementById("manualMatchup").value;
   const selection = document.getElementById("manualSelection").value;
