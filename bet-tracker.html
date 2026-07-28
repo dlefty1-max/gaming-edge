@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0051)file:///C:/Users/dleft/Downloads/bet-tracker_7.html -->
+<!-- saved from url=(0051)file:///C:/Users/dleft/Downloads/bet-tracker_9.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -132,46 +132,9 @@
           <div class="game-sub">Wed, Sep 9, 8:20 PM</div>
           
         </div>
-        <span class="pill close">Close</span>
+        <span class="pill ">Add Pick</span>
       </div>
       
-      <div class="pick-form">
-        <div class="pick-form-inner">
-          <button class="load-trends-btn" id="loadTrendsBtn">📊 Load Trends &amp; Projection</button>
-          <button class="load-trends-btn" id="viewPlayersBtn">👤 View Players</button>
-          <div id="trendsContainer-401872656"></div>
-          <div id="playersContainer-401872656"></div>
-          <div class="row">
-            <div>
-              <label>Bet Type</label>
-              <select id="formBetType">
-                <option>Spread</option><option>Moneyline</option><option>Total</option><option>Player Prop</option><option>Team Prop</option>
-              </select>
-            </div>
-            <div>
-              <label>Odds</label>
-              <input id="formOdds" value="-110">
-            </div>
-          </div>
-          <label>Selection</label>
-          <input id="formSelection" placeholder="e.g. Chiefs -3.5" style="margin-bottom:12px;">
-          <div class="row">
-            <div>
-              <label>Stake ($)</label>
-              <input id="formStake" placeholder="25" inputmode="decimal">
-            </div>
-            <div>
-              <label>Notes</label>
-              <input id="formNotes" placeholder="optional">
-            </div>
-          </div>
-          <div class="between">
-            <span class="to-win" id="formToWin">To win: $0.00</span>
-            <button class="save-btn" id="formSaveBtn">Save Pick</button>
-          </div>
-          <div id="formKellyHint"></div>
-        </div>
-      </div>
     </div><div class="card">
       <div class="game-header" data-id="401872657">
         <div>
@@ -963,7 +926,7 @@ async function loadTrends(game, containerId) {
         ${flagHtml}
         <div class="trend-title" style="margin-top:${flagHtml ? "10px" : "0"};">Elo Rating Model</div>
         ${eloHtml}
-        <div class="trend-note">Ratings are built from game results, weighted by margin of victory — same core method as public models like FiveThirtyEight's NFL Elo. The model doesn't know about this week's injuries, weather, or matchup-specific factors, so treat this as one input, not a pick.</div>
+        <div class="trend-note">Ratings are built from game results, weighted by margin of victory — same core method as public models like FiveThirtyEight's NFL Elo.</div>
 
         <div class="trend-ats">
           <div class="trend-title" style="margin-top:10px;">Scoring Average Projection</div>
@@ -1153,7 +1116,7 @@ async function loadTrends(game, containerId) {
       const travel = travelResult.status === "fulfilled" ? travelResult.value : null;
       if (travel) {
         if (travel.international) {
-          reasons.push(`<b>International game:</b> played in ${travel.venueCity} — neutral site, disrupted routine for both teams, and typically a small sample historically (results here are noisier than a normal week).`);
+          reasons.push(`<b>International game:</b> played in ${travel.venueCity} — neutral site, disrupted routine for both teams.`);
         } else if (travel.zonesCrossed >= 2) {
           reasons.push(`<b>Travel:</b> ${awayName} traveling ${travel.zonesCrossed} time zone${travel.zonesCrossed > 1 ? "s" : ""} ${travel.direction} for this game — body-clock adjustment is a real, modest, documented factor, especially on an early kickoff.`);
         }
@@ -1164,7 +1127,6 @@ async function loadTrends(game, containerId) {
       } else {
         caseEl.innerHTML = `
           ${reasons.map(r => `<div class="trend-line" style="margin-bottom:4px;">${r}</div>`).join("")}
-          <div class="trend-note" style="margin-top:8px;">This is a summary of the signals above, not a verdict — several of the biggest gaps this app has flagged turned out to be the model missing something (see: coaching changes, rested starters), not a real edge. Read it as your own research organized, not a pick made for you.</div>
         `;
       }
     }
@@ -1521,6 +1483,7 @@ async function fetchPlayerGameLog(league, athleteId, season) {
           opponent: meta.opponent && (meta.opponent.abbreviation || meta.opponent.displayName),
           result: meta.gameResult,
           score: meta.score,
+          isHome: meta.atVs != null ? meta.atVs.trim() !== "@" : (meta.homeAway ? meta.homeAway === "home" : null),
           stats: evt.stats || [],
           labels,
         });
@@ -1563,12 +1526,38 @@ async function showPlayerDetail(game, teamId, player, containerId) {
     const vsOpp = logs.filter(g => String(g.opponentId) === String(opponentId));
     const recent = logs.slice(0, 8);
 
+    // Home/away split averages — generalized across whatever stat columns this position has
+    const homeGames = logs.filter(g => g.isHome === true);
+    const awayGames = logs.filter(g => g.isHome === false);
+    let splitHtml = "";
+    if (homeGames.length > 0 && awayGames.length > 0) {
+      const avgCol = (games, idx) => {
+        const vals = games.map(g => parseFloat(g.stats[idx])).filter(v => !isNaN(v));
+        if (vals.length === 0) return null;
+        return (vals.reduce((a, b) => a + b, 0) / vals.length);
+      };
+      const cols = labels.slice(0, 6).map((label, idx) => {
+        const h = avgCol(homeGames, idx);
+        const a = avgCol(awayGames, idx);
+        return { label, h, a };
+      }).filter(c => c.h != null || c.a != null);
+      if (cols.length > 0) {
+        splitHtml = `
+          <div class="trend-title" style="margin-top:12px;">Home vs Away Averages (${homeGames.length}H / ${awayGames.length}A games)</div>
+          <table class="statline-table">
+            <tr><th></th>${cols.map(c => `<th>${c.label}</th>`).join("")}</tr>
+            <tr><td>Home</td>${cols.map(c => `<td>${c.h != null ? c.h.toFixed(1) : "—"}</td>`).join("")}</tr>
+            <tr><td>Away</td>${cols.map(c => `<td>${c.a != null ? c.a.toFixed(1) : "—"}</td>`).join("")}</tr>
+          </table>`;
+      }
+    }
+
     const tableFor = (games, highlight) => `
       <table class="statline-table">
         <tr><th>Date</th><th>Opp</th><th>Res</th>${labels.slice(0, 6).map(l => `<th>${l}</th>`).join("")}</tr>
         ${games.map(g => `<tr class="${highlight ? "vs-highlight" : ""}">
           <td>${g.date ? new Date(g.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit" }) : "—"}</td>
-          <td>${g.opponent || "—"}</td>
+          <td>${g.isHome === true ? "vs " : g.isHome === false ? "@ " : ""}${g.opponent || "—"}</td>
           <td>${g.result || ""} ${g.score || ""}</td>
           ${g.stats.slice(0, 6).map(s => `<td>${s}</td>`).join("")}
         </tr>`).join("")}
@@ -1580,9 +1569,9 @@ async function showPlayerDetail(game, teamId, player, containerId) {
         <div class="player-name">${player.name} <span class="roster-pos">${player.pos}${player.jersey ? " · #" + player.jersey : ""}</span></div>
         <div class="trend-title" style="margin-top:10px;">vs ${opponentName} (last 3 seasons)</div>
         ${vsOpp.length > 0 ? tableFor(vsOpp, true) : `<div class="trend-note">No games against ${opponentName} in the available logs.</div>`}
+        ${splitHtml}
         <div class="trend-title" style="margin-top:12px;">Recent Games</div>
         ${tableFor(recent, false)}
-        <div class="trend-note">Logs cover roughly the last 3 seasons from ESPN's free feed — not full career history. Stat columns vary by position.</div>
       </div>
     `;
     document.getElementById("backToRoster3").addEventListener("click", () => showRoster(game, containerId));
@@ -1733,7 +1722,7 @@ async function runEdgeScan() {
         line += `<div class="trend-line" style="${r.moneyline.meaningful ? "font-weight:700;" : ""}">Moneyline — model ${r.moneyline.modelHome}% home vs market ${r.moneyline.mktHome}% — ${r.moneyline.meaningful ? `⚑ ${r.moneyline.gapPct}% gap, leans <b>${r.moneyline.side}</b> (${r.moneyline.odds})` : `${r.moneyline.gapPct}% gap, below threshold`}</div>`;
       }
       return line;
-    }).join("") + `<div class="trend-note" style="margin-top:10px;">⚑ = model and book disagree meaningfully (2+ pts on spread, 5%+ on moneyline) — worth digging into like you did manually, not an auto-bet. Large gaps often mean the model's inputs are missing something real (injury run, coaching change, rested starters) rather than the market being wrong. Check the reason before trusting the number.</div>`;
+    }).join("") + `<div class="trend-note" style="margin-top:10px;">⚑ = model and book disagree meaningfully (2+ pts on spread, 5%+ on moneyline).</div>`;
   } catch (e) {
     out.innerHTML = `<div class="error">${e.message}</div>`;
   }
@@ -1785,7 +1774,7 @@ function calcPropEdge() {
       html += `
         <div class="trend-sub" style="margin-top:8px;">Your edge on the ${side}: ${(edge * 100).toFixed(1)}%</div>
         <div class="trend-line">Quarter-Kelly stake: ${fmtMoney(bankroll * kellyF * 0.25)} · Full Kelly: ${fmtMoney(bankroll * kellyF)}</div>
-        <div class="trend-note">This edge is only as real as your ${(yourP * 100).toFixed(0)}% estimate. Books shade popular props; be honest with yourself about where your number comes from, and grade your prop picks in the ledger over time to see if your projections actually beat the market.</div>
+        <div class="trend-note">This edge is only as good as your ${(yourP * 100).toFixed(0)}% estimate — grade your prop picks in the ledger over time to see if your projections actually beat the market.</div>
       `;
     }
   } else if (!isNaN(projection)) {
@@ -1902,7 +1891,7 @@ async function runBacktest() {
         <div class="trend-title">Season Result — ${year} ${league.toUpperCase()}</div>
         <div class="trend-score">${correct} / ${totalGames} correct (${accuracy}%)</div>
         <div class="trend-line" style="margin-top:6px;">Brier score: ${brier} (lower is better; 0.25 = coin flip)</div>
-        <div class="trend-note">Context for that number: always picking the home team gets ~55%, and Vegas favorites hit ~66–67%. If the model is meaningfully below the mid-60s, its picks alone aren't beating the market — which is normal for a pure Elo model. Its value is as an input, not an oracle.</div>
+        <div class="trend-note">Context for that number: always picking the home team gets ~55%, and Vegas favorites hit ~66–67%.</div>
         <div class="trend-title" style="margin-top:14px;">Week by Week</div>
         ${weekRows.map(r => `<div class="trend-line">Week ${r.week}: ${r.correct}/${r.games} (${r.pct}%)</div>`).join("")}
         ${bigMisses.length > 0 ? `
