@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0051)file:///C:/Users/dleft/Downloads/bet-tracker_2.html -->
+<!-- saved from url=(0051)file:///C:/Users/dleft/Downloads/bet-tracker_3.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1293,15 +1293,15 @@ async function runEdgeScan() {
     out.innerHTML = `<div class="trend-note">No API key yet. This scaffolding is built for The Odds API (the-odds-api.com) format — paste your key here when you subscribe and the scan will go live. Until then, the prop calculator below works standalone.</div>`;
     return;
   }
-  out.innerHTML = '<div class="refresh-note">Fetching market lines and building model probabilities…</div>';
+  out.innerHTML = '<div class="refresh-note">Fetching spreads/moneylines and building model probabilities…</div>';
   try {
     const sportKey = state.league === "nfl" ? "americanfootball_nfl" : "americanfootball_ncaaf";
-    const res = await fetch(`https://api.the-odds-api.com/v4/sports/${sportKey}/odds/?apiKey=${apiKey}&regions=us&markets=h2h&oddsFormat=american`);
+    const res = await fetch(`https://api.the-odds-api.com/v4/sports/${sportKey}/odds/?apiKey=${apiKey}&regions=us&markets=spreads,h2h&oddsFormat=american`);
     if (!res.ok) throw new Error(`Odds API returned ${res.status} — check your key/plan`);
     const oddsData = await res.json();
     const elo = await buildEloRatings(state.league, state.year, state.week);
 
-    // map team names in odds feed to our schedule games
+    // map team names in odds feed to our schedule games — compare BOTH spread and moneyline
     const rows = [];
     state.games.forEach(g => {
       if (!g.homeId) return;
@@ -1309,38 +1309,77 @@ async function runEdgeScan() {
         o.home_team && (o.home_team.toLowerCase().includes(g.home.toLowerCase()) || g.home.toLowerCase().includes(o.home_team.toLowerCase().split(" ").pop()))
       );
       if (!match || !match.bookmakers || match.bookmakers.length === 0) return;
-      const mkt = match.bookmakers[0].markets && match.bookmakers[0].markets.find(m => m.key === "h2h");
-      if (!mkt) return;
-      const homeOutcome = mkt.outcomes.find(o => o.name === match.home_team);
-      const awayOutcome = mkt.outcomes.find(o => o.name === match.away_team);
-      if (!homeOutcome || !awayOutcome) return;
-      const rawHome = impliedProb(homeOutcome.price);
-      const rawAway = impliedProb(awayOutcome.price);
-      if (rawHome == null || rawAway == null) return;
-      const [mktHome] = noVigProbs(rawHome, rawAway);
+      const book = match.bookmakers[0];
+
       const rh = elo[g.homeId] != null ? elo[g.homeId] : 1500;
       const ra = elo[g.awayId] != null ? elo[g.awayId] : 1500;
-      const modelHome = 1 / (1 + Math.pow(10, -((rh + 55) - ra) / 400));
-      const gap = modelHome - mktHome;
-      rows.push({
-        game: `${g.away} @ ${g.home}`,
-        modelHome: (modelHome * 100).toFixed(0),
-        mktHome: (mktHome * 100).toFixed(0),
-        gap,
-        gapPct: (Math.abs(gap) * 100).toFixed(1),
-        side: gap > 0 ? g.home : g.away,
-        odds: gap > 0 ? homeOutcome.price : awayOutcome.price,
-      });
+      const diff = (rh + 55) - ra;
+      const modelHomeWinProb = 1 / (1 + Math.pow(10, -diff / 400));
+      const modelHomeSpread = -(diff / 25); // negative = model favors home by this many points
+
+      const row = { game: `${g.away} @ ${g.home}` };
+
+      // --- spread comparison ---
+      const spreadMkt = book.markets && book.markets.find(m => m.key === "spreads");
+      if (spreadMkt) {
+        const homeOutcome = spreadMkt.outcomes.find(o => o.name === match.home_team);
+        if (homeOutcome && homeOutcome.point != null) {
+          const marketHomeSpread = homeOutcome.point;
+          const gap = modelHomeSpread - marketHomeSpread;
+          row.spread = {
+            marketLine: marketHomeSpread <= 0 ? `${g.home} ${marketHomeSpread}` : `${g.away} -${marketHomeSpread}`,
+            modelLine: modelHomeSpread <= 0 ? `${g.home} ${modelHomeSpread.toFixed(1)}` : `${g.away} -${modelHomeSpread.toFixed(1)}`,
+            gapPoints: Math.abs(gap).toFixed(1),
+            side: gap > 0 ? g.away : g.home,
+            meaningful: Math.abs(gap) >= 2,
+          };
+        }
+      }
+
+      // --- moneyline comparison ---
+      const h2hMkt = book.markets && book.markets.find(m => m.key === "h2h");
+      if (h2hMkt) {
+        const homeOutcome = h2hMkt.outcomes.find(o => o.name === match.home_team);
+        const awayOutcome = h2hMkt.outcomes.find(o => o.name === match.away_team);
+        if (homeOutcome && awayOutcome) {
+          const rawHome = impliedProb(homeOutcome.price);
+          const rawAway = impliedProb(awayOutcome.price);
+          if (rawHome != null && rawAway != null) {
+            const [mktHome] = noVigProbs(rawHome, rawAway);
+            const gap = modelHomeWinProb - mktHome;
+            row.moneyline = {
+              modelHome: (modelHomeWinProb * 100).toFixed(0),
+              mktHome: (mktHome * 100).toFixed(0),
+              gapPct: (Math.abs(gap) * 100).toFixed(1),
+              side: gap > 0 ? g.home : g.away,
+              odds: gap > 0 ? homeOutcome.price : awayOutcome.price,
+              meaningful: Math.abs(gap) >= 0.05,
+            };
+          }
+        }
+      }
+
+      if (row.spread || row.moneyline) rows.push(row);
     });
     if (rows.length === 0) {
-      out.innerHTML = '<div class="trend-note">Couldn\'t match any games between the odds feed and this week\'s schedule — check that the right league/week is selected on the Schedule tab.</div>';
+      out.innerHTML = '<div class="trend-note">Couldn\'t match any games between the odds feed and this week\'s schedule — check that the right league/week is selected on the Schedule tab, and that lines are posted yet for these games.</div>';
       return;
     }
-    rows.sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap));
+    rows.sort((a, b) => {
+      const av = (a.spread ? parseFloat(a.spread.gapPoints) : 0);
+      const bv = (b.spread ? parseFloat(b.spread.gapPoints) : 0);
+      return bv - av;
+    });
     out.innerHTML = rows.map(r => {
-      const meaningful = Math.abs(r.gap) >= 0.05;
-      return `<div class="trend-line" style="${meaningful ? "font-weight:700;" : ""}">${r.game}: model ${r.modelHome}% home vs market ${r.mktHome}% — ${meaningful ? `⚑ ${r.gapPct}% gap toward <b>${r.side}</b> (${r.odds})` : `${r.gapPct}% gap, below threshold`}</div>`;
-    }).join("") + `<div class="trend-note">⚑ = model and market disagree by 5%+ — worth a look, not an auto-bet. When a simple model disagrees with the market, the market is usually the one that's right; treat flags as research prompts. Market prob shown has the vig removed.</div>`;
+      let line = `<div class="trend-line" style="margin-top:6px;"><b>${r.game}</b></div>`;
+      if (r.spread) {
+        line += `<div class="trend-line" style="${r.spread.meaningful ? "font-weight:700;" : ""}">Spread — book ${r.spread.marketLine}, model implies ${r.spread.modelLine} — ${r.spread.meaningful ? `⚑ ${r.spread.gapPoints}-pt gap, leans <b>${r.spread.side}</b>` : `${r.spread.gapPoints}-pt gap, below threshold`}</div>`;
+      }
+      if (r.moneyline) {
+        line += `<div class="trend-line" style="${r.moneyline.meaningful ? "font-weight:700;" : ""}">Moneyline — model ${r.moneyline.modelHome}% home vs market ${r.moneyline.mktHome}% — ${r.moneyline.meaningful ? `⚑ ${r.moneyline.gapPct}% gap, leans <b>${r.moneyline.side}</b> (${r.moneyline.odds})` : `${r.moneyline.gapPct}% gap, below threshold`}</div>`;
+      }
+      return line;
+    }).join("") + `<div class="trend-note" style="margin-top:10px;">⚑ = model and book disagree meaningfully (2+ pts on spread, 5%+ on moneyline) — worth digging into like you did manually, not an auto-bet. Large gaps often mean the model's inputs are missing something real (injury run, coaching change, rested starters) rather than the market being wrong. Check the reason before trusting the number.</div>`;
   } catch (e) {
     out.innerHTML = `<div class="error">${e.message}</div>`;
   }
