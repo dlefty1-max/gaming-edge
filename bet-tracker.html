@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_20.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_21.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -256,7 +256,7 @@
           <div class="game-sub">Sun, Sep 13, 1:00 PM</div>
           <div class="game-sub" style="color:#1A2530;font-weight:600;">
         Jaguars -7.5
-         · ML Browns +320 / Jaguars -410
+         · ML Browns +310 / Jaguars -395
          <span style="color:#5C6B78;font-weight:400;">(10 books)</span>
       </div>
           
@@ -1153,6 +1153,7 @@ async function computeWeekDogATS(league, year, week, apiKey) {
   const games = await fetchWeekGamesWithNames(league, year, week);
   if (games.length === 0) return null;
   let dogWins = 0, dogLosses = 0, dogPushes = 0, matched = 0;
+  let homeDog = { w: 0, l: 0, p: 0 }, awayDog = { w: 0, l: 0, p: 0 };
   try {
     const anchorDate = games[0].date;
     const hist = await fetchHistoricalOdds(league, anchorDate, apiKey);
@@ -1173,14 +1174,15 @@ async function computeWeekDogATS(league, year, week, apiKey) {
       const dogLine = Math.abs(homeLine);
       const adj = dogScore + dogLine;
       matched++;
-      if (adj > favScore) dogWins++;
-      else if (adj < favScore) dogLosses++;
-      else dogPushes++;
+      const split = isHomeDog ? homeDog : awayDog;
+      if (adj > favScore) { dogWins++; split.w++; }
+      else if (adj < favScore) { dogLosses++; split.l++; }
+      else { dogPushes++; split.p++; }
     });
   } catch (e) {
     return { week, totalGames: games.length, matched: 0, dogWins: 0, dogLosses: 0, dogPushes: 0, error: e.message };
   }
-  return { week, totalGames: games.length, matched, dogWins, dogLosses, dogPushes };
+  return { week, totalGames: games.length, matched, dogWins, dogLosses, dogPushes, homeDog, awayDog };
 }
 
 async function runWeekTrends() {
@@ -1197,7 +1199,7 @@ async function runWeekTrends() {
   }
   btn.disabled = true;
   const years = Array.from({ length: yearsBack }, (_, i) => 2025 - i); // e.g. yearsBack=3 -> [2025, 2024, 2023]
-  // byWeek[weekNum] = { dogWins, dogLosses, dogPushes, matched, totalGames }
+  // byWeek[weekNum] = { dogWins, dogLosses, dogPushes, matched, totalGames, homeDog, awayDog }
   const byWeek = {};
   let firstError = null;
   for (const year of years) {
@@ -1207,13 +1209,19 @@ async function runWeekTrends() {
         const result = await computeWeekDogATS(league, year, w, apiKey);
         if (result && result.error && !firstError) firstError = result.error;
         if (result && result.matched > 0) {
-          if (!byWeek[w]) byWeek[w] = { dogWins: 0, dogLosses: 0, dogPushes: 0, matched: 0, totalGames: 0, years: [] };
+          if (!byWeek[w]) byWeek[w] = { dogWins: 0, dogLosses: 0, dogPushes: 0, matched: 0, totalGames: 0, years: [], homeDog: { w: 0, l: 0, p: 0 }, awayDog: { w: 0, l: 0, p: 0 } };
           byWeek[w].dogWins += result.dogWins;
           byWeek[w].dogLosses += result.dogLosses;
           byWeek[w].dogPushes += result.dogPushes;
           byWeek[w].matched += result.matched;
           byWeek[w].totalGames += result.totalGames;
           byWeek[w].years.push(year);
+          if (result.homeDog) {
+            byWeek[w].homeDog.w += result.homeDog.w; byWeek[w].homeDog.l += result.homeDog.l; byWeek[w].homeDog.p += result.homeDog.p;
+          }
+          if (result.awayDog) {
+            byWeek[w].awayDog.w += result.awayDog.w; byWeek[w].awayDog.l += result.awayDog.l; byWeek[w].awayDog.p += result.awayDog.p;
+          }
         }
       } catch (e) { if (!firstError) firstError = e.message; }
     }
@@ -1227,14 +1235,21 @@ async function runWeekTrends() {
     return;
   }
   let totalW = 0, totalL = 0, totalP = 0;
-  weekNums.forEach(w => { totalW += byWeek[w].dogWins; totalL += byWeek[w].dogLosses; totalP += byWeek[w].dogPushes; });
+  let totalHomeDog = { w: 0, l: 0, p: 0 }, totalAwayDog = { w: 0, l: 0, p: 0 };
+  weekNums.forEach(w => {
+    totalW += byWeek[w].dogWins; totalL += byWeek[w].dogLosses; totalP += byWeek[w].dogPushes;
+    totalHomeDog.w += byWeek[w].homeDog.w; totalHomeDog.l += byWeek[w].homeDog.l; totalHomeDog.p += byWeek[w].homeDog.p;
+    totalAwayDog.w += byWeek[w].awayDog.w; totalAwayDog.l += byWeek[w].awayDog.l; totalAwayDog.p += byWeek[w].awayDog.p;
+  });
+  const pctOf = (s) => s.w + s.l > 0 ? ((s.w / (s.w + s.l)) * 100).toFixed(0) : "—";
   out.innerHTML = `
     <div class="trend-score">Underdogs ${totalW}-${totalL}-${totalP} ATS (${((totalW / (totalW + totalL)) * 100).toFixed(1)}% cover rate) across ${years.length} season${years.length > 1 ? "s" : ""} (${years.slice().reverse().join(", ")}), Weeks 1–${throughWeek}</div>
+    <div class="trend-line">— Home dogs: ${totalHomeDog.w}-${totalHomeDog.l}-${totalHomeDog.p} (${pctOf(totalHomeDog)}%) · Away dogs: ${totalAwayDog.w}-${totalAwayDog.l}-${totalAwayDog.p} (${pctOf(totalAwayDog)}%)</div>
     <div class="trend-title" style="margin-top:10px;">By Week (combined across ${years.length} season${years.length > 1 ? "s" : ""})</div>
     ${weekNums.map(w => {
       const r = byWeek[w];
       const pct = r.dogWins + r.dogLosses > 0 ? ((r.dogWins / (r.dogWins + r.dogLosses)) * 100).toFixed(0) : "—";
-      return `<div class="trend-line">Week ${w}: dogs ${r.dogWins}-${r.dogLosses}-${r.dogPushes} (${pct}% cover) — ${r.matched} games across ${r.years.length} season${r.years.length > 1 ? "s" : ""}</div>`;
+      return `<div class="trend-line">Week ${w}: dogs ${r.dogWins}-${r.dogLosses}-${r.dogPushes} (${pct}% cover) — home ${pctOf(r.homeDog)}% / away ${pctOf(r.awayDog)}% — ${r.matched} games across ${r.years.length} season${r.years.length > 1 ? "s" : ""}</div>`;
     }).join("")}
   `;
   btn.disabled = false;
