@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_19.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_20.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1022,6 +1022,15 @@ async function fetchHistoricalOdds(league, isoTimestamp, apiKey) {
   // ESPN's date strings don't always include seconds, so rebuild it cleanly rather than pass it through as-is.
   const d = new Date(isoTimestamp);
   const normalizedDate = d.toISOString().replace(/\.\d{3}Z$/, "Z");
+
+  // Cache aggressively — this is a snapshot of a PAST closing line, which never changes,
+  // and this endpoint costs 10 credits × regions × markets per call (20 credits here).
+  const cacheKey = `hist-odds-${sportKey}-${normalizedDate}`;
+  try {
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) return JSON.parse(cached);
+  } catch (e) {}
+
   const params = new URLSearchParams({ apiKey, regions: "us", markets: "spreads,totals", oddsFormat: "american", date: normalizedDate });
   const res = await fetch(`https://api.the-odds-api.com/v4/historical/sports/${sportKey}/odds/?${params.toString()}`);
   if (!res.ok) {
@@ -1030,7 +1039,9 @@ async function fetchHistoricalOdds(league, isoTimestamp, apiKey) {
     throw new Error(`historical odds request failed: ${res.status}${bodyText ? " — " + bodyText.slice(0, 200) : ""}`);
   }
   const json = await res.json();
-  return json.data || [];
+  const data = json.data || [];
+  try { localStorage.setItem(cacheKey, JSON.stringify(data)); } catch (e) { /* storage full or unavailable — not fatal, just no caching this time */ }
+  return data;
 }
 
 async function fetchTeamCompletedGames(league, teamId, year) {
