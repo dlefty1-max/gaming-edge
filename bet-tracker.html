@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_16.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_19.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1018,7 +1018,11 @@ function newsUrl(league, teamId) {
 // ---------- ATS / O-U historical trends (needs paid odds API with historical access) ----------
 async function fetchHistoricalOdds(league, isoTimestamp, apiKey) {
   const sportKey = league === "nfl" ? "americanfootball_nfl" : "americanfootball_ncaaf";
-  const params = new URLSearchParams({ apiKey, regions: "us", markets: "spreads,totals", oddsFormat: "american", date: isoTimestamp });
+  // The Odds API wants exact ISO8601 with seconds, e.g. 2021-10-18T12:00:00Z.
+  // ESPN's date strings don't always include seconds, so rebuild it cleanly rather than pass it through as-is.
+  const d = new Date(isoTimestamp);
+  const normalizedDate = d.toISOString().replace(/\.\d{3}Z$/, "Z");
+  const params = new URLSearchParams({ apiKey, regions: "us", markets: "spreads,totals", oddsFormat: "american", date: normalizedDate });
   const res = await fetch(`https://api.the-odds-api.com/v4/historical/sports/${sportKey}/odds/?${params.toString()}`);
   if (!res.ok) {
     let bodyText = "";
