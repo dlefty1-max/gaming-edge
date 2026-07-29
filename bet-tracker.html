@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_26.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_27.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1043,6 +1043,58 @@ function newsUrl(league, teamId) {
 }
 
 // ---------- ATS / O-U historical trends (needs paid odds API with historical access) ----------
+// ---------- IndexedDB cache for historical odds — localStorage's 5-10MB limit is too small ----------
+// for hundreds of cached game snapshots; IndexedDB has effectively no practical limit for this use.
+const HISTDB_NAME = "bet-tracker-hist-odds";
+const HISTDB_STORE = "snapshots";
+function openHistDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(HISTDB_NAME, 1);
+    req.onupgradeneeded = () => { req.result.createObjectStore(HISTDB_STORE); };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function histDbGet(key) {
+  try {
+    const db = await openHistDB();
+    return await new Promise((resolve) => {
+      const tx = db.transaction(HISTDB_STORE, "readonly");
+      const req = tx.objectStore(HISTDB_STORE).get(key);
+      req.onsuccess = () => resolve(req.result != null ? req.result : null);
+      req.onerror = () => resolve(null);
+    });
+  } catch (e) { return null; }
+}
+async function histDbSet(key, value) {
+  try {
+    const db = await openHistDB();
+    return await new Promise((resolve) => {
+      const tx = db.transaction(HISTDB_STORE, "readwrite");
+      tx.objectStore(HISTDB_STORE).put(value, key);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    });
+  } catch (e) { return false; }
+}
+async function histDbGetAll() {
+  try {
+    const db = await openHistDB();
+    return await new Promise((resolve) => {
+      const tx = db.transaction(HISTDB_STORE, "readonly");
+      const store = tx.objectStore(HISTDB_STORE);
+      const keysReq = store.getAllKeys();
+      const valsReq = store.getAll();
+      let keys = null, vals = null;
+      const tryResolve = () => { if (keys && vals) { const obj = {}; keys.forEach((k, i) => obj[k] = vals[i]); resolve(obj); } };
+      keysReq.onsuccess = () => { keys = keysReq.result; tryResolve(); };
+      valsReq.onsuccess = () => { vals = valsReq.result; tryResolve(); };
+      keysReq.onerror = () => resolve({});
+      valsReq.onerror = () => resolve({});
+    });
+  } catch (e) { return {}; }
+}
+
 async function fetchHistoricalOdds(league, isoTimestamp, apiKey) {
   const sportKey = league === "nfl" ? "americanfootball_nfl" : "americanfootball_ncaaf";
   // The Odds API wants exact ISO8601 with seconds, e.g. 2021-10-18T12:00:00Z.
@@ -1053,10 +1105,8 @@ async function fetchHistoricalOdds(league, isoTimestamp, apiKey) {
   // Cache aggressively — this is a snapshot of a PAST closing line, which never changes,
   // and this endpoint costs 10 credits × regions × markets per call (20 credits here).
   const cacheKey = `hist-odds-${sportKey}-${normalizedDate}`;
-  try {
-    const cached = localStorage.getItem(cacheKey);
-    if (cached) return JSON.parse(cached);
-  } catch (e) {}
+  const cached = await histDbGet(cacheKey);
+  if (cached) return cached;
 
   const params = new URLSearchParams({ apiKey, regions: "us", markets: "spreads,totals", oddsFormat: "american", date: normalizedDate });
   const res = await fetch(`https://api.the-odds-api.com/v4/historical/sports/${sportKey}/odds/?${params.toString()}`);
@@ -1067,7 +1117,7 @@ async function fetchHistoricalOdds(league, isoTimestamp, apiKey) {
   }
   const json = await res.json();
   const data = json.data || [];
-  try { localStorage.setItem(cacheKey, JSON.stringify(data)); } catch (e) { /* storage full or unavailable — not fatal, just no caching this time */ }
+  await histDbSet(cacheKey, data);
   return data;
 }
 
@@ -1140,7 +1190,8 @@ async function estimateCacheAllCost() {
         const d = new Date(g.date);
         const normalized = d.toISOString().replace(/\.\d{3}Z$/, "Z");
         const sportKey = league === "nfl" ? "americanfootball_nfl" : "americanfootball_ncaaf";
-        try { if (localStorage.getItem(`hist-odds-${sportKey}-${normalized}`)) alreadyCached++; } catch (e) {}
+        const cached = await histDbGet(`hist-odds-${sportKey}-${normalized}`);
+        if (cached) alreadyCached++;
       }
     }
     const toFetch = totalGames - alreadyCached;
@@ -2583,13 +2634,15 @@ function renderP6History() {
 }
 
 // ---------- full backup / restore (everything in localStorage) ----------
-function backupAll() {
-  const data = {};
+async function backupAll() {
+  const localData = {};
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
-    data[key] = localStorage.getItem(key);
+    localData[key] = localStorage.getItem(key);
   }
-  const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
+  const histData = await histDbGetAll();
+  const payload = { format: "bet-tracker-v2", localStorage: localData, historicalOdds: histData };
+  const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -2601,12 +2654,17 @@ function backupAll() {
 
 function restoreBackup(file) {
   const reader = new FileReader();
-  reader.onload = (e) => {
+  reader.onload = async (e) => {
     try {
-      const data = JSON.parse(e.target.result);
-      Object.keys(data).forEach(key => {
-        localStorage.setItem(key, data[key]);
-      });
+      const parsed = JSON.parse(e.target.result);
+      if (parsed.format === "bet-tracker-v2") {
+        Object.keys(parsed.localStorage || {}).forEach(key => localStorage.setItem(key, parsed.localStorage[key]));
+        const entries = Object.entries(parsed.historicalOdds || {});
+        for (const [key, value] of entries) { await histDbSet(key, value); }
+      } else {
+        // older backup format — flat localStorage dump only, no historical odds cache included
+        Object.keys(parsed).forEach(key => localStorage.setItem(key, parsed[key]));
+      }
       showToast("Backup restored — reloading…");
       setTimeout(() => location.reload(), 1000);
     } catch (err) {
