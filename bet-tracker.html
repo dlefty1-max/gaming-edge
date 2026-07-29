@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_15.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_16.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1018,8 +1018,13 @@ function newsUrl(league, teamId) {
 // ---------- ATS / O-U historical trends (needs paid odds API with historical access) ----------
 async function fetchHistoricalOdds(league, isoTimestamp, apiKey) {
   const sportKey = league === "nfl" ? "americanfootball_nfl" : "americanfootball_ncaaf";
-  const res = await fetch(`https://api.the-odds-api.com/v4/historical/sports/${sportKey}/odds/?apiKey=${apiKey}&regions=us&markets=spreads,totals&oddsFormat=american&date=${isoTimestamp}`);
-  if (!res.ok) throw new Error(`historical odds request failed: ${res.status}`);
+  const params = new URLSearchParams({ apiKey, regions: "us", markets: "spreads,totals", oddsFormat: "american", date: isoTimestamp });
+  const res = await fetch(`https://api.the-odds-api.com/v4/historical/sports/${sportKey}/odds/?${params.toString()}`);
+  if (!res.ok) {
+    let bodyText = "";
+    try { bodyText = await res.text(); } catch (e) {}
+    throw new Error(`historical odds request failed: ${res.status}${bodyText ? " — " + bodyText.slice(0, 200) : ""}`);
+  }
   const json = await res.json();
   return json.data || [];
 }
@@ -1057,6 +1062,7 @@ async function computeATSTrends(league, teamId, year, apiKey, progressCb) {
   let homeAts = { w: 0, l: 0, p: 0 }, awayAts = { w: 0, l: 0, p: 0 };
   let homeOu = { o: 0, u: 0, p: 0 }, awayOu = { o: 0, u: 0, p: 0 };
   const gameRows = [];
+  let firstError = null;
   for (let i = 0; i < games.length; i++) {
     const g = games[i];
     if (progressCb) progressCb(i + 1, games.length);
@@ -1101,9 +1107,9 @@ async function computeATSTrends(league, teamId, year, apiKey, progressCb) {
         }
       }
       gameRows.push({ date: g.date, opp, line, atsResult, totalLine, ouResult, isHome: isTeamHome });
-    } catch (e) { /* skip games where the historical lookup fails or has no data */ }
+    } catch (e) { if (!firstError) firstError = e.message; }
   }
-  return { atsWins, atsLosses, atsPushes, overs, unders, ouPushes, gameRows, totalGames: games.length, homeAts, awayAts, homeOu, awayOu };
+  return { atsWins, atsLosses, atsPushes, overs, unders, ouPushes, gameRows, totalGames: games.length, homeAts, awayAts, homeOu, awayOu, error: firstError };
 }
 
 // ---------- league-wide underdog trends by week ----------
@@ -1156,7 +1162,9 @@ async function computeWeekDogATS(league, year, week, apiKey) {
       else if (adj < favScore) dogLosses++;
       else dogPushes++;
     });
-  } catch (e) { /* skip week if historical fetch fails */ }
+  } catch (e) {
+    return { week, totalGames: games.length, matched: 0, dogWins: 0, dogLosses: 0, dogPushes: 0, error: e.message };
+  }
   return { week, totalGames: games.length, matched, dogWins, dogLosses, dogPushes };
 }
 
@@ -1176,11 +1184,13 @@ async function runWeekTrends() {
   const years = Array.from({ length: yearsBack }, (_, i) => 2025 - i); // e.g. yearsBack=3 -> [2025, 2024, 2023]
   // byWeek[weekNum] = { dogWins, dogLosses, dogPushes, matched, totalGames }
   const byWeek = {};
+  let firstError = null;
   for (const year of years) {
     for (let w = 1; w <= throughWeek; w++) {
       out.innerHTML = `<div class="refresh-note">Checking ${year}, Week ${w} of ${throughWeek}…</div>`;
       try {
         const result = await computeWeekDogATS(league, year, w, apiKey);
+        if (result && result.error && !firstError) firstError = result.error;
         if (result && result.matched > 0) {
           if (!byWeek[w]) byWeek[w] = { dogWins: 0, dogLosses: 0, dogPushes: 0, matched: 0, totalGames: 0, years: [] };
           byWeek[w].dogWins += result.dogWins;
@@ -1190,12 +1200,14 @@ async function runWeekTrends() {
           byWeek[w].totalGames += result.totalGames;
           byWeek[w].years.push(year);
         }
-      } catch (e) { /* skip this week/year */ }
+      } catch (e) { if (!firstError) firstError = e.message; }
     }
   }
   const weekNums = Object.keys(byWeek).map(Number).sort((a, b) => a - b);
   if (weekNums.length === 0) {
-    out.innerHTML = `<div class="trend-note">Couldn't match any weeks — check the seasons have completed games and your API key has historical access.</div>`;
+    out.innerHTML = firstError
+      ? `<div class="error">Couldn't get historical data: ${firstError}</div>`
+      : `<div class="trend-note">Couldn't match any weeks — team names may not have matched between ESPN and the odds feed. Try a smaller range to test.</div>`;
     btn.disabled = false;
     return;
   }
@@ -1241,7 +1253,7 @@ async function loadAtsTrends(game, containerId, year) {
       <div class="trend-line">— Home: ${fmtSplit(t.homeAts)} · Away: ${fmtSplit(t.awayAts)}</div>
       <div class="trend-line" style="margin-top:4px;"><b>O/U overall:</b> ${t.overs}-${t.unders}-${t.ouPushes}</div>
       <div class="trend-line">— Home: ${fmtOuSplit(t.homeOu)} · Away: ${fmtOuSplit(t.awayOu)}</div>
-      ${t.gameRows.length > 0 ? `<div class="trend-note" style="margin-top:6px;">Last 5: ${t.gameRows.slice(-5).map(r => `${r.isHome ? "vs" : "@"} ${r.opp} (${r.atsResult || "—"}/${r.ouResult || "—"})`).join(", ")}</div>` : `<div class="trend-note">Games found, but no historical lines matched.</div>`}`}
+      ${t.gameRows.length > 0 ? `<div class="trend-note" style="margin-top:6px;">Last 5: ${t.gameRows.slice(-5).map(r => `${r.isHome ? "vs" : "@"} ${r.opp} (${r.atsResult || "—"}/${r.ouResult || "—"})`).join(", ")}</div>` : `<div class="error">Games found, but no historical lines matched.${t.error ? ` Error: ${t.error}` : ""}</div>`}`}
     `;
     el.innerHTML = `
       <div class="trend-cols">
