@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_21.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_22.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -465,6 +465,28 @@
   </div>
 
   <div id="backtestTab" style="display:none;">
+    <div class="card" style="padding:16px; margin-bottom:16px;">
+      <div class="trend-title" style="margin-bottom:8px;">Cache All Teams (Prep Tool)</div>
+      <div class="refresh-note">Warms the historical-odds cache for every team's completed season in one pass, so later on you can check any team's ATS trends in any matchup for free instead of clicking through games one at a time. This is the same data the per-game "Load ATS/O-U Trends" button pulls — just done once, up front, for the whole league. Cost is real (see estimate below) but one-time — anything already cached is skipped automatically on future runs.</div>
+      <div class="row">
+        <div>
+          <label>League</label>
+          <select id="cacheAllLeague">
+            <option value="nfl" selected="">NFL</option>
+            <option value="cfb">College Football</option>
+          </select>
+        </div>
+        <div>
+          <label>Season</label>
+          <select id="cacheAllYear">
+            <option value="2025" selected="">2025</option>
+            <option value="2024">2024</option>
+          </select>
+        </div>
+      </div>
+      <button class="save-btn full" id="runCacheAllBtn">Cache All Teams for This Season</button>
+      <div id="cacheAllResults" style="margin-top:12px;"></div>
+    </div>
     <div class="card" style="padding:16px; margin-bottom:16px;">
       <div class="trend-title" style="margin-bottom:8px;">League Underdog Trends by Week</div>
       <div class="refresh-note">Checks how underdogs actually did against the spread in each week of a season — the real, computed answer to things like "do dogs cover more in Week 1 than Week 3," using your actual historical odds data instead of outside research.</div>
@@ -1068,6 +1090,71 @@ async function fetchTeamCompletedGames(league, teamId, year) {
       awayScore: parseInt((away.score && (away.score.displayValue || away.score.value)) || away.score, 10),
     };
   });
+}
+
+// ---------- cache-all-teams prep tool ----------
+async function fetchAllTeamIds(league) {
+  const sport = league === "nfl" ? "nfl" : "college-football";
+  const res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/${sport}/teams?limit=200`);
+  if (!res.ok) throw new Error(`team list fetch failed: ${res.status}`);
+  const json = await res.json();
+  const teams = [];
+  (json.sports && json.sports[0] && json.sports[0].leagues && json.sports[0].leagues[0] && json.sports[0].leagues[0].teams || []).forEach(t => {
+    if (t.team) teams.push({ id: t.team.id, name: t.team.shortDisplayName || t.team.abbreviation });
+  });
+  return teams;
+}
+
+async function estimateCacheAllCost() {
+  const league = document.getElementById("cacheAllLeague").value;
+  const year = parseInt(document.getElementById("cacheAllYear").value, 10);
+  const out = document.getElementById("cacheAllResults");
+  out.innerHTML = `<div class="refresh-note">Estimating cost…</div>`;
+  try {
+    const teams = await fetchAllTeamIds(league);
+    let totalGames = 0, alreadyCached = 0;
+    for (const t of teams) {
+      const games = await fetchTeamCompletedGames(league, t.id, year);
+      totalGames += games.length;
+      for (const g of games) {
+        const d = new Date(g.date);
+        const normalized = d.toISOString().replace(/\.\d{3}Z$/, "Z");
+        const sportKey = league === "nfl" ? "americanfootball_nfl" : "americanfootball_ncaaf";
+        try { if (localStorage.getItem(`hist-odds-${sportKey}-${normalized}`)) alreadyCached++; } catch (e) {}
+      }
+    }
+    const toFetch = totalGames - alreadyCached;
+    const estCost = toFetch * 20;
+    out.innerHTML = `
+      <div class="trend-line">${teams.length} teams, ${totalGames} total team-games for ${year}.</div>
+      <div class="trend-line">${alreadyCached} already cached (free) · ${toFetch} new lookups needed.</div>
+      <div class="trend-score">Estimated cost: ~${estCost.toLocaleString()} credits</div>
+      <button class="save-btn full" id="confirmCacheAllBtn" style="margin-top:8px;">Proceed — Cache Them Now</button>
+    `;
+    document.getElementById("confirmCacheAllBtn").addEventListener("click", () => runCacheAllTeams(teams, year));
+  } catch (e) {
+    out.innerHTML = `<div class="error">${e.message}</div>`;
+  }
+}
+
+async function runCacheAllTeams(teams, year) {
+  const league = document.getElementById("cacheAllLeague").value;
+  const out = document.getElementById("cacheAllResults");
+  let apiKey = "";
+  try { apiKey = localStorage.getItem("odds-api-key") || ""; } catch (e) {}
+  if (!apiKey) {
+    out.innerHTML = `<div class="trend-note">No API key saved yet — add one on the Edge tab first.</div>`;
+    return;
+  }
+  let done = 0;
+  for (const t of teams) {
+    done++;
+    out.innerHTML = `<div class="refresh-note">Caching ${t.name} (${done}/${teams.length})…</div>`;
+    try {
+      await computeATSTrends(league, t.id, year, apiKey, () => {});
+    } catch (e) { /* skip team on error, continue with the rest */ }
+  }
+  out.innerHTML = `<div class="trend-score">Done — cached ${year} for all ${teams.length} teams.</div><div class="trend-note">Any matchup you check from here on for ${year} will pull from cache at no extra cost.</div>`;
 }
 
 async function computeATSTrends(league, teamId, year, apiKey, progressCb) {
@@ -2961,6 +3048,7 @@ document.getElementById("tabPickSixBtn").addEventListener("click", () => {
 document.getElementById("runBacktestBtn").addEventListener("click", runBacktest);
 document.getElementById("runLiveAccuracyBtn").addEventListener("click", runLiveAccuracy);
 document.getElementById("runWeekTrendsBtn").addEventListener("click", runWeekTrends);
+document.getElementById("runCacheAllBtn").addEventListener("click", estimateCacheAllCost);
 document.getElementById("runEdgeScanBtn").addEventListener("click", runEdgeScan);
 document.getElementById("calcPropEdgeBtn").addEventListener("click", calcPropEdge);
 document.getElementById("p6Week").addEventListener("change", renderP6Rows);
