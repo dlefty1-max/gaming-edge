@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_25.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_26.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -446,6 +446,11 @@
         <div class="between-sm" style="font-weight:700;"><span style="color:#5C6B78;">Net profit</span><span id="netProfit" style="color: rgb(76, 139, 90);">$0.00</span></div>
       </div>
       <div class="divider" id="bankrollChartContainer"><div class="chart-empty">Settle a few bets to see your bankroll trend here.</div></div>
+    </div>
+    <div class="toolbar">
+      <button id="backupAllBtn">💾 Backup Everything</button>
+      <label for="restoreFileInput" class="save-btn" style="display:inline-block; text-align:center; cursor:pointer; padding:8px; flex:1; font-size:12px; border-radius:8px;">📂 Restore Backup</label>
+      <input type="file" id="restoreFileInput" accept=".json" style="display:none;">
     </div>
     <div class="toolbar">
       <button id="checkResultsBtn">🔄 Check Results</button>
@@ -2577,6 +2582,40 @@ function renderP6History() {
   `;
 }
 
+// ---------- full backup / restore (everything in localStorage) ----------
+function backupAll() {
+  const data = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    data[key] = localStorage.getItem(key);
+  }
+  const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `bet-tracker-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast("Backup downloaded.");
+}
+
+function restoreBackup(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data = JSON.parse(e.target.result);
+      Object.keys(data).forEach(key => {
+        localStorage.setItem(key, data[key]);
+      });
+      showToast("Backup restored — reloading…");
+      setTimeout(() => location.reload(), 1000);
+    } catch (err) {
+      showToast("Couldn't read that backup file.");
+    }
+  };
+  reader.readAsText(file);
+}
+
 // ---------- backtest (walk-forward season replay) ----------
 // ---------- live accuracy (current season, ongoing) ----------
 async function runLiveAccuracy() {
@@ -3145,6 +3184,10 @@ document.getElementById("startingBankrollInput").addEventListener("change", (e) 
   state.startingBankroll = parseFloat(e.target.value) || 0;
   saveData();
   renderLedger();
+});
+document.getElementById("backupAllBtn").addEventListener("click", backupAll);
+document.getElementById("restoreFileInput").addEventListener("change", (e) => {
+  if (e.target.files[0]) restoreBackup(e.target.files[0]);
 });
 document.getElementById("checkResultsBtn").addEventListener("click", checkResults);
 document.getElementById("exportCsvBtn").addEventListener("click", downloadCsv);
