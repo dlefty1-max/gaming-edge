@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_27.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_28.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -136,7 +136,7 @@
           <div class="game-sub">Wed, Sep 9, 8:20 PM</div>
           <div class="game-sub" style="color:#1A2530;font-weight:600;">
         Seahawks -3.5
-         · ML Patriots +164 / Seahawks -198
+         · ML Patriots +160 / Seahawks -192
          <span style="color:#5C6B78;font-weight:400;">(10 books)</span>
       </div>
           
@@ -151,7 +151,7 @@
           <div class="game-sub">Thu, Sep 10, 8:35 PM</div>
           <div class="game-sub" style="color:#1A2530;font-weight:600;">
         Rams -3.5
-         · ML 49ers +150 / Rams -180
+         · ML 49ers +160 / Rams -192
          <span style="color:#5C6B78;font-weight:400;">(10 books)</span>
       </div>
           
@@ -166,7 +166,7 @@
           <div class="game-sub">Sun, Sep 13, 1:00 PM</div>
           <div class="game-sub" style="color:#1A2530;font-weight:600;">
         Bengals -3.5
-         · ML Buccaneers +160 / Bengals -192
+         · ML Buccaneers +170 / Bengals -205
          <span style="color:#5C6B78;font-weight:400;">(10 books)</span>
       </div>
           
@@ -196,7 +196,7 @@
           <div class="game-sub">Sun, Sep 13, 1:00 PM</div>
           <div class="game-sub" style="color:#1A2530;font-weight:600;">
         Titans -2.5
-         · ML Jets +130 / Titans -155
+         · ML Jets +124 / Titans -148
          <span style="color:#5C6B78;font-weight:400;">(10 books)</span>
       </div>
           
@@ -211,7 +211,7 @@
           <div class="game-sub">Sun, Sep 13, 1:00 PM</div>
           <div class="game-sub" style="color:#1A2530;font-weight:600;">
         Ravens -3.5
-         · ML Ravens -185 / Colts +154
+         · ML Ravens -180 / Colts +150
          <span style="color:#5C6B78;font-weight:400;">(10 books)</span>
       </div>
           
@@ -226,7 +226,7 @@
           <div class="game-sub">Sun, Sep 13, 1:00 PM</div>
           <div class="game-sub" style="color:#1A2530;font-weight:600;">
         Steelers -3
-         · ML Falcons +142 / Steelers -170
+         · ML Falcons +150 / Steelers -180
          <span style="color:#5C6B78;font-weight:400;">(10 books)</span>
       </div>
           
@@ -270,7 +270,7 @@
           <div class="game-title">Bills @ Texans</div>
           <div class="game-sub">Sun, Sep 13, 1:00 PM</div>
           <div class="game-sub" style="color:#1A2530;font-weight:600;">
-        Bills -1
+        Texans 0
          · ML Bills -120 / Texans +100
          <span style="color:#5C6B78;font-weight:400;">(10 books)</span>
       </div>
@@ -286,7 +286,7 @@
           <div class="game-sub">Sun, Sep 13, 4:25 PM</div>
           <div class="game-sub" style="color:#1A2530;font-weight:600;">
         Raiders -3.5
-         · ML Dolphins +170 / Raiders -205
+         · ML Dolphins +164 / Raiders -198
          <span style="color:#5C6B78;font-weight:400;">(10 books)</span>
       </div>
           
@@ -300,8 +300,8 @@
           <div class="game-title">Packers @ Vikings</div>
           <div class="game-sub">Sun, Sep 13, 4:25 PM</div>
           <div class="game-sub" style="color:#1A2530;font-weight:600;">
-        Vikings 0
-         · ML Packers -115 / Vikings -105
+        Vikings -1
+         · ML Packers -102 / Vikings -118
          <span style="color:#5C6B78;font-weight:400;">(10 books)</span>
       </div>
           
@@ -315,7 +315,7 @@
           <div class="game-title">Commanders @ Eagles</div>
           <div class="game-sub">Sun, Sep 13, 4:25 PM</div>
           <div class="game-sub" style="color:#1A2530;font-weight:600;">
-        Eagles -4
+        Eagles -4.5
          · ML Commanders +180 / Eagles -218
          <span style="color:#5C6B78;font-weight:400;">(10 books)</span>
       </div>
@@ -331,7 +331,7 @@
           <div class="game-sub">Sun, Sep 13, 4:25 PM</div>
           <div class="game-sub" style="color:#1A2530;font-weight:600;">
         Chargers -10.5
-         · ML Cardinals +455 / Chargers -625
+         · ML Cardinals +425 / Chargers -575
          <span style="color:#5C6B78;font-weight:400;">(10 books)</span>
       </div>
           
@@ -361,7 +361,7 @@
           <div class="game-sub">Mon, Sep 14, 8:15 PM</div>
           <div class="game-sub" style="color:#1A2530;font-weight:600;">
         Chiefs -3
-         · ML Broncos +136 / Chiefs -162
+         · ML Broncos +130 / Chiefs -155
          <span style="color:#5C6B78;font-weight:400;">(10 books)</span>
       </div>
           
@@ -1816,7 +1816,7 @@ async function loadSchedule() {
 async function loadOddsForSchedule() {
   let apiKey = "";
   try { apiKey = localStorage.getItem("odds-api-key") || ""; } catch (e) {}
-  if (!apiKey || state.seasonType !== 2) { state.oddsData = null; return; }
+  if (!apiKey) { state.oddsData = null; return; }
   try {
     const sportKey = state.league === "nfl" ? "americanfootball_nfl" : "americanfootball_ncaaf";
     const res = await fetch(`https://api.the-odds-api.com/v4/sports/${sportKey}/odds/?apiKey=${apiKey}&regions=us&markets=spreads,h2h&oddsFormat=american`);
