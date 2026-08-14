@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_44.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_45.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -110,17 +110,17 @@
     </div>
   </div>
   <nav>
-    <button id="tabScheduleBtn" class="active">Schedule</button>
+    <button id="tabScheduleBtn" class="">Schedule</button>
     <button id="tabLedgerBtn">My Bets</button>
     <button id="tabBacktestBtn">Backtest</button>
     <button id="tabEdgeBtn">Edge</button>
-    <button id="tabPropsBtn">Props</button>
+    <button id="tabPropsBtn" class="active">Props</button>
     <button id="tabPickSixBtn">Pick 6</button>
   </nav>
 </header>
 
 <main>
-  <div id="scheduleTab">
+  <div id="scheduleTab" style="display: none;">
     <div class="league-toggle">
       <button id="leagueNflBtn" class="active">NFL</button>
       <button id="leagueCfbBtn">College Football</button>
@@ -957,7 +957,7 @@
     </div>
   </div>
 
-  <div id="propsTab" style="display:none;">
+  <div id="propsTab" style="display: block;">
     <div class="card" style="padding:16px; margin-bottom:16px;">
       <div class="trend-title" style="margin-bottom:6px;">Weekly Props Scanner</div>
       <div class="refresh-note">Pulls posted player prop lines for every game this week, cross-references each player's real game log, and ranks every prop by how often they've actually gone over that number. This wires together several new pieces at once — real API cost, and worth checking the first run carefully.</div>
@@ -1595,6 +1595,7 @@ const PROP_MARKET_MAP = {
   player_rush_yds: { positions: ["RB", "QB"], labelMatch: "YDS", desc: "rushing yds" },
   player_reception_yds: { positions: ["WR", "TE", "RB"], labelMatch: "YDS", desc: "receiving yds" },
   player_receptions: { positions: ["WR", "TE", "RB"], labelMatch: "REC", desc: "receptions" },
+  player_anytime_td: { positions: ["QB", "RB", "WR", "TE"], labelMatch: "TD", desc: "anytime TD scorer", type: "boolean" },
 };
 
 async function fetchOddsEventsList(league, seasonType, apiKey) {
@@ -1669,6 +1670,11 @@ async function runPropScan(matchedEvents, apiKey) {
       propsData = await fetchEventPlayerProps(state.league, state.seasonType, event.id, apiKey);
     } catch (e) { skipped.push(`${game.away} @ ${game.home}: ${e.message}`); continue; }
 
+    if (done === 1) {
+      // raw diagnostic for the first game only — lets us see exactly what came back, not just our interpretation of it
+      skipped.push(`RAW (first game only): keys=[${Object.keys(propsData).join(", ")}], bookmakers=${JSON.stringify(propsData.bookmakers).slice(0, 500)}`);
+    }
+
     // fetch both rosters once per game so we can match prop player names to ESPN athlete IDs
     let awayRoster = [], homeRoster = [];
     try {
@@ -1695,19 +1701,24 @@ async function runPropScan(matchedEvents, apiKey) {
       const mkt = (book.markets || []).find(m => m.key === marketKey);
       if (!mkt) continue;
 
-      // group outcomes by player (description field), pairing Over/Under
+      // group outcomes by player (description field) — Over/Under for numeric markets, Yes/No for boolean ones
       const byPlayer = {};
       (mkt.outcomes || []).forEach(o => {
         const name = o.description || o.name;
         if (!name) return;
         if (!byPlayer[name]) byPlayer[name] = {};
-        if (o.name === "Over") { byPlayer[name].overPrice = o.price; byPlayer[name].line = o.point; }
-        if (o.name === "Under") { byPlayer[name].underPrice = o.price; }
+        if (mapInfo.type === "boolean") {
+          if (o.name === "Yes") byPlayer[name].yesPrice = o.price;
+        } else {
+          if (o.name === "Over") { byPlayer[name].overPrice = o.price; byPlayer[name].line = o.point; }
+          if (o.name === "Under") { byPlayer[name].underPrice = o.price; }
+        }
       });
 
       for (const playerName of Object.keys(byPlayer)) {
         const propInfo = byPlayer[playerName];
-        if (propInfo.line == null) { skipped.push(`${playerName} (${marketKey}): no line/point value on the outcome`); continue; }
+        if (mapInfo.type !== "boolean" && propInfo.line == null) { skipped.push(`${playerName} (${marketKey}): no line/point value on the outcome`); continue; }
+        if (mapInfo.type === "boolean" && propInfo.yesPrice == null) { skipped.push(`${playerName} (${marketKey}): no Yes price on the outcome`); continue; }
         const rosterMatch = fullRoster.find(p => {
           const pName = p.name.toLowerCase();
           const propName = playerName.toLowerCase();
@@ -1716,7 +1727,7 @@ async function runPropScan(matchedEvents, apiKey) {
         if (!rosterMatch) { skipped.push(`${playerName} (${marketKey}): not found on either roster`); continue; }
         if (!mapInfo.positions.includes(rosterMatch.pos)) { skipped.push(`${playerName} (${rosterMatch.pos}) — ${marketKey} doesn't apply to this position, skipped`); continue; }
 
-        // pull game log and compute hit rate against this exact line
+        // pull game log and compute hit rate
         let logs = [];
         try {
           const seasons = [state.year, state.year - 1, state.year - 2];
@@ -1731,23 +1742,45 @@ async function runPropScan(matchedEvents, apiKey) {
 
         const vals = logs.map(g2 => parseFloat(g2.stats[idx])).filter(v => !isNaN(v));
         if (vals.length < 3) { skipped.push(`${rosterMatch.name}: only ${vals.length} usable games, too small a sample`); continue; }
-        const overCount = vals.filter(v => v > propInfo.line).length;
-        const hitPct = (overCount / vals.length) * 100;
-        const edgeFromCoinFlip = Math.abs(hitPct - 50);
 
-        results.push({
-          player: rosterMatch.name,
-          pos: rosterMatch.pos,
-          desc: mapInfo.desc,
-          matchup: `${game.away} @ ${game.home}`,
-          line: propInfo.line,
-          overPrice: propInfo.overPrice,
-          underPrice: propInfo.underPrice,
-          side: hitPct >= 50 ? "Over" : "Under",
-          hitPct: hitPct >= 50 ? hitPct : 100 - hitPct,
-          sampleSize: vals.length,
-          edgeFromCoinFlip,
-        });
+        if (mapInfo.type === "boolean") {
+          // "did he score at least one TD in that stat category" rather than over/under a line
+          const scoredCount = vals.filter(v => v > 0).length;
+          const hitPct = (scoredCount / vals.length) * 100;
+          const impliedYes = impliedProb(propInfo.yesPrice);
+          const edgeVsBook = impliedYes != null ? Math.abs((hitPct / 100) - impliedYes) * 100 : Math.abs(hitPct - 50);
+          results.push({
+            player: rosterMatch.name,
+            pos: rosterMatch.pos,
+            desc: mapInfo.desc,
+            matchup: `${game.away} @ ${game.home}`,
+            line: null,
+            overPrice: propInfo.yesPrice,
+            underPrice: null,
+            side: "Yes",
+            hitPct,
+            sampleSize: vals.length,
+            edgeFromCoinFlip: edgeVsBook,
+            isBoolean: true,
+          });
+        } else {
+          const overCount = vals.filter(v => v > propInfo.line).length;
+          const hitPct = (overCount / vals.length) * 100;
+          const edgeFromCoinFlip = Math.abs(hitPct - 50);
+          results.push({
+            player: rosterMatch.name,
+            pos: rosterMatch.pos,
+            desc: mapInfo.desc,
+            matchup: `${game.away} @ ${game.home}`,
+            line: propInfo.line,
+            overPrice: propInfo.overPrice,
+            underPrice: propInfo.underPrice,
+            side: hitPct >= 50 ? "Over" : "Under",
+            hitPct: hitPct >= 50 ? hitPct : 100 - hitPct,
+            sampleSize: vals.length,
+            edgeFromCoinFlip,
+          });
+        }
       }
     }
   }
@@ -1766,7 +1799,7 @@ async function runPropScan(matchedEvents, apiKey) {
 
   out.innerHTML = `
     <div class="trend-title">Top ${top.length} Props This Week — by historical hit rate</div>
-    ${top.map(r => `<div class="trend-line"><b>${r.player}</b> (${r.pos}) ${r.desc} ${r.side} ${r.line} — hit <b>${r.hitPct.toFixed(0)}%</b> of last ${r.sampleSize} · ${r.matchup} · ${r.side === "Over" ? r.overPrice : r.underPrice}</div>`).join("")}
+    ${top.map(r => `<div class="trend-line"><b>${r.player}</b> (${r.pos}) ${r.desc} ${r.isBoolean ? r.side : `${r.side} ${r.line}`} — hit <b>${r.hitPct.toFixed(0)}%</b> of last ${r.sampleSize} · ${r.matchup} · ${r.isBoolean ? r.overPrice : (r.side === "Over" ? r.overPrice : r.underPrice)}</div>`).join("")}
     <div class="trend-note" style="margin-top:8px;">Ranked by distance from a coin flip, not by odds value — a 70% hit rate at heavily juiced odds may not actually be worth more than a 58% hit rate at plus money. Check the price before betting any of these. ${skipped.length ? `${skipped.length} props skipped along the way (name mismatches, missing stat data, or too few games to judge).` : ""}</div>
   `;
 }
