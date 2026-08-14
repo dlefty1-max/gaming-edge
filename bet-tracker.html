@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_45.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_47.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -110,17 +110,17 @@
     </div>
   </div>
   <nav>
-    <button id="tabScheduleBtn" class="">Schedule</button>
+    <button id="tabScheduleBtn" class="active">Schedule</button>
     <button id="tabLedgerBtn">My Bets</button>
     <button id="tabBacktestBtn">Backtest</button>
     <button id="tabEdgeBtn">Edge</button>
-    <button id="tabPropsBtn" class="active">Props</button>
+    <button id="tabPropsBtn">Props</button>
     <button id="tabPickSixBtn">Pick 6</button>
   </nav>
 </header>
 
 <main>
-  <div id="scheduleTab" style="display: none;">
+  <div id="scheduleTab">
     <div class="league-toggle">
       <button id="leagueNflBtn" class="active">NFL</button>
       <button id="leagueCfbBtn">College Football</button>
@@ -957,7 +957,7 @@
     </div>
   </div>
 
-  <div id="propsTab" style="display: block;">
+  <div id="propsTab" style="display:none;">
     <div class="card" style="padding:16px; margin-bottom:16px;">
       <div class="trend-title" style="margin-bottom:6px;">Weekly Props Scanner</div>
       <div class="refresh-note">Pulls posted player prop lines for every game this week, cross-references each player's real game log, and ranks every prop by how often they've actually gone over that number. This wires together several new pieces at once — real API cost, and worth checking the first run carefully.</div>
@@ -1595,7 +1595,7 @@ const PROP_MARKET_MAP = {
   player_rush_yds: { positions: ["RB", "QB"], labelMatch: "YDS", desc: "rushing yds" },
   player_reception_yds: { positions: ["WR", "TE", "RB"], labelMatch: "YDS", desc: "receiving yds" },
   player_receptions: { positions: ["WR", "TE", "RB"], labelMatch: "REC", desc: "receptions" },
-  player_anytime_td: { positions: ["QB", "RB", "WR", "TE"], labelMatch: "TD", desc: "anytime TD scorer", type: "boolean" },
+  player_anytime_td: { positions: ["RB", "WR", "TE"], labelMatch: "TD", desc: "anytime TD scorer", type: "boolean" }, // QB excluded: their default game log tracks passing TDs thrown, not rushing TDs they personally score — including them would silently answer the wrong question
 };
 
 async function fetchOddsEventsList(league, seasonType, apiKey) {
