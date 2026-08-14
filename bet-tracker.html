@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_47.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_48.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1743,12 +1743,22 @@ async function runPropScan(matchedEvents, apiKey) {
         const vals = logs.map(g2 => parseFloat(g2.stats[idx])).filter(v => !isNaN(v));
         if (vals.length < 3) { skipped.push(`${rosterMatch.name}: only ${vals.length} usable games, too small a sample`); continue; }
 
+        // separate this-season-only read, once enough current-year games exist to mean anything
+        const thisSeasonLogs = logs.filter(g2 => g2.season === state.year);
+        const thisSeasonVals = thisSeasonLogs.map(g2 => parseFloat(g2.stats[idx])).filter(v => !isNaN(v));
+        const hasThisSeasonSample = thisSeasonVals.length >= 3;
+
         if (mapInfo.type === "boolean") {
           // "did he score at least one TD in that stat category" rather than over/under a line
           const scoredCount = vals.filter(v => v > 0).length;
           const hitPct = (scoredCount / vals.length) * 100;
           const impliedYes = impliedProb(propInfo.yesPrice);
           const edgeVsBook = impliedYes != null ? Math.abs((hitPct / 100) - impliedYes) * 100 : Math.abs(hitPct - 50);
+          let thisSeasonPct = null;
+          if (hasThisSeasonSample) {
+            const tsScored = thisSeasonVals.filter(v => v > 0).length;
+            thisSeasonPct = (tsScored / thisSeasonVals.length) * 100;
+          }
           results.push({
             player: rosterMatch.name,
             pos: rosterMatch.pos,
@@ -1762,11 +1772,19 @@ async function runPropScan(matchedEvents, apiKey) {
             sampleSize: vals.length,
             edgeFromCoinFlip: edgeVsBook,
             isBoolean: true,
+            thisSeasonPct,
+            thisSeasonSample: thisSeasonVals.length,
           });
         } else {
           const overCount = vals.filter(v => v > propInfo.line).length;
           const hitPct = (overCount / vals.length) * 100;
           const edgeFromCoinFlip = Math.abs(hitPct - 50);
+          let thisSeasonPct = null;
+          if (hasThisSeasonSample) {
+            const tsOver = thisSeasonVals.filter(v => v > propInfo.line).length;
+            const tsPct = (tsOver / thisSeasonVals.length) * 100;
+            thisSeasonPct = hitPct >= 50 ? tsPct : 100 - tsPct; // report on the same side as the overall pick
+          }
           results.push({
             player: rosterMatch.name,
             pos: rosterMatch.pos,
@@ -1775,6 +1793,8 @@ async function runPropScan(matchedEvents, apiKey) {
             line: propInfo.line,
             overPrice: propInfo.overPrice,
             underPrice: propInfo.underPrice,
+            thisSeasonPct,
+            thisSeasonSample: thisSeasonVals.length,
             side: hitPct >= 50 ? "Over" : "Under",
             hitPct: hitPct >= 50 ? hitPct : 100 - hitPct,
             sampleSize: vals.length,
@@ -1793,14 +1813,14 @@ async function runPropScan(matchedEvents, apiKey) {
     return;
   }
 
-  results.sort((a, b) => b.edgeFromCoinFlip - a.edgeFromCoinFlip);
+  results.sort((a, b) => b.hitPct - a.hitPct);
   const count = parseInt(document.getElementById("propScanCount").value, 10);
   const top = results.slice(0, count);
 
   out.innerHTML = `
     <div class="trend-title">Top ${top.length} Props This Week — by historical hit rate</div>
-    ${top.map(r => `<div class="trend-line"><b>${r.player}</b> (${r.pos}) ${r.desc} ${r.isBoolean ? r.side : `${r.side} ${r.line}`} — hit <b>${r.hitPct.toFixed(0)}%</b> of last ${r.sampleSize} · ${r.matchup} · ${r.isBoolean ? r.overPrice : (r.side === "Over" ? r.overPrice : r.underPrice)}</div>`).join("")}
-    <div class="trend-note" style="margin-top:8px;">Ranked by distance from a coin flip, not by odds value — a 70% hit rate at heavily juiced odds may not actually be worth more than a 58% hit rate at plus money. Check the price before betting any of these. ${skipped.length ? `${skipped.length} props skipped along the way (name mismatches, missing stat data, or too few games to judge).` : ""}</div>
+    ${top.map(r => `<div class="trend-line"><b>${r.player}</b> (${r.pos}) ${r.desc} ${r.isBoolean ? r.side : `${r.side} ${r.line}`} — hit <b>${r.hitPct.toFixed(0)}%</b> of last ${r.sampleSize}${r.thisSeasonPct != null ? ` <span style="color:#3B7DD8;">(${state.year}: ${r.thisSeasonPct.toFixed(0)}% of ${r.thisSeasonSample})</span>` : ""} · ${r.matchup} · ${r.isBoolean ? r.overPrice : (r.side === "Over" ? r.overPrice : r.underPrice)}</div>`).join("")}
+    <div class="trend-note" style="margin-top:8px;">Ranked by hit rate, highest first — not by odds value, so a high hit rate at heavily juiced odds may not actually be worth more than a lower one at plus money. Check the price before betting any of these. Once ${state.year} games start piling up, a blue ${state.year}-only figure appears next to the multi-season one — worth weighing more heavily as that sample grows, since it reflects this year's role/usage specifically. ${skipped.length ? `${skipped.length} props skipped along the way (name mismatches, missing stat data, or too few games to judge).` : ""}</div>
   `;
 }
 
