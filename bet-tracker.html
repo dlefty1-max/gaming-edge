@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_41.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_42.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -110,16 +110,17 @@
     </div>
   </div>
   <nav>
-    <button id="tabScheduleBtn" class="">Schedule</button>
-    <button id="tabLedgerBtn" class="active">My Bets</button>
+    <button id="tabScheduleBtn" class="active">Schedule</button>
+    <button id="tabLedgerBtn">My Bets</button>
     <button id="tabBacktestBtn">Backtest</button>
-    <button id="tabEdgeBtn" class="">Edge</button>
-    <button id="tabPickSixBtn" class="">Pick 6</button>
+    <button id="tabEdgeBtn">Edge</button>
+    <button id="tabPropsBtn">Props</button>
+    <button id="tabPickSixBtn">Pick 6</button>
   </nav>
 </header>
 
 <main>
-  <div id="scheduleTab" style="display: none;">
+  <div id="scheduleTab">
     <div class="league-toggle">
       <button id="leagueNflBtn" class="active">NFL</button>
       <button id="leagueCfbBtn">College Football</button>
@@ -789,7 +790,7 @@
     </div>
   </div>
 
-  <div id="ledgerTab" style="display: block;">
+  <div id="ledgerTab" style="display:none;">
     <div class="card" style="padding: 16px; margin-bottom: 16px;">
       <div class="between" style="margin-bottom:12px;">
         <label style="margin:0;">Starting Bankroll</label>
@@ -928,7 +929,7 @@
     <div id="backtestResults"></div>
   </div>
 
-  <div id="edgeTab" style="display: none;">
+  <div id="edgeTab" style="display:none;">
     <div class="card" style="padding:16px; margin-bottom:16px;">
       <div class="trend-title" style="margin-bottom:6px;">Game Line Edge Finder</div>
       <div class="refresh-note">Compares the Elo model's win probability against the market's implied probability on every game this week, and flags meaningful gaps. Needs your odds API connected to see market lines.</div>
@@ -954,10 +955,30 @@
       <button class="save-btn full" id="runEdgeScanBtn">Scan This Week for Edges</button>
       <div id="edgeScanResults" style="margin-top:12px;"></div>
     </div>
+  </div>
+
+  <div id="propsTab" style="display:none;">
+    <div class="card" style="padding:16px; margin-bottom:16px;">
+      <div class="trend-title" style="margin-bottom:6px;">Find a Player</div>
+      <div class="refresh-note">Search a team's roster, pick a player, and pull their real game log — season average, recent form, and history against a specific opponent if you enter one.</div>
+      <div class="row">
+        <div>
+          <label>Team</label>
+          <input id="propTeamSearch" placeholder="e.g. Chiefs">
+        </div>
+        <div>
+          <label>Opponent (optional)</label>
+          <input id="propOpponentSearch" placeholder="e.g. Broncos">
+        </div>
+      </div>
+      <button class="load-trends-btn" id="propFindTeamBtn">Load Roster</button>
+      <div id="propRosterList" style="margin-top:10px;"></div>
+      <div id="propPlayerDetail" style="margin-top:10px;"></div>
+    </div>
 
     <div class="card" style="padding:16px;">
       <div class="trend-title" style="margin-bottom:6px;">Player Prop Edge Calculator</div>
-      <div class="refresh-note">Enter the book's line/odds and <b>your own projection</b> for the player. The calculator shows what the book's price implies, whether your number represents an edge, and what Kelly staking suggests. The projection quality is on you — this does the math honestly, it doesn't know football.</div>
+      <div class="refresh-note">Enter the book's line/odds. If you looked up a player above, "Use This" fills in a data-based projection and hit rate — or enter your own. The calculator shows what the book's price implies, whether your number represents an edge, and what Kelly staking suggests.</div>
       <div class="row">
         <div>
           <label>Prop description</label>
@@ -993,14 +1014,14 @@
     </div>
   </div>
 
-  <div id="pickSixTab" style="display: none;">
+  <div id="pickSixTab" style="display:none;">
     <div class="card" style="padding:16px; margin-bottom:16px;">
       <div class="trend-title" style="margin-bottom:6px;">Pick 6 — This Week's Card</div>
       <div class="refresh-note">Enter RunYourPool's spread for each of your 6 picks. The model's implied line shows alongside so you can see where it agrees or disagrees with the pool's number — RunYourPool's lines lock Tuesday and don't move, so a gap here is often just the market having moved since, not a model insight.</div>
       <div class="row">
         <div>
           <label>Week</label>
-          <select id="p6Week"><option value="1">Week 1</option><option value="2">Week 2</option><option value="3">Week 3</option><option value="4">Week 4</option><option value="5">Week 5</option><option value="6">Week 6</option><option value="7">Week 7</option><option value="8">Week 8</option><option value="9">Week 9</option><option value="10">Week 10</option><option value="11">Week 11</option><option value="12">Week 12</option><option value="13">Week 13</option><option value="14">Week 14</option><option value="15">Week 15</option><option value="16">Week 16</option><option value="17">Week 17</option><option value="18">Week 18</option></select>
+          <select id="p6Week"></select>
         </div>
         <div>
           <label>Year</label>
@@ -1020,151 +1041,7 @@
         </div>
       </div>
       <div class="refresh-note" style="margin-top:-6px;">This book selector is independent from your default sportsbook on the Edge tab — set it to whichever book you want RunYourPool's lines checked against.</div>
-      <div id="p6PickRows"><div class="card" style="padding: 10px; margin-bottom: 8px;">
-      <div class="row" style="margin-bottom:6px;">
-        <div style="flex:2;">
-          <label>Matchup 1</label>
-          <input class="p6-matchup" data-i="0" placeholder="e.g. Bills @ Chiefs" value="">
-        </div>
-        <div>
-          <label>Pool Line</label>
-          <input class="p6-line" data-i="0" placeholder="e.g. Chiefs -3.5" value="">
-        </div>
-      </div>
-      <div class="row">
-        <div>
-          <label>Your Pick (team + side)</label>
-          <input class="p6-pick" data-i="0" placeholder="e.g. Chiefs" value="">
-        </div>
-        <div>
-          <label>Result</label>
-          <select class="p6-result" data-i="0">
-            <option selected="">Pending</option><option>Win</option><option>Loss</option><option>Push</option>
-          </select>
-        </div>
-      </div>
-      <div id="p6Model-0" class="trend-note" style="margin-top:6px;"></div>
-    </div><div class="card" style="padding: 10px; margin-bottom: 8px;">
-      <div class="row" style="margin-bottom:6px;">
-        <div style="flex:2;">
-          <label>Matchup 2</label>
-          <input class="p6-matchup" data-i="1" placeholder="e.g. Bills @ Chiefs" value="">
-        </div>
-        <div>
-          <label>Pool Line</label>
-          <input class="p6-line" data-i="1" placeholder="e.g. Chiefs -3.5" value="">
-        </div>
-      </div>
-      <div class="row">
-        <div>
-          <label>Your Pick (team + side)</label>
-          <input class="p6-pick" data-i="1" placeholder="e.g. Chiefs" value="">
-        </div>
-        <div>
-          <label>Result</label>
-          <select class="p6-result" data-i="1">
-            <option selected="">Pending</option><option>Win</option><option>Loss</option><option>Push</option>
-          </select>
-        </div>
-      </div>
-      <div id="p6Model-1" class="trend-note" style="margin-top:6px;"></div>
-    </div><div class="card" style="padding: 10px; margin-bottom: 8px;">
-      <div class="row" style="margin-bottom:6px;">
-        <div style="flex:2;">
-          <label>Matchup 3</label>
-          <input class="p6-matchup" data-i="2" placeholder="e.g. Bills @ Chiefs" value="">
-        </div>
-        <div>
-          <label>Pool Line</label>
-          <input class="p6-line" data-i="2" placeholder="e.g. Chiefs -3.5" value="">
-        </div>
-      </div>
-      <div class="row">
-        <div>
-          <label>Your Pick (team + side)</label>
-          <input class="p6-pick" data-i="2" placeholder="e.g. Chiefs" value="">
-        </div>
-        <div>
-          <label>Result</label>
-          <select class="p6-result" data-i="2">
-            <option selected="">Pending</option><option>Win</option><option>Loss</option><option>Push</option>
-          </select>
-        </div>
-      </div>
-      <div id="p6Model-2" class="trend-note" style="margin-top:6px;"></div>
-    </div><div class="card" style="padding: 10px; margin-bottom: 8px;">
-      <div class="row" style="margin-bottom:6px;">
-        <div style="flex:2;">
-          <label>Matchup 4</label>
-          <input class="p6-matchup" data-i="3" placeholder="e.g. Bills @ Chiefs" value="">
-        </div>
-        <div>
-          <label>Pool Line</label>
-          <input class="p6-line" data-i="3" placeholder="e.g. Chiefs -3.5" value="">
-        </div>
-      </div>
-      <div class="row">
-        <div>
-          <label>Your Pick (team + side)</label>
-          <input class="p6-pick" data-i="3" placeholder="e.g. Chiefs" value="">
-        </div>
-        <div>
-          <label>Result</label>
-          <select class="p6-result" data-i="3">
-            <option selected="">Pending</option><option>Win</option><option>Loss</option><option>Push</option>
-          </select>
-        </div>
-      </div>
-      <div id="p6Model-3" class="trend-note" style="margin-top:6px;"></div>
-    </div><div class="card" style="padding: 10px; margin-bottom: 8px;">
-      <div class="row" style="margin-bottom:6px;">
-        <div style="flex:2;">
-          <label>Matchup 5</label>
-          <input class="p6-matchup" data-i="4" placeholder="e.g. Bills @ Chiefs" value="">
-        </div>
-        <div>
-          <label>Pool Line</label>
-          <input class="p6-line" data-i="4" placeholder="e.g. Chiefs -3.5" value="">
-        </div>
-      </div>
-      <div class="row">
-        <div>
-          <label>Your Pick (team + side)</label>
-          <input class="p6-pick" data-i="4" placeholder="e.g. Chiefs" value="">
-        </div>
-        <div>
-          <label>Result</label>
-          <select class="p6-result" data-i="4">
-            <option selected="">Pending</option><option>Win</option><option>Loss</option><option>Push</option>
-          </select>
-        </div>
-      </div>
-      <div id="p6Model-4" class="trend-note" style="margin-top:6px;"></div>
-    </div><div class="card" style="padding: 10px; margin-bottom: 8px;">
-      <div class="row" style="margin-bottom:6px;">
-        <div style="flex:2;">
-          <label>Matchup 6</label>
-          <input class="p6-matchup" data-i="5" placeholder="e.g. Bills @ Chiefs" value="">
-        </div>
-        <div>
-          <label>Pool Line</label>
-          <input class="p6-line" data-i="5" placeholder="e.g. Chiefs -3.5" value="">
-        </div>
-      </div>
-      <div class="row">
-        <div>
-          <label>Your Pick (team + side)</label>
-          <input class="p6-pick" data-i="5" placeholder="e.g. Chiefs" value="">
-        </div>
-        <div>
-          <label>Result</label>
-          <select class="p6-result" data-i="5">
-            <option selected="">Pending</option><option>Win</option><option>Loss</option><option>Push</option>
-          </select>
-        </div>
-      </div>
-      <div id="p6Model-5" class="trend-note" style="margin-top:6px;"></div>
-    </div></div>
+      <div id="p6PickRows"></div>
       <button class="save-btn full" id="p6SaveBtn" style="margin-top:10px;">Save This Week's Card</button>
     </div>
 
@@ -1178,7 +1055,7 @@ Broncos +2.5
       <button class="save-btn full" id="p6AutoPickBtn" style="margin-top:10px;">Find Best 6</button>
       <div id="p6AutoPickResults" style="margin-top:12px;"></div>
     </div>
-    <div id="p6History"><div class="empty">No weeks saved yet.</div></div>
+    <div id="p6History"></div>
   </div>
 </main>
 
@@ -3242,6 +3119,127 @@ async function runEdgeScan() {
   }
 }
 
+// ---------- Props tab: player lookup with real hit-rate computation ----------
+let propTeamsCache = {};
+async function getTeamsListCached(league, year) {
+  const key = `${league}-${year}`;
+  if (propTeamsCache[key]) return propTeamsCache[key];
+  const teams = await fetchAllTeamIds(league, year);
+  propTeamsCache[key] = teams;
+  return teams;
+}
+
+async function findPropTeam() {
+  const searchText = document.getElementById("propTeamSearch").value.trim().toLowerCase();
+  const rosterEl = document.getElementById("propRosterList");
+  document.getElementById("propPlayerDetail").innerHTML = "";
+  if (!searchText) { showToast("Enter a team name first."); return; }
+  rosterEl.innerHTML = `<div class="refresh-note">Finding team and loading roster…</div>`;
+  try {
+    const teams = await getTeamsListCached(state.league, state.year);
+    const team = teams.find(t => t.name.toLowerCase().includes(searchText) || searchText.includes(t.name.toLowerCase()));
+    if (!team) { rosterEl.innerHTML = `<div class="error">No team matched "${searchText}".</div>`; return; }
+    const roster = await fetchRoster(state.league, team.id);
+    rosterEl.innerHTML = `
+      <div class="trend-team-name">${team.name}</div>
+      <div class="roster-cols" style="grid-template-columns:1fr;">
+        ${roster.slice(0, 20).map(p => `<div class="roster-player" data-player='${JSON.stringify({ id: p.id, name: p.name, pos: p.pos, jersey: p.jersey }).replace(/'/g, "&#39;")}'>${p.name} <span class="roster-pos">${p.pos}</span></div>`).join("")}
+      </div>
+    `;
+    rosterEl.querySelectorAll(".roster-player").forEach(div => {
+      div.addEventListener("click", () => {
+        const player = JSON.parse(div.getAttribute("data-player"));
+        loadPropPlayerDetail(player);
+      });
+    });
+  } catch (e) {
+    rosterEl.innerHTML = `<div class="error">${e.message}</div>`;
+  }
+}
+
+async function loadPropPlayerDetail(player) {
+  const el = document.getElementById("propPlayerDetail");
+  el.innerHTML = `<div class="refresh-note">Loading ${player.name}'s game log…</div>`;
+  try {
+    const seasons = [state.year - 1, state.year - 2, state.year - 3];
+    const logs = [];
+    for (const s of seasons) {
+      try { logs.push(...(await fetchPlayerGameLog(state.league, player.id, s))); } catch (e) {}
+    }
+    try { logs.unshift(...(await fetchPlayerGameLog(state.league, player.id, state.year))); } catch (e) {}
+
+    if (logs.length === 0) {
+      el.innerHTML = `<div class="player-panel"><div class="player-name">${player.name}</div><div class="trend-note">No game log data available for this player.</div></div>`;
+      return;
+    }
+    const labels = logs[0].labels || [];
+    el.innerHTML = `
+      <div class="player-panel">
+        <div class="player-name">${player.name} <span class="roster-pos">${player.pos}</span></div>
+        <label style="margin-top:8px;">Stat to project</label>
+        <select id="propStatSelect">
+          ${labels.map((l, i) => `<option value="${i}">${l}</option>`).join("")}
+        </select>
+        <div id="propStatOutput" style="margin-top:8px;"></div>
+      </div>
+    `;
+    const recompute = () => {
+      const idx = parseInt(document.getElementById("propStatSelect").value, 10);
+      const oppText = document.getElementById("propOpponentSearch").value.trim().toLowerCase();
+      const bookLine = parseFloat(document.getElementById("propLine").value);
+
+      const vals = logs.map(g => parseFloat(g.stats[idx])).filter(v => !isNaN(v));
+      const seasonAvg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+      const last5 = logs.slice(0, 5).map(g => parseFloat(g.stats[idx])).filter(v => !isNaN(v));
+      const last5Avg = last5.length ? last5.reduce((a, b) => a + b, 0) / last5.length : null;
+
+      let hitRateHtml = "";
+      if (!isNaN(bookLine) && vals.length > 0) {
+        const overCount = vals.filter(v => v > bookLine).length;
+        const hitPct = (overCount / vals.length) * 100;
+        hitRateHtml = `<div class="trend-line">Vs. this exact line (${bookLine}): went <b>Over in ${overCount} of ${vals.length}</b> games (${hitPct.toFixed(0)}%)</div>`;
+      } else {
+        hitRateHtml = `<div class="trend-note">Enter a book line below, then come back and pick the stat again to see his real hit rate against that number.</div>`;
+      }
+
+      let oppHtml = "";
+      if (oppText) {
+        const oppVals = logs.filter(g => (g.opponent || "").toLowerCase().includes(oppText)).map(g => parseFloat(g.stats[idx])).filter(v => !isNaN(v));
+        if (oppVals.length > 0) {
+          const oppAvg = oppVals.reduce((a, b) => a + b, 0) / oppVals.length;
+          oppHtml = `<div class="trend-line">Vs. ${document.getElementById("propOpponentSearch").value}: <b>${oppAvg.toFixed(1)}</b> avg over ${oppVals.length} meeting${oppVals.length > 1 ? "s" : ""}</div>`;
+        } else {
+          oppHtml = `<div class="trend-note">No games found against that opponent in the available log.</div>`;
+        }
+      }
+
+      document.getElementById("propStatOutput").innerHTML = `
+        <div class="trend-line">Season average: <b>${seasonAvg != null ? seasonAvg.toFixed(1) : "—"}</b> (${vals.length} games)</div>
+        <div class="trend-line">Last 5 games average: <b>${last5Avg != null ? last5Avg.toFixed(1) : "—"}</b></div>
+        ${oppHtml}
+        ${hitRateHtml}
+        <button class="load-trends-btn" id="propUseThisBtn" style="margin-top:8px;">Use This →</button>
+      `;
+      const useBtn = document.getElementById("propUseThisBtn");
+      if (useBtn) {
+        useBtn.addEventListener("click", () => {
+          document.getElementById("propDesc").value = `${player.name} ${labels[idx]}`;
+          if (last5Avg != null) document.getElementById("propProjection").value = last5Avg.toFixed(1);
+          if (!isNaN(bookLine) && vals.length > 0) {
+            const overCount = vals.filter(v => v > bookLine).length;
+            document.getElementById("propProb").value = ((overCount / vals.length) * 100).toFixed(0);
+          }
+          showToast("Filled into the calculator below — review before calculating.");
+        });
+      }
+    };
+    document.getElementById("propStatSelect").addEventListener("change", recompute);
+    recompute();
+  } catch (e) {
+    el.innerHTML = `<div class="error">${e.message}</div>`;
+  }
+}
+
 function calcPropEdge() {
   const out = document.getElementById("propEdgeResults");
   const line = parseFloat(document.getElementById("propLine").value);
@@ -4068,10 +4066,10 @@ function populateWeeks() {
 
 // ---------- wiring ----------
 function setActiveTab(btnId, tabId) {
-  ["tabScheduleBtn", "tabLedgerBtn", "tabBacktestBtn", "tabEdgeBtn", "tabPickSixBtn"].forEach(id => {
+  ["tabScheduleBtn", "tabLedgerBtn", "tabBacktestBtn", "tabEdgeBtn", "tabPropsBtn", "tabPickSixBtn"].forEach(id => {
     document.getElementById(id).classList.toggle("active", id === btnId);
   });
-  ["scheduleTab", "ledgerTab", "backtestTab", "edgeTab", "pickSixTab"].forEach(id => {
+  ["scheduleTab", "ledgerTab", "backtestTab", "edgeTab", "propsTab", "pickSixTab"].forEach(id => {
     document.getElementById(id).style.display = id === tabId ? "block" : "none";
   });
 }
@@ -4102,6 +4100,10 @@ document.getElementById("preferredBook").addEventListener("change", (e) => {
   try { localStorage.setItem("preferred-book", e.target.value); } catch (e2) {}
   renderGames();
 });
+document.getElementById("tabPropsBtn").addEventListener("click", () => {
+  state.tab = "props";
+  setActiveTab("tabPropsBtn", "propsTab");
+});
 document.getElementById("tabPickSixBtn").addEventListener("click", () => {
   state.tab = "picksix";
   setActiveTab("tabPickSixBtn", "pickSixTab");
@@ -4123,6 +4125,7 @@ document.getElementById("runWeekTrendsBtn").addEventListener("click", runWeekTre
 document.getElementById("runCacheAllBtn").addEventListener("click", estimateCacheAllCost);
 document.getElementById("runEdgeScanBtn").addEventListener("click", runEdgeScan);
 document.getElementById("calcPropEdgeBtn").addEventListener("click", calcPropEdge);
+document.getElementById("propFindTeamBtn").addEventListener("click", findPropTeam);
 document.getElementById("p6Week").addEventListener("change", renderP6Rows);
 document.getElementById("p6SaveBtn").addEventListener("click", saveP6Week);
 document.getElementById("p6AutoPickBtn").addEventListener("click", findBestSix);
