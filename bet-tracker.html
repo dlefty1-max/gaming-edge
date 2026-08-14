@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_50.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_51.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1476,7 +1476,8 @@ async function fetchInjuries(league, teamId) {
     (group.injuries || [group]).forEach(i => {
       const name = (i.athlete && (i.athlete.displayName || i.athlete.fullName)) || i.longComment && i.longComment.split(" ")[0];
       const status = i.status || (i.type && i.type.description) || "Unknown";
-      if (name) items.push({ name, status });
+      const pos = (i.athlete && i.athlete.position && (i.athlete.position.abbreviation || i.athlete.position.name)) || null;
+      if (name) items.push({ name, status, pos });
     });
   });
   return items.slice(0, 10);
@@ -2253,12 +2254,14 @@ async function loadTrends(game, containerId) {
 
     // Elo model — primary prediction, built from game results (works in offseason via last-season carryover)
     let eloHtml, eloSummary = null;
+    let rawRh = null, rawRa = null;
     if (state.seasonType !== 2) {
       eloHtml = `<div class="trend-note">Elo model only runs for the regular season — not enough game history yet for preseason/postseason weeks.</div>`;
     } else {
       const elo = await buildEloRatings(state.league, state.year, state.week);
       const rh = elo[game.homeId] != null ? elo[game.homeId] : 1500;
       const ra = elo[game.awayId] != null ? elo[game.awayId] : 1500;
+      rawRh = rh; rawRa = ra;
       const diff = (rh + 55) - ra;
       const winProbHome = 1 / (1 + Math.pow(10, -diff / 400));
       const impliedLine = Math.abs(diff / 25).toFixed(1);
@@ -2267,10 +2270,11 @@ async function loadTrends(game, containerId) {
         ? `<div class="trend-note">Week 1 rating is seeded from each team's final 6 weeks of last season, regressed toward neutral for offseason turnover — not from this season's results yet.</div>`
         : "";
       eloHtml = `
-        <div class="trend-score">${homeName} ${(winProbHome * 100).toFixed(0)}% — ${((1 - winProbHome) * 100).toFixed(0)}% ${awayName}</div>
-        <div class="trend-sub">Implied line: <b>${favorite} -${impliedLine}</b></div>
+        <div class="trend-score" id="eloScore-${game.id}">${homeName} ${(winProbHome * 100).toFixed(0)}% — ${((1 - winProbHome) * 100).toFixed(0)}% ${awayName}</div>
+        <div class="trend-sub" id="eloLine-${game.id}">Implied line: <b>${favorite} -${impliedLine}</b></div>
         <div class="trend-line" style="margin-top:6px;">Elo ratings — ${homeName}: ${rh.toFixed(0)} · ${awayName}: ${ra.toFixed(0)}</div>
         ${seedNote}
+        <div class="trend-note" id="injuryAdjNote-${game.id}"></div>
       `;
       eloSummary = { favorite, impliedLine, diff };
       // cache for Kelly stake sizing in the pick form
@@ -2279,14 +2283,15 @@ async function loadTrends(game, containerId) {
 
     // Scoring section — degrades gracefully when the season hasn't produced stats yet
     let scoringHtml, colsHtml = "";
+    let projAway = null, projHome = null, baseTotal = null;
     if (haveScoring) {
       const HOME_BONUS = 1.5;
-      const projAway = (away.avgPF + home.avgPA) / 2;
-      const projHome = (home.avgPF + away.avgPA) / 2 + HOME_BONUS;
-      const total = projAway + projHome;
+      projAway = (away.avgPF + home.avgPA) / 2;
+      projHome = (home.avgPF + away.avgPA) / 2 + HOME_BONUS;
+      baseTotal = projAway + projHome;
       scoringHtml = `
-        <div class="trend-score">${awayName} ${projAway.toFixed(1)} — ${projHome.toFixed(1)} ${homeName}</div>
-        <div class="trend-note">Simple blend of season scoring averages, shown alongside Elo as a second, independent signal — projected total: ${total.toFixed(1)}.</div>`;
+        <div class="trend-score" id="scoreProj-${game.id}">${awayName} ${projAway.toFixed(1)} — ${projHome.toFixed(1)} ${homeName}</div>
+        <div class="trend-note" id="totalNote-${game.id}">Simple blend of season scoring averages, shown alongside Elo as a second, independent signal — projected total: ${baseTotal.toFixed(1)}.</div>`;
       colsHtml = `
         <div class="trend-cols">
           <div>
@@ -2424,6 +2429,70 @@ async function loadTrends(game, containerId) {
       }
     }
 
+    // Injury-adjusted Elo — rough, position-aware rating penalty applied only to THIS game's prediction,
+    // never to the team's stored season rating. QB is the one position with a well-established, large
+    // impact; everything else gets a small, capped generic penalty since real positional value is hard
+    // to pin down from injury reports alone.
+    if (rawRh != null && rawRa != null && (awayInj.length > 0 || homeInj.length > 0)) {
+      try {
+        const [awayRoster, homeRoster] = await Promise.all([
+          fetchRoster(state.league, game.awayId).catch(() => []),
+          fetchRoster(state.league, game.homeId).catch(() => []),
+        ]);
+        const resolvePos = (injury, roster) => {
+          if (injury.pos) return injury.pos;
+          const match = roster.find(p => p.name.toLowerCase() === injury.name.toLowerCase() || p.name.toLowerCase().includes(injury.name.toLowerCase()));
+          return match ? match.pos : null;
+        };
+        const statusWeight = (status) => {
+          const s = (status || "").toLowerCase();
+          if (s.includes("out")) return 1;
+          if (s.includes("doubtful")) return 0.75;
+          return 0; // Questionable and anything murkier — too uncertain to confidently adjust for
+        };
+        const computePenalty = (injuries, roster) => {
+          let penalty = 0;
+          let nonQbCount = 0;
+          const notes = [];
+          injuries.forEach(inj => {
+            const w = statusWeight(inj.status);
+            if (w === 0) return;
+            const pos = resolvePos(inj, roster);
+            if (pos === "QB") {
+              penalty += 80 * w;
+              notes.push(`${inj.name} (QB, ${inj.status})`);
+            } else if (nonQbCount < 3) { // cap generic penalties so a long questionable-heavy list doesn't snowball
+              penalty += 10 * w;
+              nonQbCount++;
+              notes.push(`${inj.name} (${pos || "?"}, ${inj.status})`);
+            }
+          });
+          return { penalty, notes };
+        };
+        const awayPenalty = computePenalty(awayInj, awayRoster);
+        const homePenalty = computePenalty(homeInj, homeRoster);
+
+        if (awayPenalty.penalty > 0 || homePenalty.penalty > 0) {
+          const adjRh = rawRh - homePenalty.penalty;
+          const adjRa = rawRa - awayPenalty.penalty;
+          const adjDiff = (adjRh + 55) - adjRa;
+          const adjWinProbHome = 1 / (1 + Math.pow(10, -adjDiff / 400));
+          const adjImpliedLine = Math.abs(adjDiff / 25).toFixed(1);
+          const adjFavorite = adjDiff >= 0 ? homeName : awayName;
+
+          const scoreEl = document.getElementById(`eloScore-${game.id}`);
+          const lineEl = document.getElementById(`eloLine-${game.id}`);
+          const noteEl = document.getElementById(`injuryAdjNote-${game.id}`);
+          if (scoreEl) scoreEl.innerHTML = `${homeName} ${(adjWinProbHome * 100).toFixed(0)}% — ${((1 - adjWinProbHome) * 100).toFixed(0)}% ${awayName} <span style="color:#B4463A; font-size:11px;">(injury-adjusted)</span>`;
+          if (lineEl) lineEl.innerHTML = `Implied line: <b>${adjFavorite} -${adjImpliedLine}</b> <span style="color:#8A96A1; font-size:11px;">(was ${eloSummary.favorite} -${eloSummary.impliedLine} before injuries)</span>`;
+          if (noteEl) {
+            const allNotes = [...homePenalty.notes, ...awayPenalty.notes];
+            noteEl.innerHTML = `Adjusted for: ${allNotes.join(", ")}. Rough estimate — QB penalty (-80 Elo for Out) is based on commonly-cited backup dropoff; other positions get a small, capped penalty since real positional value is hard to pin down from injury reports alone.`;
+          }
+        }
+      } catch (e) { /* injury adjustment is best-effort — if it fails, the unadjusted Elo numbers already shown stand */ }
+    }
+
     // Head-to-head
     const meetings = h2hResult.status === "fulfilled" ? h2hResult.value : [];
     const h2hEl = document.getElementById(`h2h-${game.id}`);
@@ -2446,13 +2515,29 @@ async function loadTrends(game, containerId) {
     // Weather
     const wxEl = document.getElementById(`wx-${game.id}`);
     const wx = game.indoor ? null : (wxResult.status === "fulfilled" ? wxResult.value : { unavailable: "couldn't load" });
+    let weatherAdj = 0;
     if (wxEl) {
       if (game.indoor) {
         wxEl.innerHTML = `<div class="trend-note">Indoor stadium — weather isn't a factor.</div>`;
       } else if (wx.unavailable) {
         wxEl.innerHTML = `<div class="trend-note">Forecast unavailable — ${wx.unavailable}.</div>`;
       } else {
-        wxEl.innerHTML = `<div class="trend-line">${wx.tempMax}°F high · ${wx.precipProb}% chance of precipitation · wind up to ${wx.windMax} mph</div><div class="trend-note">High wind or precipitation can push a game's actual total below the projection above.</div>`;
+        // Rough, heuristic point deductions — not empirically fitted, just commonly-cited magnitudes
+        // for how wind/rain suppress passing efficiency and scoring. Transparent, not hidden.
+        if (wx.windMax >= 20) weatherAdj -= 3;
+        else if (wx.windMax >= 15) weatherAdj -= 1.5;
+        if (wx.precipProb >= 70) weatherAdj -= 1.5;
+        else if (wx.precipProb >= 50) weatherAdj -= 0.75;
+
+        wxEl.innerHTML = `<div class="trend-line">${wx.tempMax}°F high · ${wx.precipProb}% chance of precipitation · wind up to ${wx.windMax} mph</div>${weatherAdj !== 0 ? `<div class="trend-note" style="color:#B4463A;">Applied ${weatherAdj.toFixed(1)}-pt adjustment to the total below for these conditions (rough estimate, not empirically fitted — see the Scoring Average Projection section).</div>` : `<div class="trend-note">Conditions look mild enough that no total adjustment was applied.</div>`}`;
+
+        if (weatherAdj !== 0 && haveScoring && baseTotal != null) {
+          const adjTotal = baseTotal + weatherAdj;
+          const totalNoteEl = document.getElementById(`totalNote-${game.id}`);
+          if (totalNoteEl) {
+            totalNoteEl.innerHTML = `Simple blend of season scoring averages — projected total: <s style="color:#8A96A1;">${baseTotal.toFixed(1)}</s> <b style="color:#B4463A;">${adjTotal.toFixed(1)} (weather-adjusted)</b>.`;
+          }
+        }
       }
     }
 
@@ -3598,7 +3683,7 @@ async function findPropTeam() {
     rosterEl.querySelectorAll(".roster-player").forEach(div => {
       div.addEventListener("click", () => {
         const player = JSON.parse(div.getAttribute("data-player"));
-        loadPropPlayerDetail(player);
+        loadPropPlayerDetail(player, team.name);
       });
     });
   } catch (e) {
@@ -3606,7 +3691,7 @@ async function findPropTeam() {
   }
 }
 
-async function loadPropPlayerDetail(player) {
+async function loadPropPlayerDetail(player, teamName) {
   const el = document.getElementById("propPlayerDetail");
   el.innerHTML = `<div class="refresh-note">Loading ${player.name}'s game log…</div>`;
   try {
@@ -3621,10 +3706,30 @@ async function loadPropPlayerDetail(player) {
       el.innerHTML = `<div class="player-panel"><div class="player-name">${player.name}</div><div class="trend-note">No game log data available for this player.</div></div>`;
       return;
     }
+
+    // check if this player's team has a game this week, and if so, pull weather for it
+    let weatherAdjPct = 0, weatherNote = "";
+    if (teamName) {
+      const thisWeekGame = state.games.find(g => g.home.toLowerCase().includes(teamName.toLowerCase()) || teamName.toLowerCase().includes(g.home.toLowerCase()) || g.away.toLowerCase().includes(teamName.toLowerCase()) || teamName.toLowerCase().includes(g.away.toLowerCase()));
+      if (thisWeekGame && !thisWeekGame.indoor && thisWeekGame.date) {
+        try {
+          const wx = await fetchWeather(thisWeekGame.venueCity, thisWeekGame.venueState, thisWeekGame.date);
+          if (!wx.unavailable) {
+            // heuristic: high wind suppresses passing/receiving volume more than rushing — same
+            // rough magnitudes as the game-total adjustment, applied as a % rather than flat points here
+            if (wx.windMax >= 20) weatherAdjPct = -0.10;
+            else if (wx.windMax >= 15) weatherAdjPct = -0.05;
+            if (weatherAdjPct !== 0) weatherNote = `${thisWeekGame.away} @ ${thisWeekGame.home}: wind up to ${wx.windMax}mph — passing/receiving stats adjusted down ${Math.abs(weatherAdjPct * 100).toFixed(0)}% below`;
+          }
+        } catch (e) {}
+      }
+    }
+
     const labels = logs[0].labels || [];
     el.innerHTML = `
       <div class="player-panel">
         <div class="player-name">${player.name} <span class="roster-pos">${player.pos}</span></div>
+        ${weatherNote ? `<div class="trend-note" style="color:#B4463A; margin-top:4px;">🌤 ${weatherNote}</div>` : ""}
         <label style="margin-top:8px;">Stat to project</label>
         <select id="propStatSelect">
           ${labels.map((l, i) => `<option value="${i}">${l}</option>`).join("")}
@@ -3636,6 +3741,8 @@ async function loadPropPlayerDetail(player) {
       const idx = parseInt(document.getElementById("propStatSelect").value, 10);
       const oppText = document.getElementById("propOpponentSearch").value.trim().toLowerCase();
       const bookLine = parseFloat(document.getElementById("propLine").value);
+      const statLabel = (labels[idx] || "").toUpperCase();
+      const isWeatherSensitive = statLabel.includes("YDS") && weatherAdjPct !== 0 && (player.pos === "QB" || player.pos === "WR" || player.pos === "TE");
 
       const vals = logs.map(g => parseFloat(g.stats[idx])).filter(v => !isNaN(v));
       const seasonAvg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
@@ -3662,9 +3769,11 @@ async function loadPropPlayerDetail(player) {
         }
       }
 
+      const weatherAdjLast5 = (isWeatherSensitive && last5Avg != null) ? last5Avg * (1 + weatherAdjPct) : null;
+
       document.getElementById("propStatOutput").innerHTML = `
         <div class="trend-line">Season average: <b>${seasonAvg != null ? seasonAvg.toFixed(1) : "—"}</b> (${vals.length} games)</div>
-        <div class="trend-line">Last 5 games average: <b>${last5Avg != null ? last5Avg.toFixed(1) : "—"}</b></div>
+        <div class="trend-line">Last 5 games average: <b>${last5Avg != null ? last5Avg.toFixed(1) : "—"}</b>${weatherAdjLast5 != null ? ` → <b style="color:#B4463A;">${weatherAdjLast5.toFixed(1)} weather-adjusted</b>` : ""}</div>
         ${oppHtml}
         ${hitRateHtml}
         <button class="load-trends-btn" id="propUseThisBtn" style="margin-top:8px;">Use This →</button>
@@ -3672,13 +3781,14 @@ async function loadPropPlayerDetail(player) {
       const useBtn = document.getElementById("propUseThisBtn");
       if (useBtn) {
         useBtn.addEventListener("click", () => {
-          document.getElementById("propDesc").value = `${player.name} ${labels[idx]}`;
-          if (last5Avg != null) document.getElementById("propProjection").value = last5Avg.toFixed(1);
+          document.getElementById("propDesc").value = `${player.name} ${labels[idx]}${weatherAdjLast5 != null ? " (weather-adj)" : ""}`;
+          const projToUse = weatherAdjLast5 != null ? weatherAdjLast5 : last5Avg;
+          if (projToUse != null) document.getElementById("propProjection").value = projToUse.toFixed(1);
           if (!isNaN(bookLine) && vals.length > 0) {
             const overCount = vals.filter(v => v > bookLine).length;
             document.getElementById("propProb").value = ((overCount / vals.length) * 100).toFixed(0);
           }
-          showToast("Filled into the calculator below — review before calculating.");
+          showToast(weatherAdjLast5 != null ? "Filled in with a weather-adjusted projection — review before calculating." : "Filled into the calculator below — review before calculating.");
         });
       }
     };
