@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_40.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_41.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -110,16 +110,16 @@
     </div>
   </div>
   <nav>
-    <button id="tabScheduleBtn" class="active">Schedule</button>
-    <button id="tabLedgerBtn">My Bets</button>
+    <button id="tabScheduleBtn" class="">Schedule</button>
+    <button id="tabLedgerBtn" class="active">My Bets</button>
     <button id="tabBacktestBtn">Backtest</button>
-    <button id="tabEdgeBtn">Edge</button>
-    <button id="tabPickSixBtn">Pick 6</button>
+    <button id="tabEdgeBtn" class="">Edge</button>
+    <button id="tabPickSixBtn" class="">Pick 6</button>
   </nav>
 </header>
 
 <main>
-  <div id="scheduleTab">
+  <div id="scheduleTab" style="display: none;">
     <div class="league-toggle">
       <button id="leagueNflBtn" class="active">NFL</button>
       <button id="leagueCfbBtn">College Football</button>
@@ -135,7 +135,7 @@
       </div>
       <div>
         <label>Week</label>
-        <select id="weekSelect"><option value="1">Week 1</option><option value="2">Week 2</option><option value="3">Week 3</option><option value="4">Week 4</option></select>
+        <select id="weekSelect"><option value="1">Week 1</option><option value="2">Week 2</option><option value="3">Week 3</option><option value="4">Week 4</option><option value="5">Week 5</option><option value="6">Week 6</option><option value="7">Week 7</option><option value="8">Week 8</option><option value="9">Week 9</option><option value="10">Week 10</option><option value="11">Week 11</option><option value="12">Week 12</option><option value="13">Week 13</option><option value="14">Week 14</option><option value="15">Week 15</option><option value="16">Week 16</option><option value="17">Week 17</option><option value="18">Week 18</option></select>
       </div>
       <div>
         <label>Year</label>
@@ -146,253 +146,49 @@
       </div>
     </div>
     <div id="scheduleError"></div>
-    <div id="preseasonTrendsCard">
-    <div class="preseason-card">
-      <div class="trend-title">🏈 General NFL Preseason Betting Trends</div>
-      <div class="trend-note" style="margin-top:4px;">Historical patterns across many preseasons, not this specific matchup — soft leans, not rules. 2025 broke from several of these, noted below where relevant.</div>
+    <div id="preseasonTrendsCard"></div>
+    <div id="regularSeasonTrendsCard">
+    <div class="regseason-card">
+      <div class="trend-title">🏈 General NFL Regular Season Betting Trends</div>
+      <div class="trend-note" style="margin-top:4px;">League-wide historical patterns, not this specific matchup — soft leans, not rules.</div>
 
-      <div class="trend-title" style="margin-top:10px; font-size:10px;">By Spread Size — Straight-Up Win Rate</div>
-      <div class="trend-line">Favorites of -5 or more: <b>~72%</b> win outright</div>
-      <div class="trend-line">Underdogs of +5 or more: <b>~28%</b> win outright</div>
-
-      <div class="trend-title" style="margin-top:10px; font-size:10px;">By Spread Size — Against The Spread</div>
-      <div class="trend-line">Favorites of -7 or more: <b>~33%</b> cover (since 2010) — the single strongest preseason angle found; big favorites are consistently overpriced</div>
-      <div class="trend-line">Underdogs of +1 to +3: <b>~60%</b> cover (since 2015)</div>
-      <div class="trend-line">Road dogs of +2.5 or less: <b>~66%</b> cover (last decade) — but 2025 alone ran close to even, so don't treat this as automatic</div>
-
-      <div class="trend-title" style="margin-top:10px; font-size:10px;">By Total Size — Over/Under</div>
-      <div class="trend-line">Total set below ~37: <b>~57%</b> go Over</div>
-      <div class="trend-line">Total set at ~37 or above: <b>~56%</b> go Under</div>
-      <div class="trend-line">2025 specifically ran unusually high-scoring and broke both of these — totals skewed Over across the board</div>
-
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">Situational</div>
+      <div class="trend-line">Thursday/Sunday/Monday primetime games: Under has hit <b>~56%</b> over the last 6 seasons (spiked closer to 70% in the most recent one) — the most consistently profitable side in primetime</div>
+      <div class="trend-line">Second meeting between division rivals: leans <b>Under</b> and toward the <b>underdog</b> — both coaching staffs now have a full game of current-season film on each other, compressing the scheme gap</div>
+      <div class="trend-line">Heavy public/consensus favorites: worth a second look — when 80%+ of bets load one side, the line often moves an extra half-point or more, and NFL key numbers (3, 7) make that half-point matter more than it looks</div>
       
-      <div class="trend-title" style="margin-top:10px; font-size:10px;">Week 2 — "The Dress Rehearsal"</div>
-      <div class="trend-line">Most starters get their longest look of the summer — often a full half, sometimes into the third quarter. This is the closest preseason gets to real football, and coaching motivation matters more here than in any other preseason week.</div>
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">Week 1 Known Baseline (since 2019)</div>
+      <div class="trend-line">Underdogs of 6+ points: <b>26%</b> win outright, <b>61%</b> cover ATS</div>
+      <div class="trend-line">Underdogs of 3 or fewer points: <b>46%</b> win outright, <b>58%</b> cover ATS</div>
+      <div class="trend-line">Home teams: notably weaker ATS than any other week (45% vs. ~49% league average) — Week 1 home-field edge is smaller than usual</div>
+      <div class="trend-note">This part is free, sourced research (FanDuel), not something you need to compute — shown alongside whatever your own historical data below adds.</div>
+    
+      
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">Week 1 Specific</div>
+      <div class="trend-note">No computed data yet for Week 1. <span style="text-decoration:underline;cursor:pointer;color:#1A4A8A;" id="fillWeekTrendBtn">Compute it now</span> (checks 2025, 2024, 2023 — costs real API credits, cached permanently afterward).</div>
     
 
-      <div class="trend-note" style="margin-top:8px;">This card disappears automatically once you switch to Regular Season. The week-specific section above updates as you change weeks.</div>
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">By Month — Underdog ATS Rate (last decade)</div>
+      <div class="trend-line">September: <b>~55%</b> · October: <b>~52%</b> · November: <b>~53%</b> · December: <b>~48%</b> · January: <b>~57%</b></div>
+      <div class="trend-note">Reads as: books tend to overprice the unknown early (favoring dogs), sharpen up by December (favorites hold), then overcorrect again in January's small, chaotic late-season sample.</div>
+
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">By Month — Over Rate (last decade)</div>
+      <div class="trend-line">September: <b>~50%</b> · October: <b>~50%</b> · November: <b>~50%</b> · December: <b>~46%</b> · January: <b>~51%</b></div>
+      <div class="trend-note">December is the clearest lean of the bunch — weather and short-week fatigue push totals under more than the market adjusts for.</div>
+
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">Weeks 17-18</div>
+      <div class="trend-line">Watch for teams that have already clinched or been eliminated — rested starters can make a "favorite" number stale fast, same blind spot the Elo model has.</div>
+
+      <div class="trend-note" style="margin-top:8px;">This card disappears automatically once you switch to Preseason. The "Week 1 Specific" section updates automatically as you change weeks.</div>
     </div>
   </div>
-    <div id="regularSeasonTrendsCard"></div>
     <button class="start-parlay-btn" id="startParlayBtn">🎫 Build a Parlay — tap odds across games to add legs</button>
-    <div id="parlayModeBar">
-    <div class="parlay-mode-bar">
-      <span>🎫 Building parlay — 0 legs added</span>
-      <div>
-        <button id="reviewParlayBtn">Review &amp; Save</button>
-        <button class="cancel-link" id="cancelParlayBtn">Cancel</button>
-      </div>
-    </div>
-  </div>
+    <div id="parlayModeBar"></div>
     <div id="gamesList"><div class="card">
-      <div class="game-header" data-id="401873272">
+      <div class="game-header" data-id="401872656">
         <div>
-          <div class="game-title">Lions @ Bengals <span class="live-dot">🔴 LIVE</span></div>
-          <div class="game-sub">Thu, Aug 13, 7:00 PM</div>
-          
-        </div>
-        <span class="pill ">Add Pick</span>
-      </div>
-      <div style="padding: 0 14px 10px;">
-      <div class="odds-board">
-        <div class="live-badge">🔴 LIVE — odds below are in-game, not the pregame line</div>
-        
-          <div class="odds-row-label">Spread</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873272" data-bettype="Spread" data-selection="Lions +7.5" data-odds="-138">Lions +7.5<br><span class="odds-btn-price">-138</span></button>
-            <button class="odds-btn" data-game="401873272" data-bettype="Spread" data-selection="Bengals -7.5" data-odds="104">Bengals -7.5<br><span class="odds-btn-price">+104</span></button>
-          </div>
-        
-          <div class="odds-row-label">Total</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873272" data-bettype="Total" data-selection="Over 32.5" data-odds="-132">O 32.5<br><span class="odds-btn-price">-132</span></button>
-            <button class="odds-btn" data-game="401873272" data-bettype="Total" data-selection="Under 32.5" data-odds="100">U 32.5<br><span class="odds-btn-price">+100</span></button>
-          </div>
-        
-          <div class="odds-row-label">Moneyline</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873272" data-bettype="Moneyline" data-selection="Lions" data-odds="400">Lions<br><span class="odds-btn-price">+400</span></button>
-            <button class="odds-btn" data-game="401873272" data-bettype="Moneyline" data-selection="Bengals" data-odds="-620">Bengals<br><span class="odds-btn-price">-620</span></button>
-          </div>
-        <div class="trend-note" style="margin-top:2px;">Consensus (median across 7 books) — tap to add to your pick</div>
-        <div class="trend-note" style="color:#B4463A;">Matched: Detroit Lions @ Cincinnati Bengals <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
-      </div></div>
-      
-    </div><div class="card">
-      <div class="game-header" data-id="401873275">
-        <div>
-          <div class="game-title">Packers @ Steelers <span class="live-dot">🔴 LIVE</span></div>
-          <div class="game-sub">Thu, Aug 13, 7:00 PM</div>
-          
-        </div>
-        <span class="pill ">Add Pick</span>
-      </div>
-      <div style="padding: 0 14px 10px;">
-      <div class="odds-board">
-        <div class="live-badge">🔴 LIVE — odds below are in-game, not the pregame line</div>
-        
-          <div class="odds-row-label">Spread</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873275" data-bettype="Spread" data-selection="Packers -1.5" data-odds="-102">Packers -1.5<br><span class="odds-btn-price">-102</span></button>
-            <button class="odds-btn" data-game="401873275" data-bettype="Spread" data-selection="Steelers +1.5" data-odds="-130">Steelers +1.5<br><span class="odds-btn-price">-130</span></button>
-          </div>
-        
-          <div class="odds-row-label">Total</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873275" data-bettype="Total" data-selection="Over 27.5" data-odds="-112">O 27.5<br><span class="odds-btn-price">-112</span></button>
-            <button class="odds-btn" data-game="401873275" data-bettype="Total" data-selection="Under 27.5" data-odds="-118">U 27.5<br><span class="odds-btn-price">-118</span></button>
-          </div>
-        
-          <div class="odds-row-label">Moneyline</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873275" data-bettype="Moneyline" data-selection="Packers" data-odds="-172">Packers<br><span class="odds-btn-price">-172</span></button>
-            <button class="odds-btn" data-game="401873275" data-bettype="Moneyline" data-selection="Steelers" data-odds="134">Steelers<br><span class="odds-btn-price">+134</span></button>
-          </div>
-        <div class="trend-note" style="margin-top:2px;">Consensus (median across 7 books) — tap to add to your pick</div>
-        <div class="trend-note" style="color:#B4463A;">Matched: Green Bay Packers @ Pittsburgh Steelers <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
-      </div></div>
-      
-    </div><div class="card">
-      <div class="game-header" data-id="401873273">
-        <div>
-          <div class="game-title">Colts @ Patriots <span class="live-dot">🔴 LIVE</span></div>
-          <div class="game-sub">Thu, Aug 13, 7:30 PM</div>
-          
-        </div>
-        <span class="pill ">Add Pick</span>
-      </div>
-      <div style="padding: 0 14px 10px;">
-      <div class="odds-board">
-        <div class="live-badge">🔴 LIVE — odds below are in-game, not the pregame line</div>
-        
-          <div class="odds-row-label">Spread</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873273" data-bettype="Spread" data-selection="Colts -0.5" data-odds="-130">Colts -0.5<br><span class="odds-btn-price">-130</span></button>
-            <button class="odds-btn" data-game="401873273" data-bettype="Spread" data-selection="Patriots +0.5" data-odds="-102">Patriots +0.5<br><span class="odds-btn-price">-102</span></button>
-          </div>
-        
-          <div class="odds-row-label">Total</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873273" data-bettype="Total" data-selection="Over 36.5" data-odds="102">O 36.5<br><span class="odds-btn-price">+102</span></button>
-            <button class="odds-btn" data-game="401873273" data-bettype="Total" data-selection="Under 36.5" data-odds="-136">U 36.5<br><span class="odds-btn-price">-136</span></button>
-          </div>
-        
-          <div class="odds-row-label">Moneyline</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873273" data-bettype="Moneyline" data-selection="Colts" data-odds="-113">Colts<br><span class="odds-btn-price">-113</span></button>
-            <button class="odds-btn" data-game="401873273" data-bettype="Moneyline" data-selection="Patriots" data-odds="-113">Patriots<br><span class="odds-btn-price">-113</span></button>
-          </div>
-        <div class="trend-note" style="margin-top:2px;">Consensus (median across 7 books) — tap to add to your pick</div>
-        <div class="trend-note" style="color:#B4463A;">Matched: Indianapolis Colts @ New England Patriots <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
-      </div></div>
-      
-    </div><div class="card">
-      <div class="game-header" data-id="401873640">
-        <div>
-          <div class="game-title">Cardinals @ Raiders <span class="live-dot">🔴 LIVE</span></div>
-          <div class="game-sub">Thu, Aug 13, 8:00 PM</div>
-          
-        </div>
-        <span class="pill ">Add Pick</span>
-      </div>
-      <div style="padding: 0 14px 10px;">
-      <div class="odds-board">
-        <div class="live-badge">🔴 LIVE — odds below are in-game, not the pregame line</div>
-        
-          <div class="odds-row-label">Spread</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873640" data-bettype="Spread" data-selection="Cardinals -2.5" data-odds="-120">Cardinals -2.5<br><span class="odds-btn-price">-120</span></button>
-            <button class="odds-btn" data-game="401873640" data-bettype="Spread" data-selection="Raiders +2.5" data-odds="-110">Raiders +2.5<br><span class="odds-btn-price">-110</span></button>
-          </div>
-        
-          <div class="odds-row-label">Total</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873640" data-bettype="Total" data-selection="Over 51.5" data-odds="-122">O 51.5<br><span class="odds-btn-price">-122</span></button>
-            <button class="odds-btn" data-game="401873640" data-bettype="Total" data-selection="Under 51.5" data-odds="-108">U 51.5<br><span class="odds-btn-price">-108</span></button>
-          </div>
-        
-          <div class="odds-row-label">Moneyline</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873640" data-bettype="Moneyline" data-selection="Cardinals" data-odds="-136">Cardinals<br><span class="odds-btn-price">-136</span></button>
-            <button class="odds-btn" data-game="401873640" data-bettype="Moneyline" data-selection="Raiders" data-odds="106">Raiders<br><span class="odds-btn-price">+106</span></button>
-          </div>
-        <div class="trend-note" style="margin-top:2px;">Consensus (median across 7 books) — tap to add to your pick</div>
-        <div class="trend-note" style="color:#B4463A;">Matched: Arizona Cardinals @ Las Vegas Raiders <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
-      </div></div>
-      
-    </div><div class="card">
-      <div class="game-header" data-id="401873274">
-        <div>
-          <div class="game-title">Chargers @ Texans <span class="live-dot">🔴 LIVE</span></div>
-          <div class="game-sub">Thu, Aug 13, 8:00 PM</div>
-          
-        </div>
-        <span class="pill ">Add Pick</span>
-      </div>
-      <div style="padding: 0 14px 10px;">
-      <div class="odds-board">
-        <div class="live-badge">🔴 LIVE — odds below are in-game, not the pregame line</div>
-        
-          <div class="odds-row-label">Spread</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873274" data-bettype="Spread" data-selection="Chargers -2.5" data-odds="-125">Chargers -2.5<br><span class="odds-btn-price">-125</span></button>
-            <button class="odds-btn" data-game="401873274" data-bettype="Spread" data-selection="Texans +2.5" data-odds="-106">Texans +2.5<br><span class="odds-btn-price">-106</span></button>
-          </div>
-        
-          <div class="odds-row-label">Total</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873274" data-bettype="Total" data-selection="Over 39.5" data-odds="-108">O 39.5<br><span class="odds-btn-price">-108</span></button>
-            <button class="odds-btn" data-game="401873274" data-bettype="Total" data-selection="Under 39.5" data-odds="-122">U 39.5<br><span class="odds-btn-price">-122</span></button>
-          </div>
-        
-          <div class="odds-row-label">Moneyline</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873274" data-bettype="Moneyline" data-selection="Chargers" data-odds="-158">Chargers<br><span class="odds-btn-price">-158</span></button>
-            <button class="odds-btn" data-game="401873274" data-bettype="Moneyline" data-selection="Texans" data-odds="124">Texans<br><span class="odds-btn-price">+124</span></button>
-          </div>
-        <div class="trend-note" style="margin-top:2px;">Consensus (median across 7 books) — tap to add to your pick</div>
-        <div class="trend-note" style="color:#B4463A;">Matched: Los Angeles Chargers @ Houston Texans <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
-      </div></div>
-      
-    </div><div class="card">
-      <div class="game-header" data-id="401874392">
-        <div>
-          <div class="game-title">Titans @ 49ers <span class="live-dot">🔴 LIVE</span></div>
-          <div class="game-sub">Thu, Aug 13, 9:00 PM</div>
-          
-        </div>
-        <span class="pill ">Add Pick</span>
-      </div>
-      <div style="padding: 0 14px 10px;">
-      <div class="odds-board">
-        <div class="live-badge">🔴 LIVE — odds below are in-game, not the pregame line</div>
-        
-          <div class="odds-row-label">Spread</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401874392" data-bettype="Spread" data-selection="Titans -6.5" data-odds="-122">Titans -6.5<br><span class="odds-btn-price">-122</span></button>
-            <button class="odds-btn" data-game="401874392" data-bettype="Spread" data-selection="49ers +6.5" data-odds="-108">49ers +6.5<br><span class="odds-btn-price">-108</span></button>
-          </div>
-        
-          <div class="odds-row-label">Total</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401874392" data-bettype="Total" data-selection="Over 39.5" data-odds="-108">O 39.5<br><span class="odds-btn-price">-108</span></button>
-            <button class="odds-btn" data-game="401874392" data-bettype="Total" data-selection="Under 39.5" data-odds="-122">U 39.5<br><span class="odds-btn-price">-122</span></button>
-          </div>
-        
-          <div class="odds-row-label">Moneyline</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401874392" data-bettype="Moneyline" data-selection="Titans" data-odds="-310">Titans<br><span class="odds-btn-price">-310</span></button>
-            <button class="odds-btn" data-game="401874392" data-bettype="Moneyline" data-selection="49ers" data-odds="235">49ers<br><span class="odds-btn-price">+235</span></button>
-          </div>
-        <div class="trend-note" style="margin-top:2px;">Consensus (median across 11 books) — tap to add to your pick</div>
-        <div class="trend-note" style="color:#B4463A;">Matched: Tennessee Titans @ San Francisco 49ers <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
-      </div></div>
-      
-    </div><div class="card">
-      <div class="game-header" data-id="401873278">
-        <div>
-          <div class="game-title">Broncos @ Falcons</div>
-          <div class="game-sub">Fri, Aug 14, 7:00 PM</div>
+          <div class="game-title">Patriots @ Seahawks</div>
+          <div class="game-sub">Wed, Sep 9, 8:20 PM</div>
           
         </div>
         <span class="pill ">Add Pick</span>
@@ -403,234 +199,30 @@
         
           <div class="odds-row-label">Spread</div>
           <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873278" data-bettype="Spread" data-selection="Broncos -4" data-odds="-110">Broncos -4<br><span class="odds-btn-price">-110</span></button>
-            <button class="odds-btn" data-game="401873278" data-bettype="Spread" data-selection="Falcons +4" data-odds="-110">Falcons +4<br><span class="odds-btn-price">-110</span></button>
+            <button class="odds-btn" data-game="401872656" data-bettype="Spread" data-selection="Patriots +3.5" data-odds="-110">Patriots +3.5<br><span class="odds-btn-price">-110</span></button>
+            <button class="odds-btn" data-game="401872656" data-bettype="Spread" data-selection="Seahawks -3.5" data-odds="-110">Seahawks -3.5<br><span class="odds-btn-price">-110</span></button>
           </div>
         
           <div class="odds-row-label">Total</div>
           <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873278" data-bettype="Total" data-selection="Over 40" data-odds="-105">O 40<br><span class="odds-btn-price">-105</span></button>
-            <button class="odds-btn" data-game="401873278" data-bettype="Total" data-selection="Under 40" data-odds="-115">U 40<br><span class="odds-btn-price">-115</span></button>
+            <button class="odds-btn" data-game="401872656" data-bettype="Total" data-selection="Over 44.5" data-odds="-110">O 44.5<br><span class="odds-btn-price">-110</span></button>
+            <button class="odds-btn" data-game="401872656" data-bettype="Total" data-selection="Under 44.5" data-odds="-110">U 44.5<br><span class="odds-btn-price">-110</span></button>
           </div>
         
           <div class="odds-row-label">Moneyline</div>
           <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873278" data-bettype="Moneyline" data-selection="Broncos" data-odds="-190">Broncos<br><span class="odds-btn-price">-190</span></button>
-            <button class="odds-btn" data-game="401873278" data-bettype="Moneyline" data-selection="Falcons" data-odds="160">Falcons<br><span class="odds-btn-price">+160</span></button>
+            <button class="odds-btn" data-game="401872656" data-bettype="Moneyline" data-selection="Patriots" data-odds="160">Patriots<br><span class="odds-btn-price">+160</span></button>
+            <button class="odds-btn" data-game="401872656" data-bettype="Moneyline" data-selection="Seahawks" data-odds="-192">Seahawks<br><span class="odds-btn-price">-192</span></button>
           </div>
-        <div class="trend-note" style="margin-top:2px;">Consensus (median across 11 books) — tap to add to your pick</div>
-        <div class="trend-note" style="color:#B4463A;">Matched: Denver Broncos @ Atlanta Falcons <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
+        <div class="trend-note" style="margin-top:2px;">Consensus (median across 10 books) — tap to add to your pick</div>
+        <div class="trend-note" style="color:#B4463A;">Matched: New England Patriots @ Seattle Seahawks <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
       </div></div>
       
     </div><div class="card">
-      <div class="game-header" data-id="401873276">
+      <div class="game-header" data-id="401872657">
         <div>
-          <div class="game-title">Buccaneers @ Jets</div>
-          <div class="game-sub">Fri, Aug 14, 7:00 PM</div>
-          <div class="game-sub" id="cardWeather-401873276" style="color:#3B7DD8;">🌤 30.3°F · 8% rain · wind 12.4mph</div>
-        </div>
-        <span class="pill ">Add Pick</span>
-      </div>
-      <div style="padding: 0 14px 10px;">
-      <div class="odds-board">
-        
-        
-          <div class="odds-row-label">Spread</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873276" data-bettype="Spread" data-selection="Buccaneers +5.5" data-odds="-102">Buccaneers +5.5<br><span class="odds-btn-price">-102</span></button>
-            <button class="odds-btn" data-game="401873276" data-bettype="Spread" data-selection="Jets -5.5" data-odds="-120">Jets -5.5<br><span class="odds-btn-price">-120</span></button>
-          </div>
-        
-          <div class="odds-row-label">Total</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873276" data-bettype="Total" data-selection="Over 35.5" data-odds="-110">O 35.5<br><span class="odds-btn-price">-110</span></button>
-            <button class="odds-btn" data-game="401873276" data-bettype="Total" data-selection="Under 35.5" data-odds="-110">U 35.5<br><span class="odds-btn-price">-110</span></button>
-          </div>
-        
-          <div class="odds-row-label">Moneyline</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873276" data-bettype="Moneyline" data-selection="Buccaneers" data-odds="215">Buccaneers<br><span class="odds-btn-price">+215</span></button>
-            <button class="odds-btn" data-game="401873276" data-bettype="Moneyline" data-selection="Jets" data-odds="-260">Jets<br><span class="odds-btn-price">-260</span></button>
-          </div>
-        <div class="trend-note" style="margin-top:2px;">Consensus (median across 11 books) — tap to add to your pick</div>
-        <div class="trend-note" style="color:#B4463A;">Matched: Tampa Bay Buccaneers @ New York Jets <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
-      </div></div>
-      
-    </div><div class="card">
-      <div class="game-header" data-id="401873277">
-        <div>
-          <div class="game-title">Dolphins @ Commanders</div>
-          <div class="game-sub">Fri, Aug 14, 7:00 PM</div>
-          <div class="game-sub" id="cardWeather-401873277" style="color:#3B7DD8;">🌤 28.5°F · 28% rain · wind 6.1mph</div>
-        </div>
-        <span class="pill ">Add Pick</span>
-      </div>
-      <div style="padding: 0 14px 10px;">
-      <div class="odds-board">
-        
-        
-          <div class="odds-row-label">Spread</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873277" data-bettype="Spread" data-selection="Dolphins -3.5" data-odds="100">Dolphins -3.5<br><span class="odds-btn-price">+100</span></button>
-            <button class="odds-btn" data-game="401873277" data-bettype="Spread" data-selection="Commanders +3.5" data-odds="-122">Commanders +3.5<br><span class="odds-btn-price">-122</span></button>
-          </div>
-        
-          <div class="odds-row-label">Total</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873277" data-bettype="Total" data-selection="Over 36" data-odds="-115">O 36<br><span class="odds-btn-price">-115</span></button>
-            <button class="odds-btn" data-game="401873277" data-bettype="Total" data-selection="Under 36" data-odds="-105">U 36<br><span class="odds-btn-price">-105</span></button>
-          </div>
-        
-          <div class="odds-row-label">Moneyline</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873277" data-bettype="Moneyline" data-selection="Dolphins" data-odds="-164">Dolphins<br><span class="odds-btn-price">-164</span></button>
-            <button class="odds-btn" data-game="401873277" data-bettype="Moneyline" data-selection="Commanders" data-odds="138">Commanders<br><span class="odds-btn-price">+138</span></button>
-          </div>
-        <div class="trend-note" style="margin-top:2px;">Consensus (median across 11 books) — tap to add to your pick</div>
-        <div class="trend-note" style="color:#B4463A;">Matched: Miami Dolphins @ Washington Commanders <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
-      </div></div>
-      
-    </div><div class="card">
-      <div class="game-header" data-id="401873282">
-        <div>
-          <div class="game-title">Panthers @ Bills</div>
-          <div class="game-sub">Sat, Aug 15, 1:00 PM</div>
-          <div class="game-sub" id="cardWeather-401873282" style="color:#3B7DD8;">🌤 29.1°F · 4% rain · wind 19.5mph</div>
-        </div>
-        <span class="pill ">Add Pick</span>
-      </div>
-      <div style="padding: 0 14px 10px;">
-      <div class="odds-board">
-        
-        
-          <div class="odds-row-label">Spread</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873282" data-bettype="Spread" data-selection="Panthers +3" data-odds="-122">Panthers +3<br><span class="odds-btn-price">-122</span></button>
-            <button class="odds-btn" data-game="401873282" data-bettype="Spread" data-selection="Bills -3" data-odds="100">Bills -3<br><span class="odds-btn-price">+100</span></button>
-          </div>
-        
-          <div class="odds-row-label">Total</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873282" data-bettype="Total" data-selection="Over 39" data-odds="-102">O 39<br><span class="odds-btn-price">-102</span></button>
-            <button class="odds-btn" data-game="401873282" data-bettype="Total" data-selection="Under 39" data-odds="-120">U 39<br><span class="odds-btn-price">-120</span></button>
-          </div>
-        
-          <div class="odds-row-label">Moneyline</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873282" data-bettype="Moneyline" data-selection="Panthers" data-odds="132">Panthers<br><span class="odds-btn-price">+132</span></button>
-            <button class="odds-btn" data-game="401873282" data-bettype="Moneyline" data-selection="Bills" data-odds="-156">Bills<br><span class="odds-btn-price">-156</span></button>
-          </div>
-        <div class="trend-note" style="margin-top:2px;">Consensus (median across 11 books) — tap to add to your pick</div>
-        <div class="trend-note" style="color:#B4463A;">Matched: Carolina Panthers @ Buffalo Bills <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
-      </div></div>
-      
-    </div><div class="card">
-      <div class="game-header" data-id="401874393">
-        <div>
-          <div class="game-title">Browns @ Bears</div>
-          <div class="game-sub">Sat, Aug 15, 1:00 PM</div>
-          <div class="game-sub" id="cardWeather-401874393" style="color:#3B7DD8;">🌤 27.7°F · 71% rain · wind 12mph</div>
-        </div>
-        <span class="pill ">Add Pick</span>
-      </div>
-      <div style="padding: 0 14px 10px;">
-      <div class="odds-board">
-        
-        
-          <div class="odds-row-label">Spread</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401874393" data-bettype="Spread" data-selection="Browns -3.5" data-odds="-104">Browns -3.5<br><span class="odds-btn-price">-104</span></button>
-            <button class="odds-btn" data-game="401874393" data-bettype="Spread" data-selection="Bears +3.5" data-odds="-118">Bears +3.5<br><span class="odds-btn-price">-118</span></button>
-          </div>
-        
-          <div class="odds-row-label">Total</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401874393" data-bettype="Total" data-selection="Over 40.5" data-odds="-110">O 40.5<br><span class="odds-btn-price">-110</span></button>
-            <button class="odds-btn" data-game="401874393" data-bettype="Total" data-selection="Under 40.5" data-odds="-110">U 40.5<br><span class="odds-btn-price">-110</span></button>
-          </div>
-        
-          <div class="odds-row-label">Moneyline</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401874393" data-bettype="Moneyline" data-selection="Browns" data-odds="-166">Browns<br><span class="odds-btn-price">-166</span></button>
-            <button class="odds-btn" data-game="401874393" data-bettype="Moneyline" data-selection="Bears" data-odds="140">Bears<br><span class="odds-btn-price">+140</span></button>
-          </div>
-        <div class="trend-note" style="margin-top:2px;">Consensus (median across 11 books) — tap to add to your pick</div>
-        <div class="trend-note" style="color:#B4463A;">Matched: Cleveland Browns @ Chicago Bears <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
-      </div></div>
-      
-    </div><div class="card">
-      <div class="game-header" data-id="401873280">
-        <div>
-          <div class="game-title">Vikings @ Giants</div>
-          <div class="game-sub">Sat, Aug 15, 1:00 PM</div>
-          <div class="game-sub" id="cardWeather-401873280" style="color:#3B7DD8;">🌤 30.8°F · 1% rain · wind 14.1mph</div>
-        </div>
-        <span class="pill ">Add Pick</span>
-      </div>
-      <div style="padding: 0 14px 10px;">
-      <div class="odds-board">
-        
-        
-          <div class="odds-row-label">Spread</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873280" data-bettype="Spread" data-selection="Vikings -2.5" data-odds="-115">Vikings -2.5<br><span class="odds-btn-price">-115</span></button>
-            <button class="odds-btn" data-game="401873280" data-bettype="Spread" data-selection="Giants +2.5" data-odds="-105">Giants +2.5<br><span class="odds-btn-price">-105</span></button>
-          </div>
-        
-          <div class="odds-row-label">Total</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873280" data-bettype="Total" data-selection="Over 41.5" data-odds="-110">O 41.5<br><span class="odds-btn-price">-110</span></button>
-            <button class="odds-btn" data-game="401873280" data-bettype="Total" data-selection="Under 41.5" data-odds="-110">U 41.5<br><span class="odds-btn-price">-110</span></button>
-          </div>
-        
-          <div class="odds-row-label">Moneyline</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873280" data-bettype="Moneyline" data-selection="Vikings" data-odds="-146">Vikings<br><span class="odds-btn-price">-146</span></button>
-            <button class="odds-btn" data-game="401873280" data-bettype="Moneyline" data-selection="Giants" data-odds="124">Giants<br><span class="odds-btn-price">+124</span></button>
-          </div>
-        <div class="trend-note" style="margin-top:2px;">Consensus (median across 11 books) — tap to add to your pick</div>
-        <div class="trend-note" style="color:#B4463A;">Matched: Minnesota Vikings @ New York Giants <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
-      </div></div>
-      
-    </div><div class="card">
-      <div class="game-header" data-id="401873283">
-        <div>
-          <div class="game-title">Rams @ Chiefs</div>
-          <div class="game-sub">Sat, Aug 15, 4:00 PM</div>
-          <div class="game-sub" id="cardWeather-401873283" style="color:#3B7DD8;">🌤 41.8°F · 18% rain · wind 27.3mph</div>
-        </div>
-        <span class="pill ">Add Pick</span>
-      </div>
-      <div style="padding: 0 14px 10px;">
-      <div class="odds-board">
-        
-        
-          <div class="odds-row-label">Spread</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873283" data-bettype="Spread" data-selection="Rams +2.5" data-odds="-110">Rams +2.5<br><span class="odds-btn-price">-110</span></button>
-            <button class="odds-btn" data-game="401873283" data-bettype="Spread" data-selection="Chiefs -2.5" data-odds="-110">Chiefs -2.5<br><span class="odds-btn-price">-110</span></button>
-          </div>
-        
-          <div class="odds-row-label">Total</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873283" data-bettype="Total" data-selection="Over 36.5" data-odds="-120">O 36.5<br><span class="odds-btn-price">-120</span></button>
-            <button class="odds-btn" data-game="401873283" data-bettype="Total" data-selection="Under 36.5" data-odds="-102">U 36.5<br><span class="odds-btn-price">-102</span></button>
-          </div>
-        
-          <div class="odds-row-label">Moneyline</div>
-          <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873283" data-bettype="Moneyline" data-selection="Rams" data-odds="116">Rams<br><span class="odds-btn-price">+116</span></button>
-            <button class="odds-btn" data-game="401873283" data-bettype="Moneyline" data-selection="Chiefs" data-odds="-136">Chiefs<br><span class="odds-btn-price">-136</span></button>
-          </div>
-        <div class="trend-note" style="margin-top:2px;">Consensus (median across 11 books) — tap to add to your pick</div>
-        <div class="trend-note" style="color:#B4463A;">Matched: Los Angeles Rams @ Kansas City Chiefs <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
-      </div></div>
-      
-    </div><div class="card">
-      <div class="game-header" data-id="401873281">
-        <div>
-          <div class="game-title">Jaguars @ Saints</div>
-          <div class="game-sub">Sat, Aug 15, 4:00 PM</div>
+          <div class="game-title">49ers @ Rams</div>
+          <div class="game-sub">Thu, Sep 10, 8:35 PM</div>
           
         </div>
         <span class="pill ">Add Pick</span>
@@ -641,31 +233,31 @@
         
           <div class="odds-row-label">Spread</div>
           <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873281" data-bettype="Spread" data-selection="Jaguars +1.5" data-odds="-110">Jaguars +1.5<br><span class="odds-btn-price">-110</span></button>
-            <button class="odds-btn" data-game="401873281" data-bettype="Spread" data-selection="Saints -1.5" data-odds="-110">Saints -1.5<br><span class="odds-btn-price">-110</span></button>
+            <button class="odds-btn" data-game="401872657" data-bettype="Spread" data-selection="49ers +3.5" data-odds="-110">49ers +3.5<br><span class="odds-btn-price">-110</span></button>
+            <button class="odds-btn" data-game="401872657" data-bettype="Spread" data-selection="Rams -3.5" data-odds="-110">Rams -3.5<br><span class="odds-btn-price">-110</span></button>
           </div>
         
           <div class="odds-row-label">Total</div>
           <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873281" data-bettype="Total" data-selection="Over 35.5" data-odds="-112">O 35.5<br><span class="odds-btn-price">-112</span></button>
-            <button class="odds-btn" data-game="401873281" data-bettype="Total" data-selection="Under 35.5" data-odds="-108">U 35.5<br><span class="odds-btn-price">-108</span></button>
+            <button class="odds-btn" data-game="401872657" data-bettype="Total" data-selection="Over 48.5" data-odds="-110">O 48.5<br><span class="odds-btn-price">-110</span></button>
+            <button class="odds-btn" data-game="401872657" data-bettype="Total" data-selection="Under 48.5" data-odds="-110">U 48.5<br><span class="odds-btn-price">-110</span></button>
           </div>
         
           <div class="odds-row-label">Moneyline</div>
           <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873281" data-bettype="Moneyline" data-selection="Jaguars" data-odds="108">Jaguars<br><span class="odds-btn-price">+108</span></button>
-            <button class="odds-btn" data-game="401873281" data-bettype="Moneyline" data-selection="Saints" data-odds="-126">Saints<br><span class="odds-btn-price">-126</span></button>
+            <button class="odds-btn" data-game="401872657" data-bettype="Moneyline" data-selection="49ers" data-odds="160">49ers<br><span class="odds-btn-price">+160</span></button>
+            <button class="odds-btn" data-game="401872657" data-bettype="Moneyline" data-selection="Rams" data-odds="-192">Rams<br><span class="odds-btn-price">-192</span></button>
           </div>
-        <div class="trend-note" style="margin-top:2px;">Consensus (median across 11 books) — tap to add to your pick</div>
-        <div class="trend-note" style="color:#B4463A;">Matched: Jacksonville Jaguars @ New Orleans Saints <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
+        <div class="trend-note" style="margin-top:2px;">Consensus (median across 10 books) — tap to add to your pick</div>
+        <div class="trend-note" style="color:#B4463A;">Matched: San Francisco 49ers @ Los Angeles Rams <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
       </div></div>
       
     </div><div class="card">
-      <div class="game-header" data-id="401873284">
+      <div class="game-header" data-id="401872925">
         <div>
-          <div class="game-title">Eagles @ Ravens</div>
-          <div class="game-sub">Sat, Aug 15, 7:00 PM</div>
-          <div class="game-sub" id="cardWeather-401873284" style="color:#3B7DD8;">🌤 31.6°F · 22% rain · wind 16.4mph</div>
+          <div class="game-title">Buccaneers @ Bengals</div>
+          <div class="game-sub">Sun, Sep 13, 1:00 PM</div>
+          
         </div>
         <span class="pill ">Add Pick</span>
       </div>
@@ -675,31 +267,31 @@
         
           <div class="odds-row-label">Spread</div>
           <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873284" data-bettype="Spread" data-selection="Eagles -3.5" data-odds="-110">Eagles -3.5<br><span class="odds-btn-price">-110</span></button>
-            <button class="odds-btn" data-game="401873284" data-bettype="Spread" data-selection="Ravens +3.5" data-odds="-110">Ravens +3.5<br><span class="odds-btn-price">-110</span></button>
+            <button class="odds-btn" data-game="401872925" data-bettype="Spread" data-selection="Buccaneers +3.5" data-odds="-105">Buccaneers +3.5<br><span class="odds-btn-price">-105</span></button>
+            <button class="odds-btn" data-game="401872925" data-bettype="Spread" data-selection="Bengals -3.5" data-odds="-115">Bengals -3.5<br><span class="odds-btn-price">-115</span></button>
           </div>
         
           <div class="odds-row-label">Total</div>
           <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873284" data-bettype="Total" data-selection="Over 37.5" data-odds="-102">O 37.5<br><span class="odds-btn-price">-102</span></button>
-            <button class="odds-btn" data-game="401873284" data-bettype="Total" data-selection="Under 37.5" data-odds="-120">U 37.5<br><span class="odds-btn-price">-120</span></button>
+            <button class="odds-btn" data-game="401872925" data-bettype="Total" data-selection="Over 51.5" data-odds="-110">O 51.5<br><span class="odds-btn-price">-110</span></button>
+            <button class="odds-btn" data-game="401872925" data-bettype="Total" data-selection="Under 51.5" data-odds="-110">U 51.5<br><span class="odds-btn-price">-110</span></button>
           </div>
         
           <div class="odds-row-label">Moneyline</div>
           <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873284" data-bettype="Moneyline" data-selection="Eagles" data-odds="-198">Eagles<br><span class="odds-btn-price">-198</span></button>
-            <button class="odds-btn" data-game="401873284" data-bettype="Moneyline" data-selection="Ravens" data-odds="166">Ravens<br><span class="odds-btn-price">+166</span></button>
+            <button class="odds-btn" data-game="401872925" data-bettype="Moneyline" data-selection="Buccaneers" data-odds="170">Buccaneers<br><span class="odds-btn-price">+170</span></button>
+            <button class="odds-btn" data-game="401872925" data-bettype="Moneyline" data-selection="Bengals" data-odds="-205">Bengals<br><span class="odds-btn-price">-205</span></button>
           </div>
-        <div class="trend-note" style="margin-top:2px;">Consensus (median across 11 books) — tap to add to your pick</div>
-        <div class="trend-note" style="color:#B4463A;">Matched: Philadelphia Eagles @ Baltimore Ravens <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
+        <div class="trend-note" style="margin-top:2px;">Consensus (median across 10 books) — tap to add to your pick</div>
+        <div class="trend-note" style="color:#B4463A;">Matched: Tampa Bay Buccaneers @ Cincinnati Bengals <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
       </div></div>
       
     </div><div class="card">
-      <div class="game-header" data-id="401873279">
+      <div class="game-header" data-id="401872923">
         <div>
-          <div class="game-title">Cowboys @ Seahawks</div>
-          <div class="game-sub">Sat, Aug 15, 8:00 PM</div>
-          <div class="game-sub" id="cardWeather-401873279" style="color:#3B7DD8;">🌤 29.1°F · 0% rain · wind 14.7mph</div>
+          <div class="game-title">Saints @ Lions</div>
+          <div class="game-sub">Sun, Sep 13, 1:00 PM</div>
+          
         </div>
         <span class="pill ">Add Pick</span>
       </div>
@@ -709,23 +301,431 @@
         
           <div class="odds-row-label">Spread</div>
           <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873279" data-bettype="Spread" data-selection="Cowboys +2.5" data-odds="-108">Cowboys +2.5<br><span class="odds-btn-price">-108</span></button>
-            <button class="odds-btn" data-game="401873279" data-bettype="Spread" data-selection="Seahawks -2.5" data-odds="-112">Seahawks -2.5<br><span class="odds-btn-price">-112</span></button>
+            <button class="odds-btn" data-game="401872923" data-bettype="Spread" data-selection="Saints +7" data-odds="-110">Saints +7<br><span class="odds-btn-price">-110</span></button>
+            <button class="odds-btn" data-game="401872923" data-bettype="Spread" data-selection="Lions -7" data-odds="-110">Lions -7<br><span class="odds-btn-price">-110</span></button>
           </div>
         
           <div class="odds-row-label">Total</div>
           <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873279" data-bettype="Total" data-selection="Over 39.5" data-odds="-110">O 39.5<br><span class="odds-btn-price">-110</span></button>
-            <button class="odds-btn" data-game="401873279" data-bettype="Total" data-selection="Under 39.5" data-odds="-110">U 39.5<br><span class="odds-btn-price">-110</span></button>
+            <button class="odds-btn" data-game="401872923" data-bettype="Total" data-selection="Over 49" data-odds="-118">O 49<br><span class="odds-btn-price">-118</span></button>
+            <button class="odds-btn" data-game="401872923" data-bettype="Total" data-selection="Under 49" data-odds="-102">U 49<br><span class="odds-btn-price">-102</span></button>
           </div>
         
           <div class="odds-row-label">Moneyline</div>
           <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873279" data-bettype="Moneyline" data-selection="Cowboys" data-odds="130">Cowboys<br><span class="odds-btn-price">+130</span></button>
-            <button class="odds-btn" data-game="401873279" data-bettype="Moneyline" data-selection="Seahawks" data-odds="-154">Seahawks<br><span class="odds-btn-price">-154</span></button>
+            <button class="odds-btn" data-game="401872923" data-bettype="Moneyline" data-selection="Saints" data-odds="250">Saints<br><span class="odds-btn-price">+250</span></button>
+            <button class="odds-btn" data-game="401872923" data-bettype="Moneyline" data-selection="Lions" data-odds="-310">Lions<br><span class="odds-btn-price">-310</span></button>
           </div>
-        <div class="trend-note" style="margin-top:2px;">Consensus (median across 11 books) — tap to add to your pick</div>
-        <div class="trend-note" style="color:#B4463A;">Matched: Dallas Cowboys @ Seattle Seahawks <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
+        <div class="trend-note" style="margin-top:2px;">Consensus (median across 10 books) — tap to add to your pick</div>
+        <div class="trend-note" style="color:#B4463A;">Matched: New Orleans Saints @ Detroit Lions <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
+      </div></div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401872924">
+        <div>
+          <div class="game-title">Jets @ Titans</div>
+          <div class="game-sub">Sun, Sep 13, 1:00 PM</div>
+          
+        </div>
+        <span class="pill ">Add Pick</span>
+      </div>
+      <div style="padding: 0 14px 10px;">
+      <div class="odds-board">
+        
+        
+          <div class="odds-row-label">Spread</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872924" data-bettype="Spread" data-selection="Jets +2.5" data-odds="-120">Jets +2.5<br><span class="odds-btn-price">-120</span></button>
+            <button class="odds-btn" data-game="401872924" data-bettype="Spread" data-selection="Titans -2.5" data-odds="100">Titans -2.5<br><span class="odds-btn-price">+100</span></button>
+          </div>
+        
+          <div class="odds-row-label">Total</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872924" data-bettype="Total" data-selection="Over 39.5" data-odds="-110">O 39.5<br><span class="odds-btn-price">-110</span></button>
+            <button class="odds-btn" data-game="401872924" data-bettype="Total" data-selection="Under 39.5" data-odds="-110">U 39.5<br><span class="odds-btn-price">-110</span></button>
+          </div>
+        
+          <div class="odds-row-label">Moneyline</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872924" data-bettype="Moneyline" data-selection="Jets" data-odds="124">Jets<br><span class="odds-btn-price">+124</span></button>
+            <button class="odds-btn" data-game="401872924" data-bettype="Moneyline" data-selection="Titans" data-odds="-148">Titans<br><span class="odds-btn-price">-148</span></button>
+          </div>
+        <div class="trend-note" style="margin-top:2px;">Consensus (median across 10 books) — tap to add to your pick</div>
+        <div class="trend-note" style="color:#B4463A;">Matched: New York Jets @ Tennessee Titans <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
+      </div></div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401872659">
+        <div>
+          <div class="game-title">Ravens @ Colts</div>
+          <div class="game-sub">Sun, Sep 13, 1:00 PM</div>
+          
+        </div>
+        <span class="pill ">Add Pick</span>
+      </div>
+      <div style="padding: 0 14px 10px;">
+      <div class="odds-board">
+        
+        
+          <div class="odds-row-label">Spread</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872659" data-bettype="Spread" data-selection="Ravens -3.5" data-odds="-108">Ravens -3.5<br><span class="odds-btn-price">-108</span></button>
+            <button class="odds-btn" data-game="401872659" data-bettype="Spread" data-selection="Colts +3.5" data-odds="-112">Colts +3.5<br><span class="odds-btn-price">-112</span></button>
+          </div>
+        
+          <div class="odds-row-label">Total</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872659" data-bettype="Total" data-selection="Over 48.5" data-odds="-110">O 48.5<br><span class="odds-btn-price">-110</span></button>
+            <button class="odds-btn" data-game="401872659" data-bettype="Total" data-selection="Under 48.5" data-odds="-110">U 48.5<br><span class="odds-btn-price">-110</span></button>
+          </div>
+        
+          <div class="odds-row-label">Moneyline</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872659" data-bettype="Moneyline" data-selection="Ravens" data-odds="-180">Ravens<br><span class="odds-btn-price">-180</span></button>
+            <button class="odds-btn" data-game="401872659" data-bettype="Moneyline" data-selection="Colts" data-odds="150">Colts<br><span class="odds-btn-price">+150</span></button>
+          </div>
+        <div class="trend-note" style="margin-top:2px;">Consensus (median across 10 books) — tap to add to your pick</div>
+        <div class="trend-note" style="color:#B4463A;">Matched: Baltimore Ravens @ Indianapolis Colts <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
+      </div></div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401872658">
+        <div>
+          <div class="game-title">Falcons @ Steelers</div>
+          <div class="game-sub">Sun, Sep 13, 1:00 PM</div>
+          
+        </div>
+        <span class="pill ">Add Pick</span>
+      </div>
+      <div style="padding: 0 14px 10px;">
+      <div class="odds-board">
+        
+        
+          <div class="odds-row-label">Spread</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872658" data-bettype="Spread" data-selection="Falcons +3" data-odds="100">Falcons +3<br><span class="odds-btn-price">+100</span></button>
+            <button class="odds-btn" data-game="401872658" data-bettype="Spread" data-selection="Steelers -3" data-odds="-120">Steelers -3<br><span class="odds-btn-price">-120</span></button>
+          </div>
+        
+          <div class="odds-row-label">Total</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872658" data-bettype="Total" data-selection="Over 42.5" data-odds="-105">O 42.5<br><span class="odds-btn-price">-105</span></button>
+            <button class="odds-btn" data-game="401872658" data-bettype="Total" data-selection="Under 42.5" data-odds="-115">U 42.5<br><span class="odds-btn-price">-115</span></button>
+          </div>
+        
+          <div class="odds-row-label">Moneyline</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872658" data-bettype="Moneyline" data-selection="Falcons" data-odds="150">Falcons<br><span class="odds-btn-price">+150</span></button>
+            <button class="odds-btn" data-game="401872658" data-bettype="Moneyline" data-selection="Steelers" data-odds="-180">Steelers<br><span class="odds-btn-price">-180</span></button>
+          </div>
+        <div class="trend-note" style="margin-top:2px;">Consensus (median across 10 books) — tap to add to your pick</div>
+        <div class="trend-note" style="color:#B4463A;">Matched: Atlanta Falcons @ Pittsburgh Steelers <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
+      </div></div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401872661">
+        <div>
+          <div class="game-title">Bears @ Panthers</div>
+          <div class="game-sub">Sun, Sep 13, 1:00 PM</div>
+          
+        </div>
+        <span class="pill ">Add Pick</span>
+      </div>
+      <div style="padding: 0 14px 10px;">
+      <div class="odds-board">
+        
+        
+          <div class="odds-row-label">Spread</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872661" data-bettype="Spread" data-selection="Bears -2.5" data-odds="-118">Bears -2.5<br><span class="odds-btn-price">-118</span></button>
+            <button class="odds-btn" data-game="401872661" data-bettype="Spread" data-selection="Panthers +2.5" data-odds="-102">Panthers +2.5<br><span class="odds-btn-price">-102</span></button>
+          </div>
+        
+          <div class="odds-row-label">Total</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872661" data-bettype="Total" data-selection="Over 46" data-odds="-110">O 46<br><span class="odds-btn-price">-110</span></button>
+            <button class="odds-btn" data-game="401872661" data-bettype="Total" data-selection="Under 46" data-odds="-110">U 46<br><span class="odds-btn-price">-110</span></button>
+          </div>
+        
+          <div class="odds-row-label">Moneyline</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872661" data-bettype="Moneyline" data-selection="Bears" data-odds="-148">Bears<br><span class="odds-btn-price">-148</span></button>
+            <button class="odds-btn" data-game="401872661" data-bettype="Moneyline" data-selection="Panthers" data-odds="124">Panthers<br><span class="odds-btn-price">+124</span></button>
+          </div>
+        <div class="trend-note" style="margin-top:2px;">Consensus (median across 10 books) — tap to add to your pick</div>
+        <div class="trend-note" style="color:#B4463A;">Matched: Chicago Bears @ Carolina Panthers <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
+      </div></div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401872922">
+        <div>
+          <div class="game-title">Browns @ Jaguars</div>
+          <div class="game-sub">Sun, Sep 13, 1:00 PM</div>
+          
+        </div>
+        <span class="pill ">Add Pick</span>
+      </div>
+      <div style="padding: 0 14px 10px;">
+      <div class="odds-board">
+        
+        
+          <div class="odds-row-label">Spread</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872922" data-bettype="Spread" data-selection="Browns +7.5" data-odds="-110">Browns +7.5<br><span class="odds-btn-price">-110</span></button>
+            <button class="odds-btn" data-game="401872922" data-bettype="Spread" data-selection="Jaguars -7.5" data-odds="-110">Jaguars -7.5<br><span class="odds-btn-price">-110</span></button>
+          </div>
+        
+          <div class="odds-row-label">Total</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872922" data-bettype="Total" data-selection="Over 40.5" data-odds="-110">O 40.5<br><span class="odds-btn-price">-110</span></button>
+            <button class="odds-btn" data-game="401872922" data-bettype="Total" data-selection="Under 40.5" data-odds="-110">U 40.5<br><span class="odds-btn-price">-110</span></button>
+          </div>
+        
+          <div class="odds-row-label">Moneyline</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872922" data-bettype="Moneyline" data-selection="Browns" data-odds="310">Browns<br><span class="odds-btn-price">+310</span></button>
+            <button class="odds-btn" data-game="401872922" data-bettype="Moneyline" data-selection="Jaguars" data-odds="-395">Jaguars<br><span class="odds-btn-price">-395</span></button>
+          </div>
+        <div class="trend-note" style="margin-top:2px;">Consensus (median across 10 books) — tap to add to your pick</div>
+        <div class="trend-note" style="color:#B4463A;">Matched: Cleveland Browns @ Jacksonville Jaguars <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
+      </div></div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401872660">
+        <div>
+          <div class="game-title">Bills @ Texans</div>
+          <div class="game-sub">Sun, Sep 13, 1:00 PM</div>
+          
+        </div>
+        <span class="pill ">Add Pick</span>
+      </div>
+      <div style="padding: 0 14px 10px;">
+      <div class="odds-board">
+        
+        
+          <div class="odds-row-label">Spread</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872660" data-bettype="Spread" data-selection="Bills +0" data-odds="-108">Bills +0<br><span class="odds-btn-price">-108</span></button>
+            <button class="odds-btn" data-game="401872660" data-bettype="Spread" data-selection="Texans 0" data-odds="-112">Texans 0<br><span class="odds-btn-price">-112</span></button>
+          </div>
+        
+          <div class="odds-row-label">Total</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872660" data-bettype="Total" data-selection="Over 44.5" data-odds="-110">O 44.5<br><span class="odds-btn-price">-110</span></button>
+            <button class="odds-btn" data-game="401872660" data-bettype="Total" data-selection="Under 44.5" data-odds="-110">U 44.5<br><span class="odds-btn-price">-110</span></button>
+          </div>
+        
+          <div class="odds-row-label">Moneyline</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872660" data-bettype="Moneyline" data-selection="Bills" data-odds="-120">Bills<br><span class="odds-btn-price">-120</span></button>
+            <button class="odds-btn" data-game="401872660" data-bettype="Moneyline" data-selection="Texans" data-odds="100">Texans<br><span class="odds-btn-price">+100</span></button>
+          </div>
+        <div class="trend-note" style="margin-top:2px;">Consensus (median across 10 books) — tap to add to your pick</div>
+        <div class="trend-note" style="color:#B4463A;">Matched: Buffalo Bills @ Houston Texans <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
+      </div></div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401872928">
+        <div>
+          <div class="game-title">Dolphins @ Raiders</div>
+          <div class="game-sub">Sun, Sep 13, 4:25 PM</div>
+          
+        </div>
+        <span class="pill ">Add Pick</span>
+      </div>
+      <div style="padding: 0 14px 10px;">
+      <div class="odds-board">
+        
+        
+          <div class="odds-row-label">Spread</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872928" data-bettype="Spread" data-selection="Dolphins +3.5" data-odds="-110">Dolphins +3.5<br><span class="odds-btn-price">-110</span></button>
+            <button class="odds-btn" data-game="401872928" data-bettype="Spread" data-selection="Raiders -3.5" data-odds="-110">Raiders -3.5<br><span class="odds-btn-price">-110</span></button>
+          </div>
+        
+          <div class="odds-row-label">Total</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872928" data-bettype="Total" data-selection="Over 40.5" data-odds="-110">O 40.5<br><span class="odds-btn-price">-110</span></button>
+            <button class="odds-btn" data-game="401872928" data-bettype="Total" data-selection="Under 40.5" data-odds="-110">U 40.5<br><span class="odds-btn-price">-110</span></button>
+          </div>
+        
+          <div class="odds-row-label">Moneyline</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872928" data-bettype="Moneyline" data-selection="Dolphins" data-odds="164">Dolphins<br><span class="odds-btn-price">+164</span></button>
+            <button class="odds-btn" data-game="401872928" data-bettype="Moneyline" data-selection="Raiders" data-odds="-198">Raiders<br><span class="odds-btn-price">-198</span></button>
+          </div>
+        <div class="trend-note" style="margin-top:2px;">Consensus (median across 10 books) — tap to add to your pick</div>
+        <div class="trend-note" style="color:#B4463A;">Matched: Miami Dolphins @ Las Vegas Raiders <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
+      </div></div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401872927">
+        <div>
+          <div class="game-title">Packers @ Vikings</div>
+          <div class="game-sub">Sun, Sep 13, 4:25 PM</div>
+          
+        </div>
+        <span class="pill ">Add Pick</span>
+      </div>
+      <div style="padding: 0 14px 10px;">
+      <div class="odds-board">
+        
+        
+          <div class="odds-row-label">Spread</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872927" data-bettype="Spread" data-selection="Packers +1" data-odds="-118">Packers +1<br><span class="odds-btn-price">-118</span></button>
+            <button class="odds-btn" data-game="401872927" data-bettype="Spread" data-selection="Vikings -1" data-odds="-102">Vikings -1<br><span class="odds-btn-price">-102</span></button>
+          </div>
+        
+          <div class="odds-row-label">Total</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872927" data-bettype="Total" data-selection="Over 45" data-odds="-110">O 45<br><span class="odds-btn-price">-110</span></button>
+            <button class="odds-btn" data-game="401872927" data-bettype="Total" data-selection="Under 45" data-odds="-110">U 45<br><span class="odds-btn-price">-110</span></button>
+          </div>
+        
+          <div class="odds-row-label">Moneyline</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872927" data-bettype="Moneyline" data-selection="Packers" data-odds="-102">Packers<br><span class="odds-btn-price">-102</span></button>
+            <button class="odds-btn" data-game="401872927" data-bettype="Moneyline" data-selection="Vikings" data-odds="-118">Vikings<br><span class="odds-btn-price">-118</span></button>
+          </div>
+        <div class="trend-note" style="margin-top:2px;">Consensus (median across 10 books) — tap to add to your pick</div>
+        <div class="trend-note" style="color:#B4463A;">Matched: Green Bay Packers @ Minnesota Vikings <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
+      </div></div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401872929">
+        <div>
+          <div class="game-title">Commanders @ Eagles</div>
+          <div class="game-sub">Sun, Sep 13, 4:25 PM</div>
+          
+        </div>
+        <span class="pill ">Add Pick</span>
+      </div>
+      <div style="padding: 0 14px 10px;">
+      <div class="odds-board">
+        
+        
+          <div class="odds-row-label">Spread</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872929" data-bettype="Spread" data-selection="Commanders +4.5" data-odds="-110">Commanders +4.5<br><span class="odds-btn-price">-110</span></button>
+            <button class="odds-btn" data-game="401872929" data-bettype="Spread" data-selection="Eagles -4.5" data-odds="-110">Eagles -4.5<br><span class="odds-btn-price">-110</span></button>
+          </div>
+        
+          <div class="odds-row-label">Total</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872929" data-bettype="Total" data-selection="Over 47" data-odds="-110">O 47<br><span class="odds-btn-price">-110</span></button>
+            <button class="odds-btn" data-game="401872929" data-bettype="Total" data-selection="Under 47" data-odds="-110">U 47<br><span class="odds-btn-price">-110</span></button>
+          </div>
+        
+          <div class="odds-row-label">Moneyline</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872929" data-bettype="Moneyline" data-selection="Commanders" data-odds="180">Commanders<br><span class="odds-btn-price">+180</span></button>
+            <button class="odds-btn" data-game="401872929" data-bettype="Moneyline" data-selection="Eagles" data-odds="-218">Eagles<br><span class="odds-btn-price">-218</span></button>
+          </div>
+        <div class="trend-note" style="margin-top:2px;">Consensus (median across 10 books) — tap to add to your pick</div>
+        <div class="trend-note" style="color:#B4463A;">Matched: Washington Commanders @ Philadelphia Eagles <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
+      </div></div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401872926">
+        <div>
+          <div class="game-title">Cardinals @ Chargers</div>
+          <div class="game-sub">Sun, Sep 13, 4:25 PM</div>
+          
+        </div>
+        <span class="pill ">Add Pick</span>
+      </div>
+      <div style="padding: 0 14px 10px;">
+      <div class="odds-board">
+        
+        
+          <div class="odds-row-label">Spread</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872926" data-bettype="Spread" data-selection="Cardinals +10.5" data-odds="-110">Cardinals +10.5<br><span class="odds-btn-price">-110</span></button>
+            <button class="odds-btn" data-game="401872926" data-bettype="Spread" data-selection="Chargers -10.5" data-odds="-110">Chargers -10.5<br><span class="odds-btn-price">-110</span></button>
+          </div>
+        
+          <div class="odds-row-label">Total</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872926" data-bettype="Total" data-selection="Over 46.5" data-odds="-110">O 46.5<br><span class="odds-btn-price">-110</span></button>
+            <button class="odds-btn" data-game="401872926" data-bettype="Total" data-selection="Under 46.5" data-odds="-110">U 46.5<br><span class="odds-btn-price">-110</span></button>
+          </div>
+        
+          <div class="odds-row-label">Moneyline</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872926" data-bettype="Moneyline" data-selection="Cardinals" data-odds="425">Cardinals<br><span class="odds-btn-price">+425</span></button>
+            <button class="odds-btn" data-game="401872926" data-bettype="Moneyline" data-selection="Chargers" data-odds="-575">Chargers<br><span class="odds-btn-price">-575</span></button>
+          </div>
+        <div class="trend-note" style="margin-top:2px;">Consensus (median across 10 books) — tap to add to your pick</div>
+        <div class="trend-note" style="color:#B4463A;">Matched: Arizona Cardinals @ Los Angeles Chargers <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
+      </div></div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401872930">
+        <div>
+          <div class="game-title">Cowboys @ Giants</div>
+          <div class="game-sub">Sun, Sep 13, 8:20 PM</div>
+          
+        </div>
+        <span class="pill ">Add Pick</span>
+      </div>
+      <div style="padding: 0 14px 10px;">
+      <div class="odds-board">
+        
+        
+          <div class="odds-row-label">Spread</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872930" data-bettype="Spread" data-selection="Cowboys -2.5" data-odds="-115">Cowboys -2.5<br><span class="odds-btn-price">-115</span></button>
+            <button class="odds-btn" data-game="401872930" data-bettype="Spread" data-selection="Giants +2.5" data-odds="-105">Giants +2.5<br><span class="odds-btn-price">-105</span></button>
+          </div>
+        
+          <div class="odds-row-label">Total</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872930" data-bettype="Total" data-selection="Over 48.5" data-odds="-110">O 48.5<br><span class="odds-btn-price">-110</span></button>
+            <button class="odds-btn" data-game="401872930" data-bettype="Total" data-selection="Under 48.5" data-odds="-110">U 48.5<br><span class="odds-btn-price">-110</span></button>
+          </div>
+        
+          <div class="odds-row-label">Moneyline</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872930" data-bettype="Moneyline" data-selection="Cowboys" data-odds="-148">Cowboys<br><span class="odds-btn-price">-148</span></button>
+            <button class="odds-btn" data-game="401872930" data-bettype="Moneyline" data-selection="Giants" data-odds="124">Giants<br><span class="odds-btn-price">+124</span></button>
+          </div>
+        <div class="trend-note" style="margin-top:2px;">Consensus (median across 10 books) — tap to add to your pick</div>
+        <div class="trend-note" style="color:#B4463A;">Matched: Dallas Cowboys @ New York Giants <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
+      </div></div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401872931">
+        <div>
+          <div class="game-title">Broncos @ Chiefs</div>
+          <div class="game-sub">Mon, Sep 14, 8:15 PM</div>
+          
+        </div>
+        <span class="pill ">Add Pick</span>
+      </div>
+      <div style="padding: 0 14px 10px;">
+      <div class="odds-board">
+        
+        
+          <div class="odds-row-label">Spread</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872931" data-bettype="Spread" data-selection="Broncos +3" data-odds="-115">Broncos +3<br><span class="odds-btn-price">-115</span></button>
+            <button class="odds-btn" data-game="401872931" data-bettype="Spread" data-selection="Chiefs -3" data-odds="-105">Chiefs -3<br><span class="odds-btn-price">-105</span></button>
+          </div>
+        
+          <div class="odds-row-label">Total</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872931" data-bettype="Total" data-selection="Over 42.5" data-odds="-110">O 42.5<br><span class="odds-btn-price">-110</span></button>
+            <button class="odds-btn" data-game="401872931" data-bettype="Total" data-selection="Under 42.5" data-odds="-110">U 42.5<br><span class="odds-btn-price">-110</span></button>
+          </div>
+        
+          <div class="odds-row-label">Moneyline</div>
+          <div class="odds-btn-row">
+            <button class="odds-btn" data-game="401872931" data-bettype="Moneyline" data-selection="Broncos" data-odds="130">Broncos<br><span class="odds-btn-price">+130</span></button>
+            <button class="odds-btn" data-game="401872931" data-bettype="Moneyline" data-selection="Chiefs" data-odds="-155">Chiefs<br><span class="odds-btn-price">-155</span></button>
+          </div>
+        <div class="trend-note" style="margin-top:2px;">Consensus (median across 10 books) — tap to add to your pick</div>
+        <div class="trend-note" style="color:#B4463A;">Matched: Denver Broncos @ Kansas City Chiefs <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
       </div></div>
       
     </div></div>
@@ -789,7 +789,7 @@
     </div>
   </div>
 
-  <div id="ledgerTab" style="display:none;">
+  <div id="ledgerTab" style="display: block;">
     <div class="card" style="padding: 16px; margin-bottom: 16px;">
       <div class="between" style="margin-bottom:12px;">
         <label style="margin:0;">Starting Bankroll</label>
@@ -928,7 +928,7 @@
     <div id="backtestResults"></div>
   </div>
 
-  <div id="edgeTab" style="display:none;">
+  <div id="edgeTab" style="display: none;">
     <div class="card" style="padding:16px; margin-bottom:16px;">
       <div class="trend-title" style="margin-bottom:6px;">Game Line Edge Finder</div>
       <div class="refresh-note">Compares the Elo model's win probability against the market's implied probability on every game this week, and flags meaningful gaps. Needs your odds API connected to see market lines.</div>
@@ -993,14 +993,14 @@
     </div>
   </div>
 
-  <div id="pickSixTab" style="display:none;">
+  <div id="pickSixTab" style="display: none;">
     <div class="card" style="padding:16px; margin-bottom:16px;">
       <div class="trend-title" style="margin-bottom:6px;">Pick 6 — This Week's Card</div>
       <div class="refresh-note">Enter RunYourPool's spread for each of your 6 picks. The model's implied line shows alongside so you can see where it agrees or disagrees with the pool's number — RunYourPool's lines lock Tuesday and don't move, so a gap here is often just the market having moved since, not a model insight.</div>
       <div class="row">
         <div>
           <label>Week</label>
-          <select id="p6Week"></select>
+          <select id="p6Week"><option value="1">Week 1</option><option value="2">Week 2</option><option value="3">Week 3</option><option value="4">Week 4</option><option value="5">Week 5</option><option value="6">Week 6</option><option value="7">Week 7</option><option value="8">Week 8</option><option value="9">Week 9</option><option value="10">Week 10</option><option value="11">Week 11</option><option value="12">Week 12</option><option value="13">Week 13</option><option value="14">Week 14</option><option value="15">Week 15</option><option value="16">Week 16</option><option value="17">Week 17</option><option value="18">Week 18</option></select>
         </div>
         <div>
           <label>Year</label>
@@ -1020,14 +1020,169 @@
         </div>
       </div>
       <div class="refresh-note" style="margin-top:-6px;">This book selector is independent from your default sportsbook on the Edge tab — set it to whichever book you want RunYourPool's lines checked against.</div>
-      <div id="p6PickRows"></div>
+      <div id="p6PickRows"><div class="card" style="padding: 10px; margin-bottom: 8px;">
+      <div class="row" style="margin-bottom:6px;">
+        <div style="flex:2;">
+          <label>Matchup 1</label>
+          <input class="p6-matchup" data-i="0" placeholder="e.g. Bills @ Chiefs" value="">
+        </div>
+        <div>
+          <label>Pool Line</label>
+          <input class="p6-line" data-i="0" placeholder="e.g. Chiefs -3.5" value="">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Your Pick (team + side)</label>
+          <input class="p6-pick" data-i="0" placeholder="e.g. Chiefs" value="">
+        </div>
+        <div>
+          <label>Result</label>
+          <select class="p6-result" data-i="0">
+            <option selected="">Pending</option><option>Win</option><option>Loss</option><option>Push</option>
+          </select>
+        </div>
+      </div>
+      <div id="p6Model-0" class="trend-note" style="margin-top:6px;"></div>
+    </div><div class="card" style="padding: 10px; margin-bottom: 8px;">
+      <div class="row" style="margin-bottom:6px;">
+        <div style="flex:2;">
+          <label>Matchup 2</label>
+          <input class="p6-matchup" data-i="1" placeholder="e.g. Bills @ Chiefs" value="">
+        </div>
+        <div>
+          <label>Pool Line</label>
+          <input class="p6-line" data-i="1" placeholder="e.g. Chiefs -3.5" value="">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Your Pick (team + side)</label>
+          <input class="p6-pick" data-i="1" placeholder="e.g. Chiefs" value="">
+        </div>
+        <div>
+          <label>Result</label>
+          <select class="p6-result" data-i="1">
+            <option selected="">Pending</option><option>Win</option><option>Loss</option><option>Push</option>
+          </select>
+        </div>
+      </div>
+      <div id="p6Model-1" class="trend-note" style="margin-top:6px;"></div>
+    </div><div class="card" style="padding: 10px; margin-bottom: 8px;">
+      <div class="row" style="margin-bottom:6px;">
+        <div style="flex:2;">
+          <label>Matchup 3</label>
+          <input class="p6-matchup" data-i="2" placeholder="e.g. Bills @ Chiefs" value="">
+        </div>
+        <div>
+          <label>Pool Line</label>
+          <input class="p6-line" data-i="2" placeholder="e.g. Chiefs -3.5" value="">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Your Pick (team + side)</label>
+          <input class="p6-pick" data-i="2" placeholder="e.g. Chiefs" value="">
+        </div>
+        <div>
+          <label>Result</label>
+          <select class="p6-result" data-i="2">
+            <option selected="">Pending</option><option>Win</option><option>Loss</option><option>Push</option>
+          </select>
+        </div>
+      </div>
+      <div id="p6Model-2" class="trend-note" style="margin-top:6px;"></div>
+    </div><div class="card" style="padding: 10px; margin-bottom: 8px;">
+      <div class="row" style="margin-bottom:6px;">
+        <div style="flex:2;">
+          <label>Matchup 4</label>
+          <input class="p6-matchup" data-i="3" placeholder="e.g. Bills @ Chiefs" value="">
+        </div>
+        <div>
+          <label>Pool Line</label>
+          <input class="p6-line" data-i="3" placeholder="e.g. Chiefs -3.5" value="">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Your Pick (team + side)</label>
+          <input class="p6-pick" data-i="3" placeholder="e.g. Chiefs" value="">
+        </div>
+        <div>
+          <label>Result</label>
+          <select class="p6-result" data-i="3">
+            <option selected="">Pending</option><option>Win</option><option>Loss</option><option>Push</option>
+          </select>
+        </div>
+      </div>
+      <div id="p6Model-3" class="trend-note" style="margin-top:6px;"></div>
+    </div><div class="card" style="padding: 10px; margin-bottom: 8px;">
+      <div class="row" style="margin-bottom:6px;">
+        <div style="flex:2;">
+          <label>Matchup 5</label>
+          <input class="p6-matchup" data-i="4" placeholder="e.g. Bills @ Chiefs" value="">
+        </div>
+        <div>
+          <label>Pool Line</label>
+          <input class="p6-line" data-i="4" placeholder="e.g. Chiefs -3.5" value="">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Your Pick (team + side)</label>
+          <input class="p6-pick" data-i="4" placeholder="e.g. Chiefs" value="">
+        </div>
+        <div>
+          <label>Result</label>
+          <select class="p6-result" data-i="4">
+            <option selected="">Pending</option><option>Win</option><option>Loss</option><option>Push</option>
+          </select>
+        </div>
+      </div>
+      <div id="p6Model-4" class="trend-note" style="margin-top:6px;"></div>
+    </div><div class="card" style="padding: 10px; margin-bottom: 8px;">
+      <div class="row" style="margin-bottom:6px;">
+        <div style="flex:2;">
+          <label>Matchup 6</label>
+          <input class="p6-matchup" data-i="5" placeholder="e.g. Bills @ Chiefs" value="">
+        </div>
+        <div>
+          <label>Pool Line</label>
+          <input class="p6-line" data-i="5" placeholder="e.g. Chiefs -3.5" value="">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Your Pick (team + side)</label>
+          <input class="p6-pick" data-i="5" placeholder="e.g. Chiefs" value="">
+        </div>
+        <div>
+          <label>Result</label>
+          <select class="p6-result" data-i="5">
+            <option selected="">Pending</option><option>Win</option><option>Loss</option><option>Push</option>
+          </select>
+        </div>
+      </div>
+      <div id="p6Model-5" class="trend-note" style="margin-top:6px;"></div>
+    </div></div>
       <button class="save-btn full" id="p6SaveBtn" style="margin-top:10px;">Save This Week's Card</button>
     </div>
-    <div id="p6History"></div>
+
+    <div class="card" style="padding:16px; margin-bottom:16px;">
+      <div class="trend-title" style="margin-bottom:6px;">Auto-Pick Best 6 From Pool Lines</div>
+      <div class="refresh-note">Paste every game's spread from RunYourPool below, one per line — format like "Chiefs -3.5". The app matches each to the model's implied line, ranks every game by how far the pool's number is from the model's, and fills your 6 picks with the biggest gaps automatically. You still review and can edit before saving.</div>
+      <textarea id="p6BulkLines" placeholder="Chiefs -3.5
+Eagles -6
+Broncos +2.5
+..." style="width:100%; min-height:140px; font-family:inherit; font-size:13px; padding:10px; border-radius:8px; border:1px solid #CBD3DA; resize:vertical;"></textarea>
+      <button class="save-btn full" id="p6AutoPickBtn" style="margin-top:10px;">Find Best 6</button>
+      <div id="p6AutoPickResults" style="margin-top:12px;"></div>
+    </div>
+    <div id="p6History"><div class="empty">No weeks saved yet.</div></div>
   </div>
 </main>
 
-<div id="toast" class="toast" style="display: none;">Parlay mode on — tap odds on any game to add a leg.</div>
+<div id="toast" class="toast" style="display:none;"></div>
 
 <script>
 const NFL_BASE = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard";
@@ -3248,6 +3403,101 @@ function renderP6Rows() {
   });
 }
 
+// ---------- auto-pick best 6 from pasted pool lines ----------
+function parsePoolLineEntry(line) {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+  const m = trimmed.match(/^(.*?)\s*([+-]?\d+(?:\.\d+)?)\s*$/);
+  if (!m) return null;
+  return { teamText: m[1].trim().toLowerCase(), lineNum: parseFloat(m[2]) };
+}
+
+function matchGameForTeamText(teamText) {
+  for (const g of state.games) {
+    const homeLower = g.home.toLowerCase();
+    const awayLower = g.away.toLowerCase();
+    if (teamText.includes(homeLower) || homeLower.includes(teamText)) return { game: g, side: "home" };
+    if (teamText.includes(awayLower) || awayLower.includes(teamText)) return { game: g, side: "away" };
+  }
+  return null;
+}
+
+async function findBestSix() {
+  const out = document.getElementById("p6AutoPickResults");
+  const raw = document.getElementById("p6BulkLines").value;
+  const lines = raw.split("\n").map(l => l.trim()).filter(Boolean);
+  if (lines.length === 0) { showToast("Paste in some lines first."); return; }
+  if (state.games.length === 0) { out.innerHTML = `<div class="error">No games loaded — open the Schedule tab on this same week first.</div>`; return; }
+
+  out.innerHTML = `<div class="refresh-note">Matching games and computing model lines…</div>`;
+
+  const year = parseInt(document.getElementById("p6Year").value, 10);
+  const week = parseInt(document.getElementById("p6Week").value, 10);
+  let elo;
+  try {
+    elo = await buildEloRatings(state.league, year, week);
+  } catch (e) {
+    out.innerHTML = `<div class="error">Couldn't load the model: ${e.message}</div>`;
+    return;
+  }
+
+  const candidates = [];
+  const unmatched = [];
+  lines.forEach(line => {
+    const parsed = parsePoolLineEntry(line);
+    if (!parsed) { unmatched.push(line); return; }
+    const match = matchGameForTeamText(parsed.teamText);
+    if (!match) { unmatched.push(line); return; }
+    const { game, side } = match;
+    // convert pasted line to "home team's line" convention (negative = home favored)
+    const poolHomeLine = side === "home" ? parsed.lineNum : -parsed.lineNum;
+
+    const rh = elo[game.homeId] != null ? elo[game.homeId] : 1500;
+    const ra = elo[game.awayId] != null ? elo[game.awayId] : 1500;
+    const diff = (rh + 55) - ra;
+    const modelHomeLine = -(diff / 25);
+
+    const gap = modelHomeLine - poolHomeLine; // negative = model likes home more than pool credits it; positive = model likes away more
+    const pickSide = gap < 0 ? "home" : "away";
+    const pickTeam = pickSide === "home" ? game.home : game.away;
+
+    candidates.push({
+      matchup: `${game.away} @ ${game.home}`,
+      poolLineText: line,
+      pickTeam,
+      gapAbs: Math.abs(gap),
+      modelHomeLine,
+      poolHomeLine,
+    });
+  });
+
+  if (candidates.length === 0) {
+    out.innerHTML = `<div class="error">Couldn't match any of those lines to a scheduled game. Check team names and try again.</div>${unmatched.length ? `<div class="trend-note">Unmatched: ${unmatched.join(" · ")}</div>` : ""}`;
+    return;
+  }
+
+  candidates.sort((a, b) => b.gapAbs - a.gapAbs);
+  const best6 = candidates.slice(0, 6);
+
+  // fill the 6 pick rows
+  best6.forEach((c, i) => {
+    const matchupInput = document.querySelector(`.p6-matchup[data-i="${i}"]`);
+    const lineInput = document.querySelector(`.p6-line[data-i="${i}"]`);
+    const pickInput = document.querySelector(`.p6-pick[data-i="${i}"]`);
+    if (matchupInput) { matchupInput.value = c.matchup; matchupInput.dispatchEvent(new Event("change")); }
+    if (lineInput) lineInput.value = c.poolLineText;
+    if (pickInput) pickInput.value = c.pickTeam;
+  });
+
+  out.innerHTML = `
+    <div class="trend-title">Best 6 (by model/pool gap)</div>
+    ${best6.map(c => `<div class="trend-line"><b>${c.pickTeam}</b> — ${c.matchup} · pool: ${c.poolLineText} · model home line: ${c.modelHomeLine.toFixed(1)} · gap: ${c.gapAbs.toFixed(1)} pts</div>`).join("")}
+    ${candidates.length > 6 ? `<div class="trend-note" style="margin-top:6px;">${candidates.length - 6} other game${candidates.length - 6 > 1 ? "s" : ""} matched but had a smaller gap, not included.</div>` : ""}
+    ${unmatched.length ? `<div class="trend-note">Couldn't match: ${unmatched.join(" · ")}</div>` : ""}
+    <div class="trend-note" style="margin-top:6px;">Filled into your 6 picks above — review and edit before saving. A big gap is worth checking why (see The Case on that game), not an automatic bet.</div>
+  `;
+}
+
 function saveP6Week() {
   const week = document.getElementById("p6Week").value;
   const year = document.getElementById("p6Year").value;
@@ -3875,6 +4125,7 @@ document.getElementById("runEdgeScanBtn").addEventListener("click", runEdgeScan)
 document.getElementById("calcPropEdgeBtn").addEventListener("click", calcPropEdge);
 document.getElementById("p6Week").addEventListener("change", renderP6Rows);
 document.getElementById("p6SaveBtn").addEventListener("click", saveP6Week);
+document.getElementById("p6AutoPickBtn").addEventListener("click", findBestSix);
 document.getElementById("leagueNflBtn").addEventListener("click", () => {
   state.league = "nfl";
   document.getElementById("leagueNflBtn").classList.add("active");
