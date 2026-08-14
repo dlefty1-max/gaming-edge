@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_36.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_40.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -72,6 +72,12 @@
   .odds-btn { flex: 1; background: #F4F6F8; border: 1px solid #CBD3DA; border-radius: 6px; padding: 6px 4px; font-size: 11px; font-weight: 600; color: #1A2530; cursor: pointer; text-align: center; line-height: 1.5; }
   .odds-btn:hover { background: #EAF1FB; border-color: #3B7DD8; }
   .odds-btn-price { font-weight: 700; color: #3B7DD8; font-size: 11px; }
+  .live-dot { color: #C4564B; font-size: 11px; font-weight: 700; }
+  .live-badge { background: #FCEBE9; color: #B4463A; font-size: 11px; font-weight: 700; padding: 6px 8px; border-radius: 6px; margin-bottom: 8px; }
+  .preseason-card { background: #FFF7E0; border: 1px solid #E8D9A0; border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+  .preseason-card .trend-title { color: #8A6D00; }
+  .regseason-card { background: #EAF1FB; border: 1px solid #B8D0EE; border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+  .regseason-card .trend-title { color: #1A4A8A; }
   .kelly-hint { font-size: 12px; color: #3B7DD8; font-weight: 600; margin-top: 4px; }
   .toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
   .toolbar button { flex: 1; padding: 8px; border-radius: 8px; border: 1px solid #CBD3DA; background: #fff; font-weight: 700; font-size: 12px; cursor: pointer; }
@@ -140,12 +146,48 @@
       </div>
     </div>
     <div id="scheduleError"></div>
+    <div id="preseasonTrendsCard">
+    <div class="preseason-card">
+      <div class="trend-title">🏈 General NFL Preseason Betting Trends</div>
+      <div class="trend-note" style="margin-top:4px;">Historical patterns across many preseasons, not this specific matchup — soft leans, not rules. 2025 broke from several of these, noted below where relevant.</div>
+
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">By Spread Size — Straight-Up Win Rate</div>
+      <div class="trend-line">Favorites of -5 or more: <b>~72%</b> win outright</div>
+      <div class="trend-line">Underdogs of +5 or more: <b>~28%</b> win outright</div>
+
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">By Spread Size — Against The Spread</div>
+      <div class="trend-line">Favorites of -7 or more: <b>~33%</b> cover (since 2010) — the single strongest preseason angle found; big favorites are consistently overpriced</div>
+      <div class="trend-line">Underdogs of +1 to +3: <b>~60%</b> cover (since 2015)</div>
+      <div class="trend-line">Road dogs of +2.5 or less: <b>~66%</b> cover (last decade) — but 2025 alone ran close to even, so don't treat this as automatic</div>
+
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">By Total Size — Over/Under</div>
+      <div class="trend-line">Total set below ~37: <b>~57%</b> go Over</div>
+      <div class="trend-line">Total set at ~37 or above: <b>~56%</b> go Under</div>
+      <div class="trend-line">2025 specifically ran unusually high-scoring and broke both of these — totals skewed Over across the board</div>
+
+      
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">Week 2 — "The Dress Rehearsal"</div>
+      <div class="trend-line">Most starters get their longest look of the summer — often a full half, sometimes into the third quarter. This is the closest preseason gets to real football, and coaching motivation matters more here than in any other preseason week.</div>
+    
+
+      <div class="trend-note" style="margin-top:8px;">This card disappears automatically once you switch to Regular Season. The week-specific section above updates as you change weeks.</div>
+    </div>
+  </div>
+    <div id="regularSeasonTrendsCard"></div>
     <button class="start-parlay-btn" id="startParlayBtn">🎫 Build a Parlay — tap odds across games to add legs</button>
-    <div id="parlayModeBar"></div>
+    <div id="parlayModeBar">
+    <div class="parlay-mode-bar">
+      <span>🎫 Building parlay — 0 legs added</span>
+      <div>
+        <button id="reviewParlayBtn">Review &amp; Save</button>
+        <button class="cancel-link" id="cancelParlayBtn">Cancel</button>
+      </div>
+    </div>
+  </div>
     <div id="gamesList"><div class="card">
       <div class="game-header" data-id="401873272">
         <div>
-          <div class="game-title">Lions @ Bengals</div>
+          <div class="game-title">Lions @ Bengals <span class="live-dot">🔴 LIVE</span></div>
           <div class="game-sub">Thu, Aug 13, 7:00 PM</div>
           
         </div>
@@ -153,23 +195,24 @@
       </div>
       <div style="padding: 0 14px 10px;">
       <div class="odds-board">
+        <div class="live-badge">🔴 LIVE — odds below are in-game, not the pregame line</div>
         
           <div class="odds-row-label">Spread</div>
           <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873272" data-bettype="Spread" data-selection="Lions +4.5" data-odds="-114">Lions +4.5<br><span class="odds-btn-price">-114</span></button>
-            <button class="odds-btn" data-game="401873272" data-bettype="Spread" data-selection="Bengals -4.5" data-odds="-114">Bengals -4.5<br><span class="odds-btn-price">-114</span></button>
+            <button class="odds-btn" data-game="401873272" data-bettype="Spread" data-selection="Lions +7.5" data-odds="-138">Lions +7.5<br><span class="odds-btn-price">-138</span></button>
+            <button class="odds-btn" data-game="401873272" data-bettype="Spread" data-selection="Bengals -7.5" data-odds="104">Bengals -7.5<br><span class="odds-btn-price">+104</span></button>
           </div>
         
           <div class="odds-row-label">Total</div>
           <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873272" data-bettype="Total" data-selection="Over 32.5" data-odds="-114">O 32.5<br><span class="odds-btn-price">-114</span></button>
-            <button class="odds-btn" data-game="401873272" data-bettype="Total" data-selection="Under 32.5" data-odds="-114">U 32.5<br><span class="odds-btn-price">-114</span></button>
+            <button class="odds-btn" data-game="401873272" data-bettype="Total" data-selection="Over 32.5" data-odds="-132">O 32.5<br><span class="odds-btn-price">-132</span></button>
+            <button class="odds-btn" data-game="401873272" data-bettype="Total" data-selection="Under 32.5" data-odds="100">U 32.5<br><span class="odds-btn-price">+100</span></button>
           </div>
         
           <div class="odds-row-label">Moneyline</div>
           <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873272" data-bettype="Moneyline" data-selection="Lions" data-odds="220">Lions<br><span class="odds-btn-price">+220</span></button>
-            <button class="odds-btn" data-game="401873272" data-bettype="Moneyline" data-selection="Bengals" data-odds="-295">Bengals<br><span class="odds-btn-price">-295</span></button>
+            <button class="odds-btn" data-game="401873272" data-bettype="Moneyline" data-selection="Lions" data-odds="400">Lions<br><span class="odds-btn-price">+400</span></button>
+            <button class="odds-btn" data-game="401873272" data-bettype="Moneyline" data-selection="Bengals" data-odds="-620">Bengals<br><span class="odds-btn-price">-620</span></button>
           </div>
         <div class="trend-note" style="margin-top:2px;">Consensus (median across 7 books) — tap to add to your pick</div>
         <div class="trend-note" style="color:#B4463A;">Matched: Detroit Lions @ Cincinnati Bengals <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
@@ -178,7 +221,7 @@
     </div><div class="card">
       <div class="game-header" data-id="401873275">
         <div>
-          <div class="game-title">Packers @ Steelers</div>
+          <div class="game-title">Packers @ Steelers <span class="live-dot">🔴 LIVE</span></div>
           <div class="game-sub">Thu, Aug 13, 7:00 PM</div>
           
         </div>
@@ -186,23 +229,24 @@
       </div>
       <div style="padding: 0 14px 10px;">
       <div class="odds-board">
+        <div class="live-badge">🔴 LIVE — odds below are in-game, not the pregame line</div>
         
           <div class="odds-row-label">Spread</div>
           <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873275" data-bettype="Spread" data-selection="Packers +1.5" data-odds="-112">Packers +1.5<br><span class="odds-btn-price">-112</span></button>
-            <button class="odds-btn" data-game="401873275" data-bettype="Spread" data-selection="Steelers -1.5" data-odds="-118">Steelers -1.5<br><span class="odds-btn-price">-118</span></button>
+            <button class="odds-btn" data-game="401873275" data-bettype="Spread" data-selection="Packers -1.5" data-odds="-102">Packers -1.5<br><span class="odds-btn-price">-102</span></button>
+            <button class="odds-btn" data-game="401873275" data-bettype="Spread" data-selection="Steelers +1.5" data-odds="-130">Steelers +1.5<br><span class="odds-btn-price">-130</span></button>
           </div>
         
           <div class="odds-row-label">Total</div>
           <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873275" data-bettype="Total" data-selection="Over 29.5" data-odds="-125">O 29.5<br><span class="odds-btn-price">-125</span></button>
-            <button class="odds-btn" data-game="401873275" data-bettype="Total" data-selection="Under 29.5" data-odds="-106">U 29.5<br><span class="odds-btn-price">-106</span></button>
+            <button class="odds-btn" data-game="401873275" data-bettype="Total" data-selection="Over 27.5" data-odds="-112">O 27.5<br><span class="odds-btn-price">-112</span></button>
+            <button class="odds-btn" data-game="401873275" data-bettype="Total" data-selection="Under 27.5" data-odds="-118">U 27.5<br><span class="odds-btn-price">-118</span></button>
           </div>
         
           <div class="odds-row-label">Moneyline</div>
           <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873275" data-bettype="Moneyline" data-selection="Packers" data-odds="132">Packers<br><span class="odds-btn-price">+132</span></button>
-            <button class="odds-btn" data-game="401873275" data-bettype="Moneyline" data-selection="Steelers" data-odds="-170">Steelers<br><span class="odds-btn-price">-170</span></button>
+            <button class="odds-btn" data-game="401873275" data-bettype="Moneyline" data-selection="Packers" data-odds="-172">Packers<br><span class="odds-btn-price">-172</span></button>
+            <button class="odds-btn" data-game="401873275" data-bettype="Moneyline" data-selection="Steelers" data-odds="134">Steelers<br><span class="odds-btn-price">+134</span></button>
           </div>
         <div class="trend-note" style="margin-top:2px;">Consensus (median across 7 books) — tap to add to your pick</div>
         <div class="trend-note" style="color:#B4463A;">Matched: Green Bay Packers @ Pittsburgh Steelers <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
@@ -211,7 +255,7 @@
     </div><div class="card">
       <div class="game-header" data-id="401873273">
         <div>
-          <div class="game-title">Colts @ Patriots</div>
+          <div class="game-title">Colts @ Patriots <span class="live-dot">🔴 LIVE</span></div>
           <div class="game-sub">Thu, Aug 13, 7:30 PM</div>
           
         </div>
@@ -219,32 +263,33 @@
       </div>
       <div style="padding: 0 14px 10px;">
       <div class="odds-board">
+        <div class="live-badge">🔴 LIVE — odds below are in-game, not the pregame line</div>
         
           <div class="odds-row-label">Spread</div>
           <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873273" data-bettype="Spread" data-selection="Colts +5.5" data-odds="-114">Colts +5.5<br><span class="odds-btn-price">-114</span></button>
-            <button class="odds-btn" data-game="401873273" data-bettype="Spread" data-selection="Patriots -5.5" data-odds="-114">Patriots -5.5<br><span class="odds-btn-price">-114</span></button>
+            <button class="odds-btn" data-game="401873273" data-bettype="Spread" data-selection="Colts -0.5" data-odds="-130">Colts -0.5<br><span class="odds-btn-price">-130</span></button>
+            <button class="odds-btn" data-game="401873273" data-bettype="Spread" data-selection="Patriots +0.5" data-odds="-102">Patriots +0.5<br><span class="odds-btn-price">-102</span></button>
           </div>
         
           <div class="odds-row-label">Total</div>
           <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873273" data-bettype="Total" data-selection="Over 33.5" data-odds="102">O 33.5<br><span class="odds-btn-price">+102</span></button>
-            <button class="odds-btn" data-game="401873273" data-bettype="Total" data-selection="Under 33.5" data-odds="-136">U 33.5<br><span class="odds-btn-price">-136</span></button>
+            <button class="odds-btn" data-game="401873273" data-bettype="Total" data-selection="Over 36.5" data-odds="102">O 36.5<br><span class="odds-btn-price">+102</span></button>
+            <button class="odds-btn" data-game="401873273" data-bettype="Total" data-selection="Under 36.5" data-odds="-136">U 36.5<br><span class="odds-btn-price">-136</span></button>
           </div>
         
           <div class="odds-row-label">Moneyline</div>
           <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873273" data-bettype="Moneyline" data-selection="Colts" data-odds="210">Colts<br><span class="odds-btn-price">+210</span></button>
-            <button class="odds-btn" data-game="401873273" data-bettype="Moneyline" data-selection="Patriots" data-odds="-280">Patriots<br><span class="odds-btn-price">-280</span></button>
+            <button class="odds-btn" data-game="401873273" data-bettype="Moneyline" data-selection="Colts" data-odds="-113">Colts<br><span class="odds-btn-price">-113</span></button>
+            <button class="odds-btn" data-game="401873273" data-bettype="Moneyline" data-selection="Patriots" data-odds="-113">Patriots<br><span class="odds-btn-price">-113</span></button>
           </div>
-        <div class="trend-note" style="margin-top:2px;">Consensus (median across 6 books) — tap to add to your pick</div>
+        <div class="trend-note" style="margin-top:2px;">Consensus (median across 7 books) — tap to add to your pick</div>
         <div class="trend-note" style="color:#B4463A;">Matched: Indianapolis Colts @ New England Patriots <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
       </div></div>
       
     </div><div class="card">
       <div class="game-header" data-id="401873640">
         <div>
-          <div class="game-title">Cardinals @ Raiders</div>
+          <div class="game-title">Cardinals @ Raiders <span class="live-dot">🔴 LIVE</span></div>
           <div class="game-sub">Thu, Aug 13, 8:00 PM</div>
           
         </div>
@@ -252,23 +297,24 @@
       </div>
       <div style="padding: 0 14px 10px;">
       <div class="odds-board">
+        <div class="live-badge">🔴 LIVE — odds below are in-game, not the pregame line</div>
         
           <div class="odds-row-label">Spread</div>
           <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873640" data-bettype="Spread" data-selection="Cardinals +1.5" data-odds="-136">Cardinals +1.5<br><span class="odds-btn-price">-136</span></button>
-            <button class="odds-btn" data-game="401873640" data-bettype="Spread" data-selection="Raiders -1.5" data-odds="102">Raiders -1.5<br><span class="odds-btn-price">+102</span></button>
+            <button class="odds-btn" data-game="401873640" data-bettype="Spread" data-selection="Cardinals -2.5" data-odds="-120">Cardinals -2.5<br><span class="odds-btn-price">-120</span></button>
+            <button class="odds-btn" data-game="401873640" data-bettype="Spread" data-selection="Raiders +2.5" data-odds="-110">Raiders +2.5<br><span class="odds-btn-price">-110</span></button>
           </div>
         
           <div class="odds-row-label">Total</div>
           <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873640" data-bettype="Total" data-selection="Over 46.5" data-odds="-106">O 46.5<br><span class="odds-btn-price">-106</span></button>
-            <button class="odds-btn" data-game="401873640" data-bettype="Total" data-selection="Under 46.5" data-odds="-125">U 46.5<br><span class="odds-btn-price">-125</span></button>
+            <button class="odds-btn" data-game="401873640" data-bettype="Total" data-selection="Over 51.5" data-odds="-122">O 51.5<br><span class="odds-btn-price">-122</span></button>
+            <button class="odds-btn" data-game="401873640" data-bettype="Total" data-selection="Under 51.5" data-odds="-108">U 51.5<br><span class="odds-btn-price">-108</span></button>
           </div>
         
           <div class="odds-row-label">Moneyline</div>
           <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873640" data-bettype="Moneyline" data-selection="Cardinals" data-odds="-113">Cardinals<br><span class="odds-btn-price">-113</span></button>
-            <button class="odds-btn" data-game="401873640" data-bettype="Moneyline" data-selection="Raiders" data-odds="-113">Raiders<br><span class="odds-btn-price">-113</span></button>
+            <button class="odds-btn" data-game="401873640" data-bettype="Moneyline" data-selection="Cardinals" data-odds="-136">Cardinals<br><span class="odds-btn-price">-136</span></button>
+            <button class="odds-btn" data-game="401873640" data-bettype="Moneyline" data-selection="Raiders" data-odds="106">Raiders<br><span class="odds-btn-price">+106</span></button>
           </div>
         <div class="trend-note" style="margin-top:2px;">Consensus (median across 7 books) — tap to add to your pick</div>
         <div class="trend-note" style="color:#B4463A;">Matched: Arizona Cardinals @ Las Vegas Raiders <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
@@ -277,7 +323,7 @@
     </div><div class="card">
       <div class="game-header" data-id="401873274">
         <div>
-          <div class="game-title">Chargers @ Texans</div>
+          <div class="game-title">Chargers @ Texans <span class="live-dot">🔴 LIVE</span></div>
           <div class="game-sub">Thu, Aug 13, 8:00 PM</div>
           
         </div>
@@ -285,23 +331,24 @@
       </div>
       <div style="padding: 0 14px 10px;">
       <div class="odds-board">
+        <div class="live-badge">🔴 LIVE — odds below are in-game, not the pregame line</div>
         
           <div class="odds-row-label">Spread</div>
           <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873274" data-bettype="Spread" data-selection="Chargers +3.5" data-odds="-132">Chargers +3.5<br><span class="odds-btn-price">-132</span></button>
-            <button class="odds-btn" data-game="401873274" data-bettype="Spread" data-selection="Texans -3.5" data-odds="100">Texans -3.5<br><span class="odds-btn-price">+100</span></button>
+            <button class="odds-btn" data-game="401873274" data-bettype="Spread" data-selection="Chargers -2.5" data-odds="-125">Chargers -2.5<br><span class="odds-btn-price">-125</span></button>
+            <button class="odds-btn" data-game="401873274" data-bettype="Spread" data-selection="Texans +2.5" data-odds="-106">Texans +2.5<br><span class="odds-btn-price">-106</span></button>
           </div>
         
           <div class="odds-row-label">Total</div>
           <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873274" data-bettype="Total" data-selection="Over 39.5" data-odds="-120">O 39.5<br><span class="odds-btn-price">-120</span></button>
-            <button class="odds-btn" data-game="401873274" data-bettype="Total" data-selection="Under 39.5" data-odds="-110">U 39.5<br><span class="odds-btn-price">-110</span></button>
+            <button class="odds-btn" data-game="401873274" data-bettype="Total" data-selection="Over 39.5" data-odds="-108">O 39.5<br><span class="odds-btn-price">-108</span></button>
+            <button class="odds-btn" data-game="401873274" data-bettype="Total" data-selection="Under 39.5" data-odds="-122">U 39.5<br><span class="odds-btn-price">-122</span></button>
           </div>
         
           <div class="odds-row-label">Moneyline</div>
           <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401873274" data-bettype="Moneyline" data-selection="Chargers" data-odds="136">Chargers<br><span class="odds-btn-price">+136</span></button>
-            <button class="odds-btn" data-game="401873274" data-bettype="Moneyline" data-selection="Texans" data-odds="-172">Texans<br><span class="odds-btn-price">-172</span></button>
+            <button class="odds-btn" data-game="401873274" data-bettype="Moneyline" data-selection="Chargers" data-odds="-158">Chargers<br><span class="odds-btn-price">-158</span></button>
+            <button class="odds-btn" data-game="401873274" data-bettype="Moneyline" data-selection="Texans" data-odds="124">Texans<br><span class="odds-btn-price">+124</span></button>
           </div>
         <div class="trend-note" style="margin-top:2px;">Consensus (median across 7 books) — tap to add to your pick</div>
         <div class="trend-note" style="color:#B4463A;">Matched: Los Angeles Chargers @ Houston Texans <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
@@ -310,31 +357,32 @@
     </div><div class="card">
       <div class="game-header" data-id="401874392">
         <div>
-          <div class="game-title">Titans @ 49ers</div>
+          <div class="game-title">Titans @ 49ers <span class="live-dot">🔴 LIVE</span></div>
           <div class="game-sub">Thu, Aug 13, 9:00 PM</div>
-          <div class="game-sub" id="cardWeather-401874392" style="color:#3B7DD8;">🌤 32.5°F · 97% rain · wind 14.2mph</div>
+          
         </div>
         <span class="pill ">Add Pick</span>
       </div>
       <div style="padding: 0 14px 10px;">
       <div class="odds-board">
+        <div class="live-badge">🔴 LIVE — odds below are in-game, not the pregame line</div>
         
           <div class="odds-row-label">Spread</div>
           <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401874392" data-bettype="Spread" data-selection="Titans -7" data-odds="-115">Titans -7<br><span class="odds-btn-price">-115</span></button>
-            <button class="odds-btn" data-game="401874392" data-bettype="Spread" data-selection="49ers +7" data-odds="-105">49ers +7<br><span class="odds-btn-price">-105</span></button>
+            <button class="odds-btn" data-game="401874392" data-bettype="Spread" data-selection="Titans -6.5" data-odds="-122">Titans -6.5<br><span class="odds-btn-price">-122</span></button>
+            <button class="odds-btn" data-game="401874392" data-bettype="Spread" data-selection="49ers +6.5" data-odds="-108">49ers +6.5<br><span class="odds-btn-price">-108</span></button>
           </div>
         
           <div class="odds-row-label">Total</div>
           <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401874392" data-bettype="Total" data-selection="Over 40" data-odds="-102">O 40<br><span class="odds-btn-price">-102</span></button>
-            <button class="odds-btn" data-game="401874392" data-bettype="Total" data-selection="Under 40" data-odds="-120">U 40<br><span class="odds-btn-price">-120</span></button>
+            <button class="odds-btn" data-game="401874392" data-bettype="Total" data-selection="Over 39.5" data-odds="-108">O 39.5<br><span class="odds-btn-price">-108</span></button>
+            <button class="odds-btn" data-game="401874392" data-bettype="Total" data-selection="Under 39.5" data-odds="-122">U 39.5<br><span class="odds-btn-price">-122</span></button>
           </div>
         
           <div class="odds-row-label">Moneyline</div>
           <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401874392" data-bettype="Moneyline" data-selection="Titans" data-odds="-275">Titans<br><span class="odds-btn-price">-275</span></button>
-            <button class="odds-btn" data-game="401874392" data-bettype="Moneyline" data-selection="49ers" data-odds="225">49ers<br><span class="odds-btn-price">+225</span></button>
+            <button class="odds-btn" data-game="401874392" data-bettype="Moneyline" data-selection="Titans" data-odds="-310">Titans<br><span class="odds-btn-price">-310</span></button>
+            <button class="odds-btn" data-game="401874392" data-bettype="Moneyline" data-selection="49ers" data-odds="235">49ers<br><span class="odds-btn-price">+235</span></button>
           </div>
         <div class="trend-note" style="margin-top:2px;">Consensus (median across 11 books) — tap to add to your pick</div>
         <div class="trend-note" style="color:#B4463A;">Matched: Tennessee Titans @ San Francisco 49ers <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
@@ -351,6 +399,7 @@
       </div>
       <div style="padding: 0 14px 10px;">
       <div class="odds-board">
+        
         
           <div class="odds-row-label">Spread</div>
           <div class="odds-btn-row">
@@ -385,6 +434,7 @@
       <div style="padding: 0 14px 10px;">
       <div class="odds-board">
         
+        
           <div class="odds-row-label">Spread</div>
           <div class="odds-btn-row">
             <button class="odds-btn" data-game="401873276" data-bettype="Spread" data-selection="Buccaneers +5.5" data-odds="-102">Buccaneers +5.5<br><span class="odds-btn-price">-102</span></button>
@@ -411,12 +461,13 @@
         <div>
           <div class="game-title">Dolphins @ Commanders</div>
           <div class="game-sub">Fri, Aug 14, 7:00 PM</div>
-          <div class="game-sub" id="cardWeather-401873277" style="color:#3B7DD8;">🌤 29.1°F · 28% rain · wind 9.7mph</div>
+          <div class="game-sub" id="cardWeather-401873277" style="color:#3B7DD8;">🌤 28.5°F · 28% rain · wind 6.1mph</div>
         </div>
         <span class="pill ">Add Pick</span>
       </div>
       <div style="padding: 0 14px 10px;">
       <div class="odds-board">
+        
         
           <div class="odds-row-label">Spread</div>
           <div class="odds-btn-row">
@@ -451,6 +502,7 @@
       <div style="padding: 0 14px 10px;">
       <div class="odds-board">
         
+        
           <div class="odds-row-label">Spread</div>
           <div class="odds-btn-row">
             <button class="odds-btn" data-game="401873282" data-bettype="Spread" data-selection="Panthers +3" data-odds="-122">Panthers +3<br><span class="odds-btn-price">-122</span></button>
@@ -483,6 +535,7 @@
       </div>
       <div style="padding: 0 14px 10px;">
       <div class="odds-board">
+        
         
           <div class="odds-row-label">Spread</div>
           <div class="odds-btn-row">
@@ -517,6 +570,7 @@
       <div style="padding: 0 14px 10px;">
       <div class="odds-board">
         
+        
           <div class="odds-row-label">Spread</div>
           <div class="odds-btn-row">
             <button class="odds-btn" data-game="401873280" data-bettype="Spread" data-selection="Vikings -2.5" data-odds="-115">Vikings -2.5<br><span class="odds-btn-price">-115</span></button>
@@ -549,6 +603,7 @@
       </div>
       <div style="padding: 0 14px 10px;">
       <div class="odds-board">
+        
         
           <div class="odds-row-label">Spread</div>
           <div class="odds-btn-row">
@@ -583,6 +638,7 @@
       <div style="padding: 0 14px 10px;">
       <div class="odds-board">
         
+        
           <div class="odds-row-label">Spread</div>
           <div class="odds-btn-row">
             <button class="odds-btn" data-game="401873281" data-bettype="Spread" data-selection="Jaguars +1.5" data-odds="-110">Jaguars +1.5<br><span class="odds-btn-price">-110</span></button>
@@ -616,6 +672,7 @@
       <div style="padding: 0 14px 10px;">
       <div class="odds-board">
         
+        
           <div class="odds-row-label">Spread</div>
           <div class="odds-btn-row">
             <button class="odds-btn" data-game="401873284" data-bettype="Spread" data-selection="Eagles -3.5" data-odds="-110">Eagles -3.5<br><span class="odds-btn-price">-110</span></button>
@@ -648,6 +705,7 @@
       </div>
       <div style="padding: 0 14px 10px;">
       <div class="odds-board">
+        
         
           <div class="odds-row-label">Spread</div>
           <div class="odds-btn-row">
@@ -969,7 +1027,7 @@
   </div>
 </main>
 
-<div id="toast" class="toast" style="display:none;"></div>
+<div id="toast" class="toast" style="display: none;">Parlay mode on — tap odds on any game to add a leg.</div>
 
 <script>
 const NFL_BASE = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard";
@@ -1670,7 +1728,43 @@ async function computeWeekDogATS(league, year, week, apiKey) {
   } catch (e) {
     return { week, totalGames: games.length, matched: 0, dogWins: 0, dogLosses: 0, dogPushes: 0, error: e.message };
   }
-  return { week, totalGames: games.length, matched, dogWins, dogLosses, dogPushes, homeDog, awayDog };
+  const result = { week, totalGames: games.length, matched, dogWins, dogLosses, dogPushes, homeDog, awayDog };
+  try {
+    localStorage.setItem(`week-dog-result-${league}-${year}-${week}`, JSON.stringify(result));
+  } catch (e) { /* not fatal — just means the schedule card won't find this cached */ }
+  return result;
+}
+
+function getCachedWeekAggregate(league, week, years) {
+  let dogWins = 0, dogLosses = 0, dogPushes = 0;
+  let homeDog = { w: 0, l: 0, p: 0 }, awayDog = { w: 0, l: 0, p: 0 };
+  const yearsFound = [];
+  years.forEach(y => {
+    try {
+      const raw = localStorage.getItem(`week-dog-result-${league}-${y}-${week}`);
+      if (!raw) return;
+      const r = JSON.parse(raw);
+      if (!r.matched) return;
+      dogWins += r.dogWins; dogLosses += r.dogLosses; dogPushes += r.dogPushes;
+      if (r.homeDog) { homeDog.w += r.homeDog.w; homeDog.l += r.homeDog.l; homeDog.p += r.homeDog.p; }
+      if (r.awayDog) { awayDog.w += r.awayDog.w; awayDog.l += r.awayDog.l; awayDog.p += r.awayDog.p; }
+      yearsFound.push(y);
+    } catch (e) {}
+  });
+  return { found: yearsFound.length > 0, dogWins, dogLosses, dogPushes, homeDog, awayDog, yearsFound };
+}
+
+async function computeThisWeekTrend(league, week) {
+  let apiKey = "";
+  try { apiKey = localStorage.getItem("odds-api-key") || ""; } catch (e) {}
+  if (!apiKey) { showToast("Add your Odds API key on the Edge tab first."); return; }
+  const years = [2025, 2024, 2023];
+  showToast(`Checking Week ${week} across ${years.length} seasons…`);
+  for (const y of years) {
+    try { await computeWeekDogATS(league, y, week, apiKey); } catch (e) { /* skip year on failure */ }
+  }
+  showToast(`Week ${week} trend computed.`);
+  renderRegularSeasonTrendsCard();
 }
 
 async function runWeekTrends() {
@@ -2096,7 +2190,118 @@ async function loadTrends(game, containerId) {
 }
 
 // ---------- schedule fetch (direct — works on a real hosted page) ----------
+function renderPreseasonTrendsCard() {
+  const el = document.getElementById("preseasonTrendsCard");
+  if (state.league !== "nfl" || state.seasonType !== 1) { el.innerHTML = ""; return; }
+
+  const weekBlocks = {
+    1: `
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">Week 1 — "Deep Reserve Football"</div>
+      <div class="trend-line">Backups and roster hopefuls dominate the snaps — starters play little to none. It's closer to a talent-evaluation scrimmage than real football, so lean on coaching intent and depth-chart signals more than team quality here.</div>
+      <div class="trend-line">Teams that played in the Hall of Fame Game specifically: on a real streak in their Week 1 game (5 straight SU and ATS wins in recent years) — worth checking if either team in your matchup played the HOF Game.</div>
+    `,
+    2: `
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">Week 2 — "The Dress Rehearsal"</div>
+      <div class="trend-line">Most starters get their longest look of the summer — often a full half, sometimes into the third quarter. This is the closest preseason gets to real football, and coaching motivation matters more here than in any other preseason week.</div>
+    `,
+    3: `
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">Week 3 — "The Finale, Splits The League"</div>
+      <div class="trend-line">Contenders with settled rosters typically sit their key players almost entirely — bubble-roster and camp-battle players get extended run instead, since final cuts are looming. That split (contender resting vs. rebuilder auditioning) can create real mispricing at a number that looks like a coin flip on paper.</div>
+    `,
+  };
+
+  el.innerHTML = `
+    <div class="preseason-card">
+      <div class="trend-title">🏈 General NFL Preseason Betting Trends</div>
+      <div class="trend-note" style="margin-top:4px;">Historical patterns across many preseasons, not this specific matchup — soft leans, not rules. 2025 broke from several of these, noted below where relevant.</div>
+
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">By Spread Size — Straight-Up Win Rate</div>
+      <div class="trend-line">Favorites of -5 or more: <b>~72%</b> win outright</div>
+      <div class="trend-line">Underdogs of +5 or more: <b>~28%</b> win outright</div>
+
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">By Spread Size — Against The Spread</div>
+      <div class="trend-line">Favorites of -7 or more: <b>~33%</b> cover (since 2010) — the single strongest preseason angle found; big favorites are consistently overpriced</div>
+      <div class="trend-line">Underdogs of +1 to +3: <b>~60%</b> cover (since 2015)</div>
+      <div class="trend-line">Road dogs of +2.5 or less: <b>~66%</b> cover (last decade) — but 2025 alone ran close to even, so don't treat this as automatic</div>
+
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">By Total Size — Over/Under</div>
+      <div class="trend-line">Total set below ~37: <b>~57%</b> go Over</div>
+      <div class="trend-line">Total set at ~37 or above: <b>~56%</b> go Under</div>
+      <div class="trend-line">2025 specifically ran unusually high-scoring and broke both of these — totals skewed Over across the board</div>
+
+      ${weekBlocks[state.week] || ""}
+
+      <div class="trend-note" style="margin-top:8px;">This card disappears automatically once you switch to Regular Season. The week-specific section above updates as you change weeks.</div>
+    </div>
+  `;
+}
+
+function renderRegularSeasonTrendsCard() {
+  const el = document.getElementById("regularSeasonTrendsCard");
+  if (state.league !== "nfl" || state.seasonType !== 2) { el.innerHTML = ""; return; }
+  const week = state.week;
+  const years = [2025, 2024, 2023];
+  const agg = getCachedWeekAggregate("nfl", week, years);
+
+  let weekBlock;
+  if (agg.found) {
+    const pctOf = (s) => s.w + s.l > 0 ? ((s.w / (s.w + s.l)) * 100).toFixed(0) : "—";
+    const overallPct = agg.dogWins + agg.dogLosses > 0 ? ((agg.dogWins / (agg.dogWins + agg.dogLosses)) * 100).toFixed(1) : "—";
+    weekBlock = `
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">Week ${week} Specific — computed from ${agg.yearsFound.join(", ")}</div>
+      <div class="trend-line">Underdogs overall: <b>${agg.dogWins}-${agg.dogLosses}-${agg.dogPushes}</b> ATS (${overallPct}%)</div>
+      <div class="trend-line">Home dogs: <b>${pctOf(agg.homeDog)}%</b> · Away dogs: <b>${pctOf(agg.awayDog)}%</b></div>
+      <div class="trend-note">This is real, computed from your historical odds data — not general research. ${years.filter(y => !agg.yearsFound.includes(y)).length > 0 ? `Missing ${years.filter(y => !agg.yearsFound.includes(y)).join(", ")} — <span style="text-decoration:underline;cursor:pointer;" id="fillWeekTrendBtn">click to fill in the rest</span> (uses API credits).` : ""}</div>
+    `;
+  } else {
+    weekBlock = `
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">Week ${week} Specific</div>
+      <div class="trend-note">No computed data yet for Week ${week}. <span style="text-decoration:underline;cursor:pointer;color:#1A4A8A;" id="fillWeekTrendBtn">Compute it now</span> (checks ${years.join(", ")} — costs real API credits, cached permanently afterward).</div>
+    `;
+  }
+
+  const week1Baseline = week === 1 ? `
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">Week 1 Known Baseline (since 2019)</div>
+      <div class="trend-line">Underdogs of 6+ points: <b>26%</b> win outright, <b>61%</b> cover ATS</div>
+      <div class="trend-line">Underdogs of 3 or fewer points: <b>46%</b> win outright, <b>58%</b> cover ATS</div>
+      <div class="trend-line">Home teams: notably weaker ATS than any other week (45% vs. ~49% league average) — Week 1 home-field edge is smaller than usual</div>
+      <div class="trend-note">This part is free, sourced research (FanDuel), not something you need to compute — shown alongside whatever your own historical data below adds.</div>
+    ` : "";
+
+  el.innerHTML = `
+    <div class="regseason-card">
+      <div class="trend-title">🏈 General NFL Regular Season Betting Trends</div>
+      <div class="trend-note" style="margin-top:4px;">League-wide historical patterns, not this specific matchup — soft leans, not rules.</div>
+
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">Situational</div>
+      <div class="trend-line">Thursday/Sunday/Monday primetime games: Under has hit <b>~56%</b> over the last 6 seasons (spiked closer to 70% in the most recent one) — the most consistently profitable side in primetime</div>
+      <div class="trend-line">Second meeting between division rivals: leans <b>Under</b> and toward the <b>underdog</b> — both coaching staffs now have a full game of current-season film on each other, compressing the scheme gap</div>
+      <div class="trend-line">Heavy public/consensus favorites: worth a second look — when 80%+ of bets load one side, the line often moves an extra half-point or more, and NFL key numbers (3, 7) make that half-point matter more than it looks</div>
+      ${week1Baseline}
+      ${weekBlock}
+
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">By Month — Underdog ATS Rate (last decade)</div>
+      <div class="trend-line">September: <b>~55%</b> · October: <b>~52%</b> · November: <b>~53%</b> · December: <b>~48%</b> · January: <b>~57%</b></div>
+      <div class="trend-note">Reads as: books tend to overprice the unknown early (favoring dogs), sharpen up by December (favorites hold), then overcorrect again in January's small, chaotic late-season sample.</div>
+
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">By Month — Over Rate (last decade)</div>
+      <div class="trend-line">September: <b>~50%</b> · October: <b>~50%</b> · November: <b>~50%</b> · December: <b>~46%</b> · January: <b>~51%</b></div>
+      <div class="trend-note">December is the clearest lean of the bunch — weather and short-week fatigue push totals under more than the market adjusts for.</div>
+
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">Weeks 17-18</div>
+      <div class="trend-line">Watch for teams that have already clinched or been eliminated — rested starters can make a "favorite" number stale fast, same blind spot the Elo model has.</div>
+
+      <div class="trend-note" style="margin-top:8px;">This card disappears automatically once you switch to Preseason. The "Week ${week} Specific" section updates automatically as you change weeks.</div>
+    </div>
+  `;
+
+  const fillBtn = document.getElementById("fillWeekTrendBtn");
+  if (fillBtn) fillBtn.addEventListener("click", () => computeThisWeekTrend("nfl", week));
+}
+
 async function loadSchedule() {
+  renderPreseasonTrendsCard();
+  renderRegularSeasonTrendsCard();
   const errorEl = document.getElementById("scheduleError");
   const listEl = document.getElementById("gamesList");
   errorEl.innerHTML = "";
@@ -2261,9 +2466,14 @@ function renderGames() {
     const statusText = g.display ? g.display : ((g.status && g.status.toLowerCase().includes("final")) ? g.status : fmtKick(g.date));
     const daysOut = g.date ? (new Date(g.date) - new Date()) / 86400000 : 999;
     const showWeatherBadge = !g.indoor && g.date && daysOut >= 0 && daysOut <= 7;
+    const kickoffPassed = g.date && new Date(g.date) <= new Date();
+    const isFinal = g.status && g.status.toLowerCase().includes("final");
+    const isLive = kickoffPassed && !isFinal;
     const odds = getOddsForGame(g);
+    const liveBadgeHtml = isLive ? `<div class="live-badge">🔴 LIVE — odds below are in-game, not the pregame line</div>` : "";
     const oddsBoardHtml = odds ? `
       <div class="odds-board">
+        ${liveBadgeHtml}
         ${odds.medianSpread != null ? `
           <div class="odds-row-label">Spread</div>
           <div class="odds-btn-row">
@@ -2289,7 +2499,7 @@ function renderGames() {
     card.innerHTML = `
       <div class="game-header" data-id="${g.id}">
         <div>
-          <div class="game-title">${g.away} @ ${g.home}</div>
+          <div class="game-title">${g.away} @ ${g.home}${isLive ? ` <span class="live-dot">🔴 LIVE</span>` : ""}</div>
           <div class="game-sub">${statusText}</div>
           ${showWeatherBadge ? `<div class="game-sub" id="cardWeather-${g.id}" style="color:#3B7DD8;">Loading weather…</div>` : ""}
         </div>
