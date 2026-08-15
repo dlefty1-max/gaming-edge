@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_52.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_53.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -3551,6 +3551,7 @@ async function runEdgeScan() {
       const match = oddsData.find(o =>
         o.home_team && (o.home_team.toLowerCase().includes(g.home.toLowerCase()) || g.home.toLowerCase().includes(o.home_team.toLowerCase().split(" ").pop()))
       );
+      if (!match) return; // this game isn't in the odds feed yet — common for preseason where lines post late
       // Gather this market across every book returned, not just the first
       const books = match.bookmakers || [];
       if (books.length === 0) return;
