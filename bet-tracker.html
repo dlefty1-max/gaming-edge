@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_55.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_56.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -953,6 +953,29 @@
       <button class="save-btn full" id="runBacktestBtn">Run Backtest</button>
     </div>
     <div id="backtestResults"></div>
+
+    <div class="card" style="padding:16px; margin-bottom:16px;">
+      <div class="trend-title" style="margin-bottom:8px;">ATS Backtest — Model vs Real Spread</div>
+      <div class="refresh-note">The straight-up backtest above doesn't touch odds at all. This one does: for every game, checks whether the team the Elo model favored (straight-up) would have covered the <b>real posted spread</b> that game. Uses your historical odds data — if you already ran "Cache All Teams" for this season, most or all of this may already be cached and free. Regular season only, matching what Cache All Teams covers.</div>
+      <div class="row">
+        <div>
+          <label>League</label>
+          <select id="atsBtLeague">
+            <option value="nfl" selected="">NFL</option>
+            <option value="cfb">College Football</option>
+          </select>
+        </div>
+        <div>
+          <label>Season</label>
+          <select id="atsBtYear">
+            <option value="2025" selected="">2025</option>
+            <option value="2024">2024</option>
+          </select>
+        </div>
+      </div>
+      <button class="save-btn full" id="atsBacktestEstimateBtn">Estimate Cost &amp; Run</button>
+      <div id="atsBacktestResults" style="margin-top:12px;"></div>
+    </div>
   </div>
 
   <div id="edgeTab" style="display:none;">
@@ -1214,6 +1237,9 @@ async function fetchWeekResults(league, year, week, seasonType) {
         awayId: away.team.id,
         homeScore: parseInt(home.score, 10),
         awayScore: parseInt(away.score, 10),
+        date: ev.date,
+        homeName: home.team.shortDisplayName || home.team.abbreviation,
+        awayName: away.team.shortDisplayName || away.team.abbreviation,
       };
     })
     .filter(g => !isNaN(g.homeScore) && !isNaN(g.awayScore));
@@ -1925,6 +1951,151 @@ async function fetchAllTeamIds(league, year) {
     } catch (e) { /* skip week on failure, keep going */ }
   }
   return Array.from(teamsMap.values());
+}
+
+// ---------- ATS backtest: does the Elo-favored side actually cover the real spread? ----------
+async function estimateATSBacktestCost() {
+  const league = document.getElementById("atsBtLeague").value;
+  const year = parseInt(document.getElementById("atsBtYear").value, 10);
+  const out = document.getElementById("atsBacktestResults");
+  let apiKey = "";
+  try { apiKey = localStorage.getItem("odds-api-key") || ""; } catch (e) {}
+  if (!apiKey) { out.innerHTML = `<div class="trend-note">Add your Odds API key on the Edge tab first.</div>`; return; }
+
+  out.innerHTML = `<div class="refresh-note">Checking how much of this season's spreads are already cached…</div>`;
+  try {
+    const sportKey = league === "nfl" ? "americanfootball_nfl" : "americanfootball_ncaaf";
+    let totalGames = 0, alreadyCached = 0;
+    const allGames = [];
+    for (let w = 1; w <= 18; w++) {
+      let results = [];
+      try { results = await fetchWeekResults(league, year, w, 2); } catch (e) { continue; }
+      for (const g of results) {
+        if (!g.date) continue;
+        totalGames++;
+        const normalized = new Date(g.date).toISOString().replace(/\.\d{3}Z$/, "Z");
+        const cached = await histDbGet(`hist-odds-${sportKey}-${normalized}`);
+        if (cached) alreadyCached++;
+        allGames.push({ week: w, ...g });
+      }
+    }
+    const toFetch = totalGames - alreadyCached;
+    const estCost = toFetch * 20;
+    out.innerHTML = `
+      <div class="trend-line">${totalGames} completed games found for ${year}.</div>
+      <div class="trend-line">${alreadyCached} already cached (free) · ${toFetch} new lookups needed.</div>
+      <div class="trend-score">Estimated cost: ~${estCost.toLocaleString()} credits</div>
+      <button class="save-btn full" id="atsBacktestConfirmBtn" style="margin-top:8px;">Proceed — Run ATS Backtest</button>
+    `;
+    document.getElementById("atsBacktestConfirmBtn").addEventListener("click", () => runATSBacktest(league, year, allGames, apiKey));
+  } catch (e) {
+    out.innerHTML = `<div class="error">${e.message}</div>`;
+  }
+}
+
+function nameMatchesHistorical(histTeamName, espnTeamName) {
+  if (!histTeamName || !espnTeamName) return false;
+  const h = histTeamName.toLowerCase();
+  const e = espnTeamName.toLowerCase();
+  return h.includes(e) || e.includes(h.split(" ").pop());
+}
+
+async function runATSBacktest(league, year, allGames, apiKey) {
+  const out = document.getElementById("atsBacktestResults");
+  const HOME_ADV = 55;
+  const K = 20;
+
+  try {
+    let elo = await buildCarryoverElo(league, year - 1);
+    let atsWins = 0, atsLosses = 0, atsPushes = 0, noLineFound = 0;
+    let edgeWins = 0, edgeLosses = 0, edgePushes = 0; // subset: games where model disagreed with the real spread by 2+ pts
+    const weekTally = {};
+
+    const byWeek = {};
+    allGames.forEach(g => { (byWeek[g.week] = byWeek[g.week] || []).push(g); });
+    const weeks = Object.keys(byWeek).map(Number).sort((a, b) => a - b);
+
+    let done = 0;
+    for (const w of weeks) {
+      for (const g of byWeek[w]) {
+        done++;
+        out.innerHTML = `<div class="refresh-note">Grading Week ${w} (${done}/${allGames.length} games)…</div>`;
+
+        const rh = elo[g.homeId] != null ? elo[g.homeId] : 1500;
+        const ra = elo[g.awayId] != null ? elo[g.awayId] : 1500;
+        const diff = (rh + HOME_ADV) - ra;
+        const modelHomeSpread = -(diff / 25); // negative = model favors home by this many points
+
+        try {
+          const hist = await fetchHistoricalOdds(league, g.date, apiKey);
+          const match = hist.find(o => nameMatchesHistorical(o.home_team, g.homeName) && nameMatchesHistorical(o.away_team, g.awayName));
+          const book = match && match.bookmakers && match.bookmakers[0];
+          const mkt = book && book.markets && book.markets.find(m => m.key === "spreads");
+          const homeOutcome = mkt && mkt.outcomes.find(o => o.name === match.home_team);
+          if (homeOutcome && homeOutcome.point != null) {
+            const realHomeSpread = homeOutcome.point; // negative = home was the real favorite
+            const pickHome = modelHomeSpread <= 0; // Elo's straight-up favorite
+            const teamScore = pickHome ? g.homeScore : g.awayScore;
+            const oppScore = pickHome ? g.awayScore : g.homeScore;
+            const teamSpread = pickHome ? realHomeSpread : -realHomeSpread;
+            const adj = teamScore + teamSpread;
+            let result;
+            if (adj > oppScore) { atsWins++; result = "Win"; }
+            else if (adj < oppScore) { atsLosses++; result = "Loss"; }
+            else { atsPushes++; result = "Push"; }
+
+            if (!weekTally[w]) weekTally[w] = { w: 0, l: 0, p: 0 };
+            weekTally[w][result === "Win" ? "w" : result === "Loss" ? "l" : "p"]++;
+
+            const gap = Math.abs(modelHomeSpread - realHomeSpread);
+            if (gap >= 2) {
+              if (result === "Win") edgeWins++;
+              else if (result === "Loss") edgeLosses++;
+              else edgePushes++;
+            }
+          } else {
+            noLineFound++;
+          }
+        } catch (e) { noLineFound++; }
+
+        // update Elo walk-forward regardless of whether a line was found for this game
+        const expectedHome = 1 / (1 + Math.pow(10, -diff / 400));
+        const actualHome = g.homeScore > g.awayScore ? 1 : (g.homeScore < g.awayScore ? 0 : 0.5);
+        const margin = Math.abs(g.homeScore - g.awayScore);
+        const movMultiplier = Math.log(margin + 1) * (2.2 / ((Math.abs(rh - ra) * 0.001) + 2.2));
+        const change = K * movMultiplier * (actualHome - expectedHome);
+        elo[g.homeId] = rh + change;
+        elo[g.awayId] = ra - change;
+      }
+    }
+
+    const graded = atsWins + atsLosses;
+    if (graded === 0) {
+      out.innerHTML = `<div class="error">Couldn't grade any games — no historical lines matched. ${noLineFound} games had no line found.</div>`;
+      return;
+    }
+    const atsPct = ((atsWins / graded) * 100).toFixed(1);
+    const edgeGraded = edgeWins + edgeLosses;
+    const edgePct = edgeGraded > 0 ? ((edgeWins / edgeGraded) * 100).toFixed(1) : null;
+
+    out.innerHTML = `
+      <div class="trend-score">Following Elo's SU favorite every game: ${atsWins}-${atsLosses}-${atsPushes} ATS (${atsPct}%)</div>
+      <div class="trend-note">Break-even at standard -110 odds is 52.4%. ${noLineFound > 0 ? `${noLineFound} games had no matched historical line and were skipped.` : ""}</div>
+      ${edgeGraded > 0 ? `
+        <div class="trend-title" style="margin-top:12px;">Edge Subset — games where the model disagreed with the real spread by 2+ points</div>
+        <div class="trend-score">${edgeWins}-${edgeLosses}-${edgePushes} ATS (${edgePct}%) on ${edgeGraded + edgePushes} games</div>
+        <div class="trend-note">This is the actual test of the Edge tab's flagging logic — if this subset beats the overall record, it means "big gap between model and market" is worth paying attention to. If it doesn't, treat future big-gap flags with real skepticism.</div>
+      ` : ""}
+      <div class="trend-title" style="margin-top:12px;">By Week</div>
+      ${Object.keys(weekTally).map(Number).sort((a, b) => a - b).map(w => {
+        const t = weekTally[w];
+        const n = t.w + t.l;
+        return `<div class="trend-line">Week ${w}: ${t.w}-${t.l}-${t.p}${n > 0 ? ` (${((t.w / n) * 100).toFixed(0)}%)` : ""}</div>`;
+      }).join("")}
+    `;
+  } catch (e) {
+    out.innerHTML = `<div class="error">${e.message}</div>`;
+  }
 }
 
 async function estimateCacheAllCost() {
@@ -4303,6 +4474,10 @@ async function runBacktest() {
     const weekRows = [];
     const bigMisses = [];
     const teamNames = {};
+    // walk-forward scoring accumulators — same PF/PA blend used everywhere else, built incrementally
+    // so each week's total projection only ever uses games completed BEFORE that week
+    const teamPF = {}, teamPA = {}, teamGames = {};
+    let ouGames = 0, sumAbsError = 0, sumSignedError = 0, overCount = 0, underCount = 0;
 
     for (let w = 1; w <= maxWeek; w++) {
       let results = [];
@@ -4362,6 +4537,30 @@ async function runBacktest() {
         const change = K * movMultiplier * (actualHome - expectedHome);
         elo[g.homeId] = rh + change;
         elo[g.awayId] = ra - change;
+
+        // Total projection check — same scoring-average blend used in the trends panel, walk-forward.
+        // Only projects once BOTH teams have at least one prior game logged (so Week 1 never qualifies).
+        if (teamGames[g.homeId] > 0 && teamGames[g.awayId] > 0) {
+          const homeAvgPF = teamPF[g.homeId] / teamGames[g.homeId];
+          const homeAvgPA = teamPA[g.homeId] / teamGames[g.homeId];
+          const awayAvgPF = teamPF[g.awayId] / teamGames[g.awayId];
+          const awayAvgPA = teamPA[g.awayId] / teamGames[g.awayId];
+          const projTotal = (awayAvgPF + homeAvgPA) / 2 + (homeAvgPF + awayAvgPA) / 2 + 1.5;
+          const actualTotal = g.homeScore + g.awayScore;
+          const error = projTotal - actualTotal; // positive = model projected too high
+          ouGames++;
+          sumAbsError += Math.abs(error);
+          sumSignedError += error;
+          if (actualTotal > projTotal) overCount++;
+          else if (actualTotal < projTotal) underCount++;
+        }
+        // update scoring accumulators with this week's actual result, for use in FUTURE weeks
+        teamPF[g.homeId] = (teamPF[g.homeId] || 0) + g.homeScore;
+        teamPA[g.homeId] = (teamPA[g.homeId] || 0) + g.awayScore;
+        teamGames[g.homeId] = (teamGames[g.homeId] || 0) + 1;
+        teamPF[g.awayId] = (teamPF[g.awayId] || 0) + g.awayScore;
+        teamPA[g.awayId] = (teamPA[g.awayId] || 0) + g.homeScore;
+        teamGames[g.awayId] = (teamGames[g.awayId] || 0) + 1;
       });
 
       const nonTies = results.filter(g => g.homeScore !== g.awayScore).length;
@@ -4393,6 +4592,14 @@ async function runBacktest() {
           <div class="trend-title" style="margin-top:14px;">Confident Misses (model ≥70% and wrong)</div>
           ${bigMisses.slice(0, 10).map(m => `<div class="trend-line">Wk ${m.week}: picked ${m.pick} at ${m.conf}% — final ${m.desc}</div>`).join("")}
           ${bigMisses.length > 10 ? `<div class="trend-note">…and ${bigMisses.length - 10} more.</div>` : ""}
+        ` : ""}
+        ${ouGames > 0 ? `
+          <div class="trend-title" style="margin-top:14px;">Total (O/U) Projection Accuracy</div>
+          <div class="trend-line">Checked ${ouGames} games where both teams had at least one prior game logged.</div>
+          <div class="trend-line">Average miss: <b>${(sumAbsError / ouGames).toFixed(1)} points</b> (how far off the projected total typically was, regardless of direction)</div>
+          <div class="trend-line">Bias: <b>${sumSignedError / ouGames > 0 ? "projected too HIGH" : "projected too LOW"} by ${Math.abs(sumSignedError / ouGames).toFixed(1)} points on average</b></div>
+          <div class="trend-line">Actual total came in Over the projection ${overCount} times, Under ${underCount} times${ouGames - overCount - underCount > 0 ? `, exact match ${ouGames - overCount - underCount} times` : ""}.</div>
+          <div class="trend-note">This grades the model's own projected total against what actually happened — not against a real posted betting line (that needs the paid historical-odds ATS trends tool instead). A ${overCount > underCount ? "leaning-Over" : underCount > overCount ? "leaning-Under" : "roughly balanced"} split here says something about the projection's general bias, not whether it would have beaten a sportsbook's number.</div>
         ` : ""}
       </div>
     `;
@@ -4735,6 +4942,7 @@ document.getElementById("runBacktestBtn").addEventListener("click", runBacktest)
 document.getElementById("runLiveAccuracyBtn").addEventListener("click", runLiveAccuracy);
 document.getElementById("runWeekTrendsBtn").addEventListener("click", runWeekTrends);
 document.getElementById("runCacheAllBtn").addEventListener("click", estimateCacheAllCost);
+document.getElementById("atsBacktestEstimateBtn").addEventListener("click", estimateATSBacktestCost);
 document.getElementById("runEdgeScanBtn").addEventListener("click", runEdgeScan);
 document.getElementById("calcPropEdgeBtn").addEventListener("click", calcPropEdge);
 document.getElementById("propFindTeamBtn").addEventListener("click", findPropTeam);
