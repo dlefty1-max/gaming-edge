@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_56.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_57.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1825,6 +1825,46 @@ async function runPropScan(matchedEvents, apiKey) {
             const tsScored = thisSeasonVals.filter(v => v > 0).length;
             thisSeasonPct = (tsScored / thisSeasonVals.length) * 100;
           }
+
+          // Opportunity trend — TDs alone are the noisiest stat in football (near-zero year-to-year
+          // correlation); real signal comes from whether the underlying usage (targets/carries) is
+          // actually rising, not just recent scoring luck. Reuses the same game log, no extra fetch.
+          let usageNote = null;
+          const oppCandidates = ["TAR", "TGT", "REC", "CAR", "ATT"];
+          let oppIdx = -1, oppLabel = null;
+          for (const cand of oppCandidates) {
+            const found = labels.findIndex((l, i) => i !== idx && l.toUpperCase().includes(cand));
+            if (found !== -1) { oppIdx = found; oppLabel = labels[found]; break; }
+          }
+          if (oppIdx !== -1) {
+            const oppVals = logs.map(g2 => parseFloat(g2.stats[oppIdx])).filter(v => !isNaN(v));
+            if (oppVals.length >= 5) {
+              const seasonAvgOpp = oppVals.reduce((a, b) => a + b, 0) / oppVals.length;
+              const last3Opp = oppVals.slice(0, 3);
+              const last3AvgOpp = last3Opp.reduce((a, b) => a + b, 0) / last3Opp.length;
+              const trendPct = seasonAvgOpp > 0 ? ((last3AvgOpp - seasonAvgOpp) / seasonAvgOpp) * 100 : 0;
+              usageNote = {
+                label: oppLabel,
+                last3Avg: last3AvgOpp,
+                seasonAvg: seasonAvgOpp,
+                trendPct,
+                rising: trendPct >= 15,
+                falling: trendPct <= -15,
+              };
+            }
+          }
+
+          // History against this exact opponent — same as numeric props below
+          const playerIsAway = awayRoster.some(p => p.id === rosterMatch.id);
+          const opponentName = playerIsAway ? game.home : game.away;
+          let vsOppNote = null;
+          const oppLogsForTd = logs.filter(g2 => (g2.opponent || "").toLowerCase().includes(opponentName.toLowerCase()) || opponentName.toLowerCase().includes((g2.opponent || "").toLowerCase()));
+          const oppValsForTd = oppLogsForTd.map(g2 => parseFloat(g2.stats[idx])).filter(v => !isNaN(v));
+          if (oppValsForTd.length > 0) {
+            const oppScoredCount = oppValsForTd.filter(v => v > 0).length;
+            vsOppNote = { opponent: opponentName, hitPct: (oppScoredCount / oppValsForTd.length) * 100, games: oppValsForTd.length, isBoolean: true };
+          }
+
           results.push({
             player: rosterMatch.name,
             pos: rosterMatch.pos,
@@ -1835,6 +1875,8 @@ async function runPropScan(matchedEvents, apiKey) {
             underPrice: null,
             side: "Yes",
             hitPct,
+            usageNote,
+            vsOppNote,
             sampleSize: vals.length,
             edgePct,
             isBoolean: true,
@@ -1860,11 +1902,42 @@ async function runPropScan(matchedEvents, apiKey) {
             const tsPct = (tsOver / thisSeasonVals.length) * 100;
             thisSeasonPct = hitPct >= 50 ? tsPct : 100 - tsPct; // report on the same side as the overall pick
           }
+
+          // Trend on the actual stat being bet (not a proxy — unlike TDs, yardage/receptions ARE the
+          // usage signal, so checking the stat's own recent trend is directly meaningful here)
+          let statTrendNote = null;
+          if (vals.length >= 5) {
+            const seasonAvgStat = vals.reduce((a, b) => a + b, 0) / vals.length;
+            const last3Stat = vals.slice(0, 3);
+            const last3AvgStat = last3Stat.reduce((a, b) => a + b, 0) / last3Stat.length;
+            const trendPctStat = seasonAvgStat > 0 ? ((last3AvgStat - seasonAvgStat) / seasonAvgStat) * 100 : 0;
+            statTrendNote = {
+              last3Avg: last3AvgStat,
+              seasonAvg: seasonAvgStat,
+              trendPct: trendPctStat,
+              rising: trendPctStat >= 15,
+              falling: trendPctStat <= -15,
+            };
+          }
+
+          // History against this exact opponent — reuses the same game log, no extra fetch
+          const playerIsAway = awayRoster.some(p => p.id === rosterMatch.id);
+          const opponentName = playerIsAway ? game.home : game.away;
+          let vsOppNote = null;
+          const oppLogs = logs.filter(g2 => (g2.opponent || "").toLowerCase().includes(opponentName.toLowerCase()) || opponentName.toLowerCase().includes((g2.opponent || "").toLowerCase()));
+          const oppVals = oppLogs.map(g2 => parseFloat(g2.stats[idx])).filter(v => !isNaN(v));
+          if (oppVals.length > 0) {
+            const oppAvg = oppVals.reduce((a, b) => a + b, 0) / oppVals.length;
+            vsOppNote = { opponent: opponentName, avg: oppAvg, games: oppVals.length };
+          }
+
           results.push({
             player: rosterMatch.name,
             pos: rosterMatch.pos,
             desc: mapInfo.desc,
             matchup: `${game.away} @ ${game.home}`,
+            statTrendNote,
+            vsOppNote,
             line: propInfo.line,
             overPrice: propInfo.overPrice,
             underPrice: propInfo.underPrice,
@@ -1897,11 +1970,41 @@ async function runPropScan(matchedEvents, apiKey) {
 
   out.innerHTML = `
     <div class="trend-title">Top ${top.length} Props This Week — by historical hit rate</div>
-    ${top.map((r, i) => `<div class="trend-line" style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
-      <span><b>${r.player}</b> (${r.pos}) ${r.desc} ${r.isBoolean ? r.side : `${r.side} ${r.line}`} — hit <b>${r.hitPct.toFixed(0)}%</b> of last ${r.sampleSize}${r.thisSeasonPct != null ? ` <span style="color:#3B7DD8;">(${state.year}: ${r.thisSeasonPct.toFixed(0)}% of ${r.thisSeasonSample})</span>` : ""} · ${r.matchup} · ${r.isBoolean ? r.overPrice : (r.side === "Over" ? r.overPrice : r.underPrice)}${r.edgePct != null ? ` · <span style="color:${r.edgePct > 0 ? "#4C8B5A" : "#C4564B"};font-weight:700;">edge ${r.edgePct > 0 ? "+" : ""}${r.edgePct.toFixed(1)}%</span>` : ` <span style="color:#8A96A1;">(no price to compare)</span>`}</span>
-      <button class="odds-btn" style="flex:none; padding:6px 10px;" data-add-prop="${i}">+ Add</button>
-    </div>`).join("")}
-    <div class="trend-note" style="margin-top:8px;">Ranked by edge — real hit rate minus what the price implies (vig removed when both sides are priced), highest edge first. A prop can have a high hit rate and still show low or negative edge if the price already accounts for it; that's the point. "No price to compare" means only one side had odds available, so edge couldn't be computed — shown at the bottom, hit rate only. Once ${state.year} games start piling up, a blue ${state.year}-only figure appears next to the multi-season one. ${skipped.length ? `${skipped.length} props skipped along the way (name mismatches, missing stat data, or too few games to judge).` : ""}</div>
+    ${top.map((r, i) => {
+      let usageHtml = "";
+      if (r.usageNote) {
+        const u = r.usageNote;
+        const color = u.rising ? "#4C8B5A" : u.falling ? "#C4564B" : "#8A96A1";
+        const label = u.rising ? "opportunity rising" : u.falling ? "opportunity falling" : "opportunity stable";
+        usageHtml = `<div style="font-size:11px; color:${color}; margin-top:2px;">${u.label}: last 3 games ${u.last3Avg.toFixed(1)}/game vs season ${u.seasonAvg.toFixed(1)}/game — <b>${label}</b> (${u.trendPct > 0 ? "+" : ""}${u.trendPct.toFixed(0)}%)</div>`;
+      } else if (r.isBoolean) {
+        usageHtml = `<div style="font-size:11px; color:#8A96A1; margin-top:2px;">No usage/opportunity data found to check against.</div>`;
+      }
+      let statTrendHtml = "";
+      if (r.statTrendNote) {
+        const t = r.statTrendNote;
+        const color = t.rising ? "#4C8B5A" : t.falling ? "#C4564B" : "#8A96A1";
+        const label = t.rising ? "trending up" : t.falling ? "trending down" : "stable";
+        statTrendHtml = `<div style="font-size:11px; color:${color}; margin-top:2px;">Recent form: last 3 games ${t.last3Avg.toFixed(1)} vs season ${t.seasonAvg.toFixed(1)} — <b>${label}</b> (${t.trendPct > 0 ? "+" : ""}${t.trendPct.toFixed(0)}%)</div>`;
+      }
+      let vsOppHtml = "";
+      if (r.vsOppNote) {
+        const v = r.vsOppNote;
+        vsOppHtml = v.isBoolean
+          ? `<div style="font-size:11px; color:#8A96A1; margin-top:2px;">Vs. ${v.opponent}: scored in ${v.hitPct.toFixed(0)}% of ${v.games} past meeting${v.games > 1 ? "s" : ""}</div>`
+          : `<div style="font-size:11px; color:#8A96A1; margin-top:2px;">Vs. ${v.opponent}: averaged ${v.avg.toFixed(1)} over ${v.games} past meeting${v.games > 1 ? "s" : ""}</div>`;
+      }
+      return `<div class="trend-line" style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px; padding-bottom:6px;">
+        <span>
+          <div><b>${r.player}</b> (${r.pos}) ${r.desc} ${r.isBoolean ? r.side : `${r.side} ${r.line}`} — hit <b>${r.hitPct.toFixed(0)}%</b> of last ${r.sampleSize}${r.thisSeasonPct != null ? ` <span style="color:#3B7DD8;">(${state.year}: ${r.thisSeasonPct.toFixed(0)}% of ${r.thisSeasonSample})</span>` : ""} · ${r.matchup} · ${r.isBoolean ? r.overPrice : (r.side === "Over" ? r.overPrice : r.underPrice)}${r.edgePct != null ? ` · <span style="color:${r.edgePct > 0 ? "#4C8B5A" : "#C4564B"};font-weight:700;">edge ${r.edgePct > 0 ? "+" : ""}${r.edgePct.toFixed(1)}%</span>` : ` <span style="color:#8A96A1;">(no price to compare)</span>`}</div>
+          ${usageHtml}
+          ${statTrendHtml}
+          ${vsOppHtml}
+        </span>
+        <button class="odds-btn" style="flex:none; padding:6px 10px;" data-add-prop="${i}">+ Add</button>
+      </div>`;
+    }).join("")}
+    <div class="trend-note" style="margin-top:8px;">Ranked by edge — real hit rate minus what the price implies (vig removed when both sides are priced), highest edge first. Every prop now shows extra verification where available: TD-scorer props show an opportunity trend (targets/carries, since TDs themselves are the noisiest stat in football); yardage/reception props show the stat's own recent trend directly (more meaningful there, since usage IS the stat); all props show history against this exact opponent when any exists. "No price to compare" means only one side had odds available. Once ${state.year} games start piling up, a blue ${state.year}-only figure appears next to the multi-season one. ${skipped.length ? `${skipped.length} props skipped along the way (name mismatches, missing stat data, or too few games to judge).` : ""}</div>
   `;
 
   out.querySelectorAll("[data-add-prop]").forEach(btn => {
