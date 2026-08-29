@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_59.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_60.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -216,8 +216,8 @@
         
           <div class="odds-row-label">Moneyline</div>
           <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401872656" data-bettype="Moneyline" data-selection="Patriots" data-odds="150">Patriots<br><span class="odds-btn-price">+150</span></button>
-            <button class="odds-btn" data-game="401872656" data-bettype="Moneyline" data-selection="Seahawks" data-odds="-180">Seahawks<br><span class="odds-btn-price">-180</span></button>
+            <button class="odds-btn" data-game="401872656" data-bettype="Moneyline" data-selection="Patriots" data-odds="145">Patriots<br><span class="odds-btn-price">+145</span></button>
+            <button class="odds-btn" data-game="401872656" data-bettype="Moneyline" data-selection="Seahawks" data-odds="-175">Seahawks<br><span class="odds-btn-price">-175</span></button>
           </div>
         <div class="trend-note" style="margin-top:2px;">Consensus (median across 10 books) — tap to add to your pick</div>
         <div class="trend-note" style="color:#B4463A;">Matched: New England Patriots @ Seattle Seahawks <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
@@ -280,8 +280,8 @@
         
           <div class="odds-row-label">Total</div>
           <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401872925" data-bettype="Total" data-selection="Over 50.5" data-odds="-118">O 50.5<br><span class="odds-btn-price">-118</span></button>
-            <button class="odds-btn" data-game="401872925" data-bettype="Total" data-selection="Under 50.5" data-odds="-102">U 50.5<br><span class="odds-btn-price">-102</span></button>
+            <button class="odds-btn" data-game="401872925" data-bettype="Total" data-selection="Over 50.5" data-odds="-102">O 50.5<br><span class="odds-btn-price">-102</span></button>
+            <button class="odds-btn" data-game="401872925" data-bettype="Total" data-selection="Under 50.5" data-odds="-118">U 50.5<br><span class="odds-btn-price">-118</span></button>
           </div>
         
           <div class="odds-row-label">Moneyline</div>
@@ -531,8 +531,8 @@
         
           <div class="odds-row-label">Moneyline</div>
           <div class="odds-btn-row">
-            <button class="odds-btn" data-game="401872660" data-bettype="Moneyline" data-selection="Bills" data-odds="-115">Bills<br><span class="odds-btn-price">-115</span></button>
-            <button class="odds-btn" data-game="401872660" data-bettype="Moneyline" data-selection="Texans" data-odds="-105">Texans<br><span class="odds-btn-price">-105</span></button>
+            <button class="odds-btn" data-game="401872660" data-bettype="Moneyline" data-selection="Bills" data-odds="-118">Bills<br><span class="odds-btn-price">-118</span></button>
+            <button class="odds-btn" data-game="401872660" data-bettype="Moneyline" data-selection="Texans" data-odds="-102">Texans<br><span class="odds-btn-price">-102</span></button>
           </div>
         <div class="trend-note" style="margin-top:2px;">Consensus (median across 10 books) — tap to add to your pick</div>
         <div class="trend-note" style="color:#B4463A;">Matched: Buffalo Bills @ Houston Texans <span style="color:#5C6B78;">(should match the matchup above — flag me if it doesn't)</span></div>
@@ -1358,7 +1358,46 @@ async function fetchTeamRecord(league, teamId) {
     avgPA: (pa != null && games) ? pa / games : null,
     standingSummary: json.team && json.team.standingSummary,
     homeCity: json.team && json.team.venue && json.team.venue.address && json.team.venue.address.city,
+    gamesPlayed: games || 0,
   };
+}
+
+// The site.api.espn.com team endpoint doesn't actually support a season query param for
+// historical records (confirmed — it silently ignores it and returns current-season data
+// regardless), so computing last season's record directly from the scoreboard is the only
+// reliable path. Reuses fetchWeekResults, already proven throughout the backtest features.
+async function fetchLastSeasonRecordFromSchedule(league, teamId, year) {
+  let wins = 0, losses = 0, ties = 0, pf = 0, pa = 0, games = 0;
+  for (let w = 1; w <= 18; w++) {
+    let results = [];
+    try { results = await fetchWeekResults(league, year, w, 2); } catch (e) { continue; }
+    const g = results.find(r => String(r.homeId) === String(teamId) || String(r.awayId) === String(teamId));
+    if (!g) continue;
+    const isHome = String(g.homeId) === String(teamId);
+    const teamScore = isHome ? g.homeScore : g.awayScore;
+    const oppScore = isHome ? g.awayScore : g.homeScore;
+    pf += teamScore; pa += oppScore; games++;
+    if (teamScore > oppScore) wins++; else if (teamScore < oppScore) losses++; else ties++;
+  }
+  if (games === 0) return null;
+  return {
+    overallSummary: `${wins}-${losses}${ties > 0 ? `-${ties}` : ""}`,
+    avgPF: pf / games,
+    avgPA: pa / games,
+    gamesPlayed: games,
+    fromLastSeason: true,
+  };
+}
+
+// Wraps fetchTeamRecord with a fallback to last season's final record when this season
+// has zero games played yet (true for basically every team in Week 1) — showing "0-0, no
+// stats" for a season-opener buy game is technically accurate but tells you nothing useful.
+async function fetchTeamRecordWithFallback(league, teamId, year) {
+  let rec = await fetchTeamRecord(league, teamId).catch(() => null);
+  if (rec && rec.gamesPlayed > 0) return { ...rec, fromLastSeason: false };
+  const lastYearRec = await fetchLastSeasonRecordFromSchedule(league, teamId, year - 1).catch(() => null);
+  if (lastYearRec) return lastYearRec;
+  return rec ? { ...rec, fromLastSeason: false } : null;
 }
 
 // ---------- situational factors: rest, division, revenge game ----------
@@ -3891,8 +3930,8 @@ async function runEdgeScan() {
         let homeRec = null, awayRec = null;
         try {
           [homeRec, awayRec] = await Promise.all([
-            fetchTeamRecord(state.league, g.homeId).catch(() => null),
-            fetchTeamRecord(state.league, g.awayId).catch(() => null),
+            fetchTeamRecordWithFallback(state.league, g.homeId, state.year).catch(() => null),
+            fetchTeamRecordWithFallback(state.league, g.awayId, state.year).catch(() => null),
           ]);
         } catch (e) {}
         mismatchGames.push({ game: `${g.away} @ ${g.home}`, unknownSide, marketLine, homeTeam: g.home, awayTeam: g.away, homeRec, awayRec });
@@ -3972,8 +4011,8 @@ async function runEdgeScan() {
       // --- totals: model projected total (from team scoring averages) vs consensus market total ---
       try {
         const [awayRec, homeRec] = await Promise.all([
-          fetchTeamRecord(state.league, g.awayId).catch(() => null),
-          fetchTeamRecord(state.league, g.homeId).catch(() => null),
+          fetchTeamRecordWithFallback(state.league, g.awayId, state.year).catch(() => null),
+          fetchTeamRecordWithFallback(state.league, g.homeId, state.year).catch(() => null),
         ]);
         if (awayRec && homeRec && awayRec.avgPF != null && homeRec.avgPF != null) {
           const modelTotal = (awayRec.avgPF + homeRec.avgPA) / 2 + (homeRec.avgPF + awayRec.avgPA) / 2 + 1.5;
@@ -3996,6 +4035,7 @@ async function runEdgeScan() {
               meaningful: Math.abs(totalGap) >= 3,
               odds: totalGap > 0 ? (overOutcome ? overOutcome.price : "-110") : (underOutcome ? underOutcome.price : "-110"),
               numBooks: totalPts.length,
+              usingLastSeason: awayRec.fromLastSeason || homeRec.fromLastSeason,
             };
           }
         }
@@ -4009,8 +4049,8 @@ async function runEdgeScan() {
           <div class="trend-note">Every matched game this week was a lopsided/FCS matchup our model can't rate — nothing to rank, but here's real info on each one.</div>
           ${mismatchGames.map(m => `
             <div class="trend-line" style="margin-top:8px;"><b>${m.game}</b>${m.marketLine != null ? ` — book has ${m.marketLine <= 0 ? `${m.homeTeam} ${m.marketLine}` : `${m.awayTeam} -${m.marketLine}`}` : ""}</div>
-            <div class="trend-line" style="font-size:11px;">${m.awayTeam}: ${m.awayRec ? `${m.awayRec.overallSummary || "record unavailable"}${m.awayRec.avgPF != null ? ` · ${m.awayRec.avgPF.toFixed(1)} PF/g, ${m.awayRec.avgPA.toFixed(1)} PA/g` : ""}` : "no data available"}</div>
-            <div class="trend-line" style="font-size:11px;">${m.homeTeam}: ${m.homeRec ? `${m.homeRec.overallSummary || "record unavailable"}${m.homeRec.avgPF != null ? ` · ${m.homeRec.avgPF.toFixed(1)} PF/g, ${m.homeRec.avgPA.toFixed(1)} PA/g` : ""}` : "no data available"}</div>
+            <div class="trend-line" style="font-size:11px;">${m.awayTeam}: ${m.awayRec ? `${m.awayRec.overallSummary || "record unavailable"}${m.awayRec.fromLastSeason ? " (last season)" : ""}${m.awayRec.avgPF != null ? ` · ${m.awayRec.avgPF.toFixed(1)} PF/g, ${m.awayRec.avgPA.toFixed(1)} PA/g` : ""}` : "no data available"}</div>
+            <div class="trend-line" style="font-size:11px;">${m.homeTeam}: ${m.homeRec ? `${m.homeRec.overallSummary || "record unavailable"}${m.homeRec.fromLastSeason ? " (last season)" : ""}${m.homeRec.avgPF != null ? ` · ${m.homeRec.avgPF.toFixed(1)} PF/g, ${m.homeRec.avgPA.toFixed(1)} PA/g` : ""}` : "no data available"}</div>
           `).join("")}
         `;
       } else if (skipped.length > 0) {
@@ -4036,7 +4076,7 @@ async function runEdgeScan() {
         if (r.moneyline.numBooks > 1) line += `<div class="trend-note">Best price: ${r.moneyline.side} ${r.moneyline.bestOdds} at ${r.moneyline.bestBook}</div>`;
       }
       if (r.total) {
-        line += `<div class="trend-line" style="${r.total.meaningful ? "font-weight:700;" : ""}">Total — consensus ${r.total.marketTotal}, model implies ${r.total.modelTotal} — ${r.total.meaningful ? `⚑ ${r.total.gapPts}-pt gap, leans <b>${r.total.side}</b> (${r.total.odds})` : `${r.total.gapPts}-pt gap, below threshold`}</div>`;
+        line += `<div class="trend-line" style="${r.total.meaningful ? "font-weight:700;" : ""}">Total — consensus ${r.total.marketTotal}, model implies ${r.total.modelTotal}${r.total.usingLastSeason ? " (last season's scoring)" : ""} — ${r.total.meaningful ? `⚑ ${r.total.gapPts}-pt gap, leans <b>${r.total.side}</b> (${r.total.odds})` : `${r.total.gapPts}-pt gap, below threshold`}</div>`;
       }
       return line;
     }).join("") + `<div class="trend-note" style="margin-top:10px;">⚑ = model and book disagree meaningfully (2+ pts on spread, 5%+ on moneyline, 3+ pts on total). "Best line/price" shows the most favorable number found across all books returned for that game — worth grabbing regardless of the model's opinion. The total's model number is the same scoring-average blend shown in each game's trends panel, not the Elo model.${mismatchGames.length > 0 ? ` ${mismatchGames.length} lopsided game${mismatchGames.length > 1 ? "s" : ""} (likely FCS opponents) couldn't get a model comparison — real team info shown below instead.` : ""}</div>` + (mismatchGames.length > 0 ? `
@@ -4044,8 +4084,8 @@ async function runEdgeScan() {
       <div class="trend-note">Our data can't build a rating for ${mismatchGames.length > 1 ? "these teams" : "this team"} (usually an FCS opponent whose real games we never see), so there's no honest model comparison to show. Here's what's actually verifiable instead: each team's real record/scoring, and the book's own posted line, so you can judge it yourself rather than trust a made-up model number.</div>
       ${mismatchGames.map(m => `
         <div class="trend-line" style="margin-top:8px;"><b>${m.game}</b>${m.marketLine != null ? ` — book has ${m.marketLine <= 0 ? `${m.homeTeam} ${m.marketLine}` : `${m.awayTeam} -${m.marketLine}`}` : ""}</div>
-        <div class="trend-line" style="font-size:11px;">${m.awayTeam}: ${m.awayRec ? `${m.awayRec.overallSummary || "record unavailable"}${m.awayRec.avgPF != null ? ` · ${m.awayRec.avgPF.toFixed(1)} PF/g, ${m.awayRec.avgPA.toFixed(1)} PA/g` : ""}` : "no data available (likely FCS, stats not tracked by this source)"}</div>
-        <div class="trend-line" style="font-size:11px;">${m.homeTeam}: ${m.homeRec ? `${m.homeRec.overallSummary || "record unavailable"}${m.homeRec.avgPF != null ? ` · ${m.homeRec.avgPF.toFixed(1)} PF/g, ${m.homeRec.avgPA.toFixed(1)} PA/g` : ""}` : "no data available"}</div>
+        <div class="trend-line" style="font-size:11px;">${m.awayTeam}: ${m.awayRec ? `${m.awayRec.overallSummary || "record unavailable"}${m.awayRec.fromLastSeason ? " (last season)" : ""}${m.awayRec.avgPF != null ? ` · ${m.awayRec.avgPF.toFixed(1)} PF/g, ${m.awayRec.avgPA.toFixed(1)} PA/g` : ""}` : "no data available (likely FCS, stats not tracked by this source)"}</div>
+        <div class="trend-line" style="font-size:11px;">${m.homeTeam}: ${m.homeRec ? `${m.homeRec.overallSummary || "record unavailable"}${m.homeRec.fromLastSeason ? " (last season)" : ""}${m.homeRec.avgPF != null ? ` · ${m.homeRec.avgPF.toFixed(1)} PF/g, ${m.homeRec.avgPA.toFixed(1)} PA/g` : ""}` : "no data available"}</div>
       `).join("")}
     ` : "") + (skipped.length > 0 ? `<div class="trend-title" style="margin-top:14px;">Other Skipped Games</div>${skipped.map(s => `<div class="trend-line" style="font-size:11px;">${s}</div>`).join("")}` : "");
   } catch (e) {
