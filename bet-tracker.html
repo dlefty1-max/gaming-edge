@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_58.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_59.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -78,6 +78,8 @@
   .preseason-card .trend-title { color: #8A6D00; }
   .regseason-card { background: #EAF1FB; border: 1px solid #B8D0EE; border-radius: 10px; padding: 14px; margin-bottom: 14px; }
   .regseason-card .trend-title { color: #1A4A8A; }
+  .cfb-card { background: #EAF7EE; border: 1px solid #B8E0C4; border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+  .cfb-card .trend-title { color: #1A6A3A; }
   .kelly-hint { font-size: 12px; color: #3B7DD8; font-weight: 600; margin-top: 4px; }
   .toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
   .toolbar button { flex: 1; padding: 8px; border-radius: 8px; border: 1px solid #CBD3DA; background: #fff; font-weight: 700; font-size: 12px; cursor: pointer; }
@@ -183,6 +185,7 @@
       <div class="trend-note" style="margin-top:8px;">This card disappears automatically once you switch to Preseason. The "Week 1 Specific" section updates automatically as you change weeks.</div>
     </div>
   </div>
+    <div id="cfbTrendsCard"></div>
     <button class="start-parlay-btn" id="startParlayBtn">🎫 Build a Parlay — tap odds across games to add legs</button>
     <div id="parlayModeBar"></div>
     <div id="gamesList"><div class="card">
@@ -3021,9 +3024,40 @@ function renderRegularSeasonTrendsCard() {
   if (fillBtn) fillBtn.addEventListener("click", () => computeThisWeekTrend("nfl", week));
 }
 
+function renderCFBTrendsCard() {
+  const el = document.getElementById("cfbTrendsCard");
+  if (state.league !== "cfb") { el.innerHTML = ""; return; }
+  el.innerHTML = `
+    <div class="cfb-card">
+      <div class="trend-title">🏈 General College Football Betting Trends</div>
+      <div class="trend-note" style="margin-top:4px;">League-wide historical patterns (ESPN Research, OddsShark), not this specific matchup — soft leans, not rules. College football has a much wider talent spread than the NFL, so these lean less reliable than the NFL equivalents.</div>
+
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">Home Field — Against The Spread</div>
+      <div class="trend-line">FBS-vs-FBS home teams: <b>~50.0%</b> ATS over the last 4 seasons (1,434-1,433) — essentially a coin flip. Home field is a real scoring edge, but the market already prices most of it in.</div>
+
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">Underdogs — A Real But Narrow Split</div>
+      <div class="trend-line">Underdogs covered <b>~51%</b> of games last season, consistent with recent years — but won outright only about <b>1 in 4</b> times. The market is usually right about who wins; it more often overshoots by how much.</div>
+      <div class="trend-line">Average posted spread has shrunk for 6 straight seasons, hitting a 40-year low (~10.4 pts) — tighter lines have meant more frequent upsets league-wide.</div>
+
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">Totals</div>
+      <div class="trend-line">Overs hit <b>~52%</b> last season, the highest rate in ESPN's database (back to 2000) — actual scoring (53.6 avg) ran ahead of the average posted total (52.1), suggesting total lines lagged the sport's real offensive trend that year. Not guaranteed to repeat, but worth knowing which direction total-setting has been biased recently.</div>
+
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">Ranked vs. Unranked</div>
+      <div class="trend-line">Ranked teams win outright <b>~80%</b> of the time over the last 5 seasons against unranked opponents — fading a ranked favorite straight-up has been a losing approach.</div>
+      <div class="trend-line">ATS is a different story: the more exploitable spot tends to be teams barely inside the Top 25 (rather than blue-bloods laying 20+), since a single loss drops them out — tighter, more closely-argued lines in those games rather than the runaway double-digit ones.</div>
+
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">Lopsided/Buy Games</div>
+      <div class="trend-line">Games this app flags as "no model number" (usually an FBS blue-blood hosting an FCS opponent) are exactly the games general research like this doesn't cover well either — these are closer to real record/scoring-average judgment calls than statistical-trend territory. See the real team info shown for those specific games in the Edge tab instead.</div>
+
+      <div class="trend-note" style="margin-top:8px;">This card disappears automatically once you switch to NFL.</div>
+    </div>
+  `;
+}
+
 async function loadSchedule() {
   renderPreseasonTrendsCard();
   renderRegularSeasonTrendsCard();
+  renderCFBTrendsCard();
   const errorEl = document.getElementById("scheduleError");
   const listEl = document.getElementById("gamesList");
   errorEl.innerHTML = "";
