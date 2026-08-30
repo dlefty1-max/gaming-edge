@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_64.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_65.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -959,7 +959,7 @@
 
     <div class="card" style="padding:16px; margin-bottom:16px;">
       <div class="trend-title" style="margin-bottom:8px;">ATS Backtest — Model vs Real Spread</div>
-      <div class="refresh-note">The straight-up backtest above doesn't touch odds at all. This one does: for every game, checks whether the team the Elo model favored (straight-up) would have covered the <b>real posted spread</b> that game. Uses your historical odds data — if you already ran "Cache All Teams" for this season, most or all of this may already be cached and free. Regular season only, matching what Cache All Teams covers.</div>
+      <div class="refresh-note">The straight-up backtest above doesn't touch odds at all. This one does: for every game, checks whether the team the Elo model favored (straight-up) would have covered the <b>real posted spread</b> that game. Uses your historical odds data — a full CFB season is expensive (130+ teams), so testing a specific week range instead is much cheaper. If you already ran "Cache All Teams," any weeks already cached come back free.</div>
       <div class="row">
         <div>
           <label>League</label>
@@ -974,6 +974,16 @@
             <option value="2025" selected="">2025</option>
             <option value="2024">2024</option>
           </select>
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>From Week</label>
+          <input id="atsBtWeekFrom" value="1" inputmode="numeric">
+        </div>
+        <div>
+          <label>Through Week</label>
+          <input id="atsBtWeekThrough" value="18" inputmode="numeric">
         </div>
       </div>
       <button class="save-btn full" id="atsBacktestEstimateBtn">Estimate Cost &amp; Run</button>
@@ -2166,17 +2176,19 @@ async function fetchAllTeamIds(league, year) {
 async function estimateATSBacktestCost() {
   const league = document.getElementById("atsBtLeague").value;
   const year = parseInt(document.getElementById("atsBtYear").value, 10);
+  const weekFrom = Math.max(1, parseInt(document.getElementById("atsBtWeekFrom").value, 10) || 1);
+  const weekThrough = Math.min(18, parseInt(document.getElementById("atsBtWeekThrough").value, 10) || 18);
   const out = document.getElementById("atsBacktestResults");
   let apiKey = "";
   try { apiKey = localStorage.getItem("odds-api-key") || ""; } catch (e) {}
   if (!apiKey) { out.innerHTML = `<div class="trend-note">Add your Odds API key on the Edge tab first.</div>`; return; }
 
-  out.innerHTML = `<div class="refresh-note">Checking how much of this season's spreads are already cached…</div>`;
+  out.innerHTML = `<div class="refresh-note">Checking how much of Weeks ${weekFrom}-${weekThrough} is already cached…</div>`;
   try {
     const sportKey = league === "nfl" ? "americanfootball_nfl" : "americanfootball_ncaaf";
     let totalGames = 0, alreadyCached = 0;
     const allGames = [];
-    for (let w = 1; w <= 18; w++) {
+    for (let w = weekFrom; w <= weekThrough; w++) {
       let results = [];
       try { results = await fetchWeekResults(league, year, w, 2); } catch (e) { continue; }
       for (const g of results) {
@@ -2191,7 +2203,7 @@ async function estimateATSBacktestCost() {
     const toFetch = totalGames - alreadyCached;
     const estCost = toFetch * 20;
     out.innerHTML = `
-      <div class="trend-line">${totalGames} completed games found for ${year}.</div>
+      <div class="trend-line">${totalGames} completed games found for ${year}, Weeks ${weekFrom}-${weekThrough}.</div>
       <div class="trend-line">${alreadyCached} already cached (free) · ${toFetch} new lookups needed.</div>
       <div class="trend-score">Estimated cost: ~${estCost.toLocaleString()} credits</div>
       <button class="save-btn full" id="atsBacktestConfirmBtn" style="margin-top:8px;">Proceed — Run ATS Backtest</button>
@@ -2222,6 +2234,20 @@ async function runATSBacktest(league, year, allGames, apiKey) {
     const byWeek = {};
     allGames.forEach(g => { (byWeek[g.week] = byWeek[g.week] || []).push(g); });
     const weeks = Object.keys(byWeek).map(Number).sort((a, b) => a - b);
+
+    // If we're testing a slice of the season (e.g. only weeks 11-15), the model still needs
+    // to know what happened in the earlier weeks first — otherwise it'd be evaluated as if
+    // week 11 were week 1, with no in-season learning at all. This pass is free (ESPN data
+    // only, no historical odds), so it doesn't add to the cost estimate you already approved.
+    const earliestTestedWeek = weeks[0] || 1;
+    if (earliestTestedWeek > 1) {
+      out.innerHTML = `<div class="refresh-note">Catching the model up on Weeks 1-${earliestTestedWeek - 1} first (free, no odds lookups)…</div>`;
+      for (let w = 1; w < earliestTestedWeek; w++) {
+        let catchUpResults = [];
+        try { catchUpResults = await fetchWeekResults(league, year, w); } catch (e) { continue; }
+        catchUpResults.forEach(g => applyGameToElo(elo, g, K, HOME_ADV, movCap, probDivisor));
+      }
+    }
 
     let done = 0;
     for (const w of weeks) {
