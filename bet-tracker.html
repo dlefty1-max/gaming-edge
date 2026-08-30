@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_65.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_66.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -80,6 +80,8 @@
   .regseason-card .trend-title { color: #1A4A8A; }
   .cfb-card { background: #EAF7EE; border: 1px solid #B8E0C4; border-radius: 10px; padding: 14px; margin-bottom: 14px; }
   .cfb-card .trend-title { color: #1A6A3A; }
+  .edge-highlight-card { background: #FFF4E5; border-left: 4px solid #E08A2E; border-radius: 6px; padding: 8px 10px; margin-bottom: 10px; }
+  .edge-badge { background: #E08A2E; color: #fff; font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 4px; letter-spacing: 0.3px; }
   .kelly-hint { font-size: 12px; color: #3B7DD8; font-weight: 600; margin-top: 4px; }
   .toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
   .toolbar button { flex: 1; padding: 8px; border-radius: 8px; border: 1px solid #CBD3DA; background: #fff; font-weight: 700; font-size: 12px; cursor: pointer; }
@@ -4161,7 +4163,8 @@ async function runEdgeScan() {
       return bv - av;
     });
     out.innerHTML = rows.map(r => {
-      let line = `<div class="trend-line" style="margin-top:6px;"><b>${r.game}</b> <span style="color:#5C6B78;font-weight:400;">(${r.bookCount} book${r.bookCount > 1 ? "s" : ""})</span></div>`;
+      const isValidatedEdge = r.spread && r.spread.meaningful; // 2+ pt spread gap — the specific threshold the ATS backtest confirmed actually beats break-even
+      let line = `<div class="trend-line" style="margin-top:6px;"><b>${r.game}</b> <span style="color:#5C6B78;font-weight:400;">(${r.bookCount} book${r.bookCount > 1 ? "s" : ""})</span>${isValidatedEdge ? ` <span class="edge-badge">🔥 2+ PT EDGE</span>` : ""}</div>`;
       if (r.spread) {
         line += `<div class="trend-line" style="${r.spread.meaningful ? "font-weight:700;" : ""}">Spread — consensus ${r.spread.marketLine}, model implies ${r.spread.modelLine} — ${r.spread.meaningful ? `⚑ ${r.spread.gapPoints}-pt gap, leans <b>${r.spread.side}</b>` : `${r.spread.gapPoints}-pt gap, below threshold`}</div>`;
         if (r.spread.numBooks > 1) line += `<div class="trend-note">Best line: ${r.spread.bestLine} at ${r.spread.bestBook}</div>`;
@@ -4173,8 +4176,8 @@ async function runEdgeScan() {
       if (r.total) {
         line += `<div class="trend-line" style="${r.total.meaningful ? "font-weight:700;" : ""}">Total — consensus ${r.total.marketTotal}, model implies ${r.total.modelTotal}${r.total.usingLastSeason ? " (last season's scoring)" : ""} — ${r.total.meaningful ? `⚑ ${r.total.gapPts}-pt gap, leans <b>${r.total.side}</b> (${r.total.odds})` : `${r.total.gapPts}-pt gap, below threshold`}</div>`;
       }
-      return line;
-    }).join("") + `<div class="trend-note" style="margin-top:10px;">⚑ = model and book disagree meaningfully (2+ pts on spread, 5%+ on moneyline, 3+ pts on total). "Best line/price" shows the most favorable number found across all books returned for that game — worth grabbing regardless of the model's opinion. The total's model number is the same scoring-average blend shown in each game's trends panel, not the Elo model.${mismatchGames.length > 0 ? ` ${mismatchGames.length} lopsided game${mismatchGames.length > 1 ? "s" : ""} (likely FCS opponents) couldn't get a model comparison — real team info shown below instead.` : ""}</div>` + (mismatchGames.length > 0 ? `
+      return `<div class="${isValidatedEdge ? "edge-highlight-card" : ""}">${line}</div>`;
+    }).join("") + `<div class="trend-note" style="margin-top:10px;">🔥 = a 2+ point spread gap specifically — the threshold a real backtest (ATS Backtest, Backtest tab) confirmed hits ~58% ATS, above the ~52.4% break-even line. ⚑ = model and book disagree meaningfully (2+ pts on spread, 5%+ on moneyline, 3+ pts on total) but not all of these thresholds have been backtested individually. "Best line/price" shows the most favorable number found across all books returned for that game — worth grabbing regardless of the model's opinion. The total's model number is the same scoring-average blend shown in each game's trends panel, not the Elo model.${mismatchGames.length > 0 ? ` ${mismatchGames.length} lopsided game${mismatchGames.length > 1 ? "s" : ""} (likely FCS opponents) couldn't get a model comparison — real team info shown below instead.` : ""}</div>` + (mismatchGames.length > 0 ? `
       <div class="trend-title" style="margin-top:14px;">Lopsided/FCS Games — No Model Number, Real Info Instead</div>
       <div class="trend-note">Our data can't build a rating for ${mismatchGames.length > 1 ? "these teams" : "this team"} (usually an FCS opponent whose real games we never see), so there's no honest model comparison to show. Here's what's actually verifiable instead: each team's real record/scoring, and the book's own posted line, so you can judge it yourself rather than trust a made-up model number.</div>
       ${mismatchGames.map(m => `
