@@ -379,11 +379,13 @@
         <div>
           <label>Season</label>
           <select id="atsBtYear">
-            <option value="2025" selected>2025</option>
+            <option value="2026" selected>2026</option>
+            <option value="2025">2025</option>
             <option value="2024">2024</option>
           </select>
         </div>
       </div>
+      <div class="refresh-note" style="margin-top:-6px;">Testing 2026? Games from before this season's Week 1 don't exist yet — set Through Week to whatever week has actually been played so far, not the full season.</div>
       <div class="row">
         <div>
           <label>From Week</label>
@@ -1633,7 +1635,14 @@ async function runATSBacktest(league, year, allGames, apiKey) {
   try {
     let elo = await buildCarryoverElo(league, year - 1);
     let atsWins = 0, atsLosses = 0, atsPushes = 0, noLineFound = 0;
-    let edgeWins = 0, edgeLosses = 0, edgePushes = 0; // subset: games where model disagreed with the real spread by 2+ pts
+    // Three gap-size buckets instead of one flat "2+" cutoff — lets us see whether the real
+    // edge lives in moderate disagreements or gets diluted/reversed by extreme ones (the
+    // extreme-gap games are exactly where Elo's math is known to be least reliable).
+    const buckets = {
+      moderate: { label: "2-10 pt gap", w: 0, l: 0, p: 0 },
+      large: { label: "10-20 pt gap", w: 0, l: 0, p: 0 },
+      extreme: { label: "20+ pt gap", w: 0, l: 0, p: 0 },
+    };
     const weekTally = {};
 
     const byWeek = {};
@@ -1687,10 +1696,14 @@ async function runATSBacktest(league, year, allGames, apiKey) {
             weekTally[w][result === "Win" ? "w" : result === "Loss" ? "l" : "p"]++;
 
             const gap = Math.abs(modelHomeSpread - realHomeSpread);
-            if (gap >= 2) {
-              if (result === "Win") edgeWins++;
-              else if (result === "Loss") edgeLosses++;
-              else edgePushes++;
+            let bucket = null;
+            if (gap >= 20) bucket = buckets.extreme;
+            else if (gap >= 10) bucket = buckets.large;
+            else if (gap >= 2) bucket = buckets.moderate;
+            if (bucket) {
+              if (result === "Win") bucket.w++;
+              else if (result === "Loss") bucket.l++;
+              else bucket.p++;
             }
           } else {
             noLineFound++;
@@ -1715,17 +1728,20 @@ async function runATSBacktest(league, year, allGames, apiKey) {
       return;
     }
     const atsPct = ((atsWins / graded) * 100).toFixed(1);
-    const edgeGraded = edgeWins + edgeLosses;
-    const edgePct = edgeGraded > 0 ? ((edgeWins / edgeGraded) * 100).toFixed(1) : null;
 
     out.innerHTML = `
       <div class="trend-score">Following Elo's SU favorite every game: ${atsWins}-${atsLosses}-${atsPushes} ATS (${atsPct}%)</div>
       <div class="trend-note">Break-even at standard -110 odds is 52.4%. ${noLineFound > 0 ? `${noLineFound} games had no matched historical line and were skipped.` : ""}</div>
-      ${edgeGraded > 0 ? `
-        <div class="trend-title" style="margin-top:12px;">Edge Subset — games where the model disagreed with the real spread by 2+ points</div>
-        <div class="trend-score">${edgeWins}-${edgeLosses}-${edgePushes} ATS (${edgePct}%) on ${edgeGraded + edgePushes} games</div>
-        <div class="trend-note">This is the actual test of the Edge tab's flagging logic — if this subset beats the overall record, it means "big gap between model and market" is worth paying attention to. If it doesn't, treat future big-gap flags with real skepticism.</div>
-      ` : ""}
+      <div class="trend-title" style="margin-top:12px;">By Gap Size — where does the real edge actually live?</div>
+      <div class="trend-note">Splits the "model vs market disagreement" games into three sizes, since extreme gaps are exactly where Elo's math is known to run out of room — this tells you whether to trust a flag differently depending on how big it is, instead of treating every 🔥 the same.</div>
+      ${["moderate", "large", "extreme"].map(key => {
+        const b = buckets[key];
+        const n = b.w + b.l;
+        if (n === 0) return `<div class="trend-line">${b.label}: no games in this range.</div>`;
+        const pct = ((b.w / n) * 100).toFixed(1);
+        const color = pct >= 55 ? "#4C8B5A" : pct < 50 ? "#C4564B" : "#1A2530";
+        return `<div class="trend-line"><b>${b.label}</b>: <span style="color:${color};font-weight:700;">${b.w}-${b.l}-${b.p} ATS (${pct}%)</span> on ${n + b.p} games</div>`;
+      }).join("")}
       <div class="trend-title" style="margin-top:12px;">By Week</div>
       ${Object.keys(weekTally).map(Number).sort((a, b) => a - b).map(w => {
         const t = weekTally[w];
