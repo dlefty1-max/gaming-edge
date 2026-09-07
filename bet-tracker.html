@@ -3536,13 +3536,62 @@ async function runEdgeScan() {
         continue;
       }
 
-      const rh = elo[g.homeId] != null ? elo[g.homeId] : 1500;
-      const ra = elo[g.awayId] != null ? elo[g.awayId] : 1500;
+      let rh = elo[g.homeId] != null ? elo[g.homeId] : 1500;
+      let ra = elo[g.awayId] != null ? elo[g.awayId] : 1500;
+      let injuryNote = "";
+
+      // Injury adjustment — same rough, position-aware penalty already used in the per-game
+      // trends panel (QB gets a real, larger hit; other positions get a small capped one),
+      // ported here so the Edge scan reflects the same adjustment instead of a raw, unaware
+      // number. Best-effort — if the injury/roster fetch fails, the unadjusted rating stands.
+      try {
+        const [awayInj, homeInj] = await Promise.all([
+          fetchInjuries(state.league, g.awayId).catch(() => []),
+          fetchInjuries(state.league, g.homeId).catch(() => []),
+        ]);
+        if (awayInj.length > 0 || homeInj.length > 0) {
+          const [awayRoster, homeRoster] = await Promise.all([
+            fetchRoster(state.league, g.awayId).catch(() => []),
+            fetchRoster(state.league, g.homeId).catch(() => []),
+          ]);
+          const resolvePos = (injury, roster) => {
+            if (injury.pos) return injury.pos;
+            const match = roster.find(p => p.name.toLowerCase() === injury.name.toLowerCase() || p.name.toLowerCase().includes(injury.name.toLowerCase()));
+            return match ? match.pos : null;
+          };
+          const statusWeight = (status) => {
+            const s = (status || "").toLowerCase();
+            if (s.includes("out")) return 1;
+            if (s.includes("doubtful")) return 0.75;
+            return 0;
+          };
+          const computePenalty = (injuries, roster) => {
+            let penalty = 0, nonQbCount = 0;
+            const notes = [];
+            injuries.forEach(inj => {
+              const w = statusWeight(inj.status);
+              if (w === 0) return;
+              const pos = resolvePos(inj, roster);
+              if (pos === "QB") { penalty += 80 * w; notes.push(`${inj.name} (QB)`); }
+              else if (nonQbCount < 3) { penalty += 10 * w; nonQbCount++; notes.push(`${inj.name} (${pos || "?"})`); }
+            });
+            return { penalty, notes };
+          };
+          const awayPen = computePenalty(awayInj, awayRoster);
+          const homePen = computePenalty(homeInj, homeRoster);
+          if (awayPen.penalty > 0 || homePen.penalty > 0) {
+            rh -= homePen.penalty;
+            ra -= awayPen.penalty;
+            injuryNote = ` · injury-adj: ${[...homePen.notes, ...awayPen.notes].join(", ")}`;
+          }
+        }
+      } catch (e) { /* best-effort, unadjusted rating stands on failure */ }
+
       const diff = (rh + 55) - ra;
       const modelHomeWinProb = 1 / (1 + Math.pow(10, -diff / getEloConstants(state.league).probDivisor));
       const modelHomeSpread = -(diff / getSpreadDivisor(state.league)); // negative = model favors home by this many points
 
-      const row = { game: `${g.away} @ ${g.home}`, bookCount: books.length };
+      const row = { game: `${g.away} @ ${g.home}`, bookCount: books.length, injuryNote };
 
       // --- spread: consensus line (median across books) + best price shopping ---
       const spreadEntries = books.map(b => {
@@ -3613,7 +3662,28 @@ async function runEdgeScan() {
           fetchTeamRecordWithFallback(state.league, g.homeId, state.year).catch(() => null),
         ]);
         if (awayRec && homeRec && awayRec.avgPF != null && homeRec.avgPF != null) {
-          const modelTotal = (awayRec.avgPF + homeRec.avgPA) / 2 + (homeRec.avgPF + awayRec.avgPA) / 2 + 1.5;
+          let modelTotal = (awayRec.avgPF + homeRec.avgPA) / 2 + (homeRec.avgPF + awayRec.avgPA) / 2 + 1.5;
+
+          // Weather adjustment — same rough wind/precip deductions already used in the trends
+          // panel, ported here. Skipped for indoor stadiums or if the forecast fetch fails.
+          let weatherNote = "";
+          if (!g.indoor) {
+            try {
+              const wx = await fetchWeather(g.venueCity, g.venueState, g.date);
+              if (!wx.unavailable) {
+                let weatherAdj = 0;
+                if (wx.windMax >= 20) weatherAdj -= 3;
+                else if (wx.windMax >= 15) weatherAdj -= 1.5;
+                if (wx.precipProb >= 70) weatherAdj -= 1.5;
+                else if (wx.precipProb >= 50) weatherAdj -= 0.75;
+                if (weatherAdj !== 0) {
+                  modelTotal += weatherAdj;
+                  weatherNote = ` · weather-adj ${weatherAdj.toFixed(1)} (wind ${wx.windMax}mph, ${wx.precipProb}% precip)`;
+                }
+              }
+            } catch (e) { /* best-effort, unadjusted total stands on failure */ }
+          }
+
           const totalPts = books.map(b => {
             const mkt = b.markets && b.markets.find(m => m.key === "totals");
             const over = mkt && mkt.outcomes.find(o => o.name === "Over");
@@ -3634,6 +3704,7 @@ async function runEdgeScan() {
               odds: totalGap > 0 ? (overOutcome ? overOutcome.price : "-110") : (underOutcome ? underOutcome.price : "-110"),
               numBooks: totalPts.length,
               usingLastSeason: awayRec.fromLastSeason || homeRec.fromLastSeason,
+              weatherNote,
             };
           }
         }
@@ -3666,6 +3737,7 @@ async function runEdgeScan() {
     out.innerHTML = rows.map(r => {
       const isValidatedEdge = r.spread && r.spread.meaningful; // 2+ pt spread gap — the specific threshold the ATS backtest confirmed actually beats break-even
       let line = `<div class="trend-line" style="margin-top:6px;"><b>${r.game}</b> <span style="color:#5C6B78;font-weight:400;">(${r.bookCount} book${r.bookCount > 1 ? "s" : ""})</span>${isValidatedEdge ? ` <span class="edge-badge">🔥 2+ PT EDGE</span>` : ""}</div>`;
+      if (r.injuryNote) line += `<div class="trend-note" style="color:#B4463A;">${r.injuryNote.replace(" · ", "")}</div>`;
       if (r.spread) {
         line += `<div class="trend-line" style="${r.spread.meaningful ? "font-weight:700;" : ""}">Spread — consensus ${r.spread.marketLine}, model implies ${r.spread.modelLine} — ${r.spread.meaningful ? `⚑ ${r.spread.gapPoints}-pt gap, leans <b>${r.spread.side}</b>` : `${r.spread.gapPoints}-pt gap, below threshold`}</div>`;
         if (r.spread.numBooks > 1) line += `<div class="trend-note">Best line: ${r.spread.bestLine} at ${r.spread.bestBook}</div>`;
@@ -3675,7 +3747,7 @@ async function runEdgeScan() {
         if (r.moneyline.numBooks > 1) line += `<div class="trend-note">Best price: ${r.moneyline.side} ${r.moneyline.bestOdds} at ${r.moneyline.bestBook}</div>`;
       }
       if (r.total) {
-        line += `<div class="trend-line" style="${r.total.meaningful ? "font-weight:700;" : ""}">Total — consensus ${r.total.marketTotal}, model implies ${r.total.modelTotal}${r.total.usingLastSeason ? " (last season's scoring)" : ""} — ${r.total.meaningful ? `⚑ ${r.total.gapPts}-pt gap, leans <b>${r.total.side}</b> (${r.total.odds})` : `${r.total.gapPts}-pt gap, below threshold`}</div>`;
+        line += `<div class="trend-line" style="${r.total.meaningful ? "font-weight:700;" : ""}">Total — consensus ${r.total.marketTotal}, model implies ${r.total.modelTotal}${r.total.usingLastSeason ? " (last season's scoring)" : ""}${r.total.weatherNote || ""} — ${r.total.meaningful ? `⚑ ${r.total.gapPts}-pt gap, leans <b>${r.total.side}</b> (${r.total.odds})` : `${r.total.gapPts}-pt gap, below threshold`}</div>`;
       }
       return `<div class="${isValidatedEdge ? "edge-highlight-card" : ""}">${line}</div>`;
     }).join("") + `<div class="trend-note" style="margin-top:10px;">🔥 = a 2+ point spread gap specifically — the threshold a real backtest (ATS Backtest, Backtest tab) confirmed hits ~58% ATS, above the ~52.4% break-even line. ⚑ = model and book disagree meaningfully (2+ pts on spread, 5%+ on moneyline, 3+ pts on total) but not all of these thresholds have been backtested individually. "Best line/price" shows the most favorable number found across all books returned for that game — worth grabbing regardless of the model's opinion. The total's model number is the same scoring-average blend shown in each game's trends panel, not the Elo model.${mismatchGames.length > 0 ? ` ${mismatchGames.length} lopsided game${mismatchGames.length > 1 ? "s" : ""} (likely FCS opponents) couldn't get a model comparison — real team info shown below instead.` : ""}</div>` + (mismatchGames.length > 0 ? `
