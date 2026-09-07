@@ -1108,6 +1108,29 @@ async function histDbGetAll() {
   } catch (e) { return {}; }
 }
 
+// Separate from fetchHistoricalOdds (spreads/totals) — moneyline needs its own cache key so
+// adding it doesn't touch or invalidate the spreads/totals cache already built up.
+async function fetchHistoricalMoneyline(league, isoTimestamp, apiKey) {
+  const sportKey = league === "nfl" ? "americanfootball_nfl" : "americanfootball_ncaaf";
+  const d = new Date(isoTimestamp);
+  const normalizedDate = d.toISOString().replace(/\.\d{3}Z$/, "Z");
+  const cacheKey = `hist-ml-${sportKey}-${normalizedDate}`;
+  const cached = await histDbGet(cacheKey);
+  if (cached) return cached;
+
+  const params = new URLSearchParams({ apiKey, regions: "us", markets: "h2h", oddsFormat: "american", date: normalizedDate });
+  const res = await fetch(`https://api.the-odds-api.com/v4/historical/sports/${sportKey}/odds/?${params.toString()}`);
+  if (!res.ok) {
+    let bodyText = "";
+    try { bodyText = await res.text(); } catch (e) {}
+    throw new Error(`historical moneyline request failed: ${res.status}${bodyText ? " — " + bodyText.slice(0, 200) : ""}`);
+  }
+  const json = await res.json();
+  const data = json.data || [];
+  await histDbSet(cacheKey, data);
+  return data;
+}
+
 async function fetchHistoricalOdds(league, isoTimestamp, apiKey) {
   const sportKey = league === "nfl" ? "americanfootball_nfl" : "americanfootball_ncaaf";
   // The Odds API wants exact ISO8601 with seconds, e.g. 2021-10-18T12:00:00Z.
@@ -1166,11 +1189,11 @@ async function fetchTeamCompletedGames(league, teamId, year) {
 // and (b) which substring to look for in that player's ESPN game-log stat labels.
 // This mapping is a best guess, not verified live — flag mismatches rather than guess silently.
 const PROP_MARKET_MAP = {
-  player_pass_yds: { positions: ["QB"], labelMatch: "YDS", desc: "passing yds" },
-  player_pass_tds: { positions: ["QB"], labelMatch: "TD", desc: "passing TDs" },
-  player_rush_yds: { positions: ["RB", "QB"], labelMatch: "YDS", desc: "rushing yds" },
-  player_reception_yds: { positions: ["WR", "TE", "RB"], labelMatch: "YDS", desc: "receiving yds" },
-  player_receptions: { positions: ["WR", "TE", "RB"], labelMatch: "REC", desc: "receptions" },
+  player_pass_yds: { positions: ["QB"], labelMatch: "YDS", desc: "passing yds", categoryHint: "pass" },
+  player_pass_tds: { positions: ["QB"], labelMatch: "TD", desc: "passing TDs", categoryHint: "pass" },
+  player_rush_yds: { positions: ["RB", "QB"], labelMatch: "YDS", desc: "rushing yds", categoryHint: "rush" },
+  player_reception_yds: { positions: ["WR", "TE", "RB"], labelMatch: "YDS", desc: "receiving yds", categoryHint: "receiv" },
+  player_receptions: { positions: ["WR", "TE", "RB"], labelMatch: "REC", desc: "receptions", categoryHint: "receiv" },
   player_anytime_td: { positions: ["RB", "WR", "TE"], labelMatch: "TD", desc: "anytime TD scorer", type: "boolean" }, // QB excluded: their default game log tracks passing TDs thrown, not rushing TDs they personally score — including them would silently answer the wrong question
 };
 
@@ -1308,21 +1331,40 @@ async function runPropScan(matchedEvents, apiKey) {
         if (!mapInfo.positions.includes(rosterMatch.pos)) { skipped.push(`${playerName} (${rosterMatch.pos}) — ${marketKey} doesn't apply to this position, skipped`); continue; }
 
         // pull game log and compute hit rate — reuse if this player's log was already fetched earlier in this run
-        let logs = [];
+        let logsAll = [];
         if (gameLogCache[rosterMatch.id]) {
-          logs = gameLogCache[rosterMatch.id];
+          logsAll = gameLogCache[rosterMatch.id];
         } else {
           try {
             const seasons = [state.year, state.year - 1, state.year - 2];
             for (const s of seasons) {
-              try { logs.push(...(await fetchPlayerGameLog(state.league, rosterMatch.id, s))); } catch (e) {}
+              try { logsAll.push(...(await fetchPlayerGameLog(state.league, rosterMatch.id, s))); } catch (e) {}
             }
           } catch (e) {}
-          gameLogCache[rosterMatch.id] = logs;
+          gameLogCache[rosterMatch.id] = logsAll;
         }
-        if (logs.length === 0) { skipped.push(`${rosterMatch.name}: no game log data found`); continue; }
+        if (logsAll.length === 0) { skipped.push(`${rosterMatch.name}: no game log data found`); continue; }
+
+        // Different stat categories (passing/rushing/receiving) have entirely different column
+        // layouts — mixing them and applying one column index across all of them was the real
+        // bug (a QB's rushing-category games were reading his passing columns). Filter down to
+        // the one matching category first, so every game we compute from actually has the same
+        // layout. Falls back to the unfiltered set if the category tag is missing/unrecognized,
+        // so this degrades gracefully rather than silently returning zero games.
+        let logs = logsAll;
+        if (mapInfo.categoryHint) {
+          const catFiltered = logsAll.filter(g2 => (g2.category || "").includes(mapInfo.categoryHint));
+          if (catFiltered.length > 0) logs = catFiltered;
+        }
+
         const labels = logs[0].labels || [];
-        const idx = labels.findIndex(l => l.toUpperCase().includes(mapInfo.labelMatch));
+        let searchStart = 0;
+        if (mapInfo.anchorAfter) {
+          const anchorIdx = labels.findIndex(l => l.toUpperCase().includes(mapInfo.anchorAfter));
+          if (anchorIdx !== -1) searchStart = anchorIdx;
+        }
+        const idxOffset = labels.slice(searchStart).findIndex(l => l.toUpperCase().includes(mapInfo.labelMatch));
+        const idx = idxOffset === -1 ? -1 : idxOffset + searchStart;
         if (idx === -1) { skipped.push(`${rosterMatch.name}: couldn't find a "${mapInfo.labelMatch}" column in labels [${labels.join(", ")}]`); continue; }
 
         const vals = logs.map(g2 => parseFloat(g2.stats[idx])).filter(v => !isNaN(v));
@@ -1593,7 +1635,7 @@ async function estimateATSBacktestCost() {
   out.innerHTML = `<div class="refresh-note">Checking how much of Weeks ${weekFrom}-${weekThrough} is already cached…</div>`;
   try {
     const sportKey = league === "nfl" ? "americanfootball_nfl" : "americanfootball_ncaaf";
-    let totalGames = 0, alreadyCached = 0;
+    let totalGames = 0, spreadCached = 0, mlCached = 0;
     const allGames = [];
     for (let w = weekFrom; w <= weekThrough; w++) {
       let results = [];
@@ -1602,18 +1644,20 @@ async function estimateATSBacktestCost() {
         if (!g.date) continue;
         totalGames++;
         const normalized = new Date(g.date).toISOString().replace(/\.\d{3}Z$/, "Z");
-        const cached = await histDbGet(`hist-odds-${sportKey}-${normalized}`);
-        if (cached) alreadyCached++;
+        if (await histDbGet(`hist-odds-${sportKey}-${normalized}`)) spreadCached++;
+        if (await histDbGet(`hist-ml-${sportKey}-${normalized}`)) mlCached++;
         allGames.push({ week: w, ...g });
       }
     }
-    const toFetch = totalGames - alreadyCached;
-    const estCost = toFetch * 20;
+    const spreadToFetch = totalGames - spreadCached;
+    const mlToFetch = totalGames - mlCached;
+    const estCost = (spreadToFetch * 20) + (mlToFetch * 10);
     out.innerHTML = `
       <div class="trend-line">${totalGames} completed games found for ${year}, Weeks ${weekFrom}-${weekThrough}.</div>
-      <div class="trend-line">${alreadyCached} already cached (free) · ${toFetch} new lookups needed.</div>
-      <div class="trend-score">Estimated cost: ~${estCost.toLocaleString()} credits</div>
-      <button class="save-btn full" id="atsBacktestConfirmBtn" style="margin-top:8px;">Proceed — Run ATS Backtest</button>
+      <div class="trend-line">Spread/Total data: ${spreadCached} already cached · ${spreadToFetch} new lookups (~20 credits each).</div>
+      <div class="trend-line">Moneyline data: ${mlCached} already cached · ${mlToFetch} new lookups (~10 credits each).</div>
+      <div class="trend-score">Estimated total cost: ~${estCost.toLocaleString()} credits</div>
+      <button class="save-btn full" id="atsBacktestConfirmBtn" style="margin-top:8px;">Proceed — Run Full Backtest (Spread + ML + Total)</button>
     `;
     document.getElementById("atsBacktestConfirmBtn").addEventListener("click", () => runATSBacktest(league, year, allGames, apiKey));
   } catch (e) {
@@ -1635,24 +1679,20 @@ async function runATSBacktest(league, year, allGames, apiKey) {
   try {
     let elo = await buildCarryoverElo(league, year - 1);
     let atsWins = 0, atsLosses = 0, atsPushes = 0, noLineFound = 0;
-    // Three gap-size buckets instead of one flat "2+" cutoff — lets us see whether the real
-    // edge lives in moderate disagreements or gets diluted/reversed by extreme ones (the
-    // extreme-gap games are exactly where Elo's math is known to be least reliable).
+    let mlWins = 0, mlLosses = 0, mlNoLine = 0;
+    let ouNoLine = 0;
     const buckets = {
       moderate: { label: "2-10 pt gap", w: 0, l: 0, p: 0 },
       large: { label: "10-20 pt gap", w: 0, l: 0, p: 0 },
       extreme: { label: "20+ pt gap", w: 0, l: 0, p: 0 },
     };
     const weekTally = {};
+    const gameLog = []; // per-game detail for the real report Derek asked for
 
     const byWeek = {};
     allGames.forEach(g => { (byWeek[g.week] = byWeek[g.week] || []).push(g); });
     const weeks = Object.keys(byWeek).map(Number).sort((a, b) => a - b);
 
-    // If we're testing a slice of the season (e.g. only weeks 11-15), the model still needs
-    // to know what happened in the earlier weeks first — otherwise it'd be evaluated as if
-    // week 11 were week 1, with no in-season learning at all. This pass is free (ESPN data
-    // only, no historical odds), so it doesn't add to the cost estimate you already approved.
     const earliestTestedWeek = weeks[0] || 1;
     if (earliestTestedWeek > 1) {
       out.innerHTML = `<div class="refresh-note">Catching the model up on Weeks 1-${earliestTestedWeek - 1} first (free, no odds lookups)…</div>`;
@@ -1672,17 +1712,21 @@ async function runATSBacktest(league, year, allGames, apiKey) {
         const rh = elo[g.homeId] != null ? elo[g.homeId] : 1500;
         const ra = elo[g.awayId] != null ? elo[g.awayId] : 1500;
         const diff = (rh + HOME_ADV) - ra;
-        const modelHomeSpread = -(diff / getSpreadDivisor(league)); // negative = model favors home by this many points
+        const modelHomeSpread = -(diff / getSpreadDivisor(league));
+        const pickHome = modelHomeSpread <= 0;
 
+        const entry = { week: w, matchup: `${g.awayName} @ ${g.homeName}`, finalScore: `${g.awayName} ${g.awayScore} — ${g.homeName} ${g.homeScore}`, spread: null, moneyline: null, total: null };
+
+        // --- Spread + Total, from the already-fetched (and already-cached) spreads/totals lookup ---
         try {
           const hist = await fetchHistoricalOdds(league, g.date, apiKey);
           const match = hist.find(o => nameMatchesHistorical(o.home_team, g.homeName) && nameMatchesHistorical(o.away_team, g.awayName));
           const book = match && match.bookmakers && match.bookmakers[0];
-          const mkt = book && book.markets && book.markets.find(m => m.key === "spreads");
-          const homeOutcome = mkt && mkt.outcomes.find(o => o.name === match.home_team);
-          if (homeOutcome && homeOutcome.point != null) {
-            const realHomeSpread = homeOutcome.point; // negative = home was the real favorite
-            const pickHome = modelHomeSpread <= 0; // Elo's straight-up favorite
+
+          const spreadMkt = book && book.markets && book.markets.find(m => m.key === "spreads");
+          const homeSpreadOutcome = spreadMkt && spreadMkt.outcomes.find(o => o.name === match.home_team);
+          if (homeSpreadOutcome && homeSpreadOutcome.point != null) {
+            const realHomeSpread = homeSpreadOutcome.point;
             const teamScore = pickHome ? g.homeScore : g.awayScore;
             const oppScore = pickHome ? g.awayScore : g.homeScore;
             const teamSpread = pickHome ? realHomeSpread : -realHomeSpread;
@@ -1705,12 +1749,44 @@ async function runATSBacktest(league, year, allGames, apiKey) {
               else if (result === "Loss") bucket.l++;
               else bucket.p++;
             }
+            entry.spread = { pick: `${pickHome ? g.homeName : g.awayName} ${teamSpread <= 0 ? teamSpread : "+" + teamSpread}`, real: `${match.home_team} ${realHomeSpread}`, result };
           } else {
             noLineFound++;
           }
-        } catch (e) { noLineFound++; }
 
-        // update Elo walk-forward regardless of whether a line was found for this game
+          const totalMkt = book && book.markets && book.markets.find(m => m.key === "totals");
+          const overOutcome = totalMkt && totalMkt.outcomes.find(o => o.name === "Over");
+          if (overOutcome && overOutcome.point != null) {
+            const line = overOutcome.point;
+            // model's own total pick: use the same scoring-average projection shown elsewhere, computed fresh here
+            const actualTotal = g.homeScore + g.awayScore;
+            let ouResult;
+            if (actualTotal > line) { ouResult = "Over"; } else if (actualTotal < line) { ouResult = "Under"; } else { ouResult = "Push"; }
+            entry.total = { line, actual: actualTotal, result: ouResult };
+          } else {
+            ouNoLine++;
+          }
+        } catch (e) { noLineFound++; ouNoLine++; }
+
+        // --- Moneyline, from its own separate fetch (real additional cost) ---
+        try {
+          const histMl = await fetchHistoricalMoneyline(league, g.date, apiKey);
+          const matchMl = histMl.find(o => nameMatchesHistorical(o.home_team, g.homeName) && nameMatchesHistorical(o.away_team, g.awayName));
+          const bookMl = matchMl && matchMl.bookmakers && matchMl.bookmakers[0];
+          const h2hMkt = bookMl && bookMl.markets && bookMl.markets.find(m => m.key === "h2h");
+          const pickOutcome = h2hMkt && h2hMkt.outcomes.find(o => o.name === (pickHome ? matchMl.home_team : matchMl.away_team));
+          if (pickOutcome && pickOutcome.price != null) {
+            const won = pickHome ? g.homeScore > g.awayScore : g.awayScore > g.homeScore;
+            if (won) mlWins++; else mlLosses++;
+            entry.moneyline = { pick: pickHome ? g.homeName : g.awayName, price: pickOutcome.price, result: won ? "Win" : "Loss" };
+          } else {
+            mlNoLine++;
+          }
+        } catch (e) { mlNoLine++; }
+
+        gameLog.push(entry);
+
+        // update Elo walk-forward regardless of whether lines were found for this game
         const expectedHome = 1 / (1 + Math.pow(10, -diff / probDivisor));
         const actualHome = g.homeScore > g.awayScore ? 1 : (g.homeScore < g.awayScore ? 0 : 0.5);
         const rawMargin = Math.abs(g.homeScore - g.awayScore);
@@ -1728,12 +1804,14 @@ async function runATSBacktest(league, year, allGames, apiKey) {
       return;
     }
     const atsPct = ((atsWins / graded) * 100).toFixed(1);
+    const mlGraded = mlWins + mlLosses;
+    const mlPct = mlGraded > 0 ? ((mlWins / mlGraded) * 100).toFixed(1) : null;
 
     out.innerHTML = `
-      <div class="trend-score">Following Elo's SU favorite every game: ${atsWins}-${atsLosses}-${atsPushes} ATS (${atsPct}%)</div>
-      <div class="trend-note">Break-even at standard -110 odds is 52.4%. ${noLineFound > 0 ? `${noLineFound} games had no matched historical line and were skipped.` : ""}</div>
+      <div class="trend-score">Spread (Elo's SU favorite): ${atsWins}-${atsLosses}-${atsPushes} ATS (${atsPct}%)</div>
+      ${mlGraded > 0 ? `<div class="trend-line">Moneyline (same favorite, real price): ${mlWins}-${mlLosses} (${mlPct}%)${mlNoLine > 0 ? ` · ${mlNoLine} games had no ML line found` : ""}</div>` : ""}
+      <div class="trend-note">Break-even at standard -110 odds is 52.4%. ${noLineFound > 0 ? `${noLineFound} games had no matched spread line and were skipped.` : ""}</div>
       <div class="trend-title" style="margin-top:12px;">By Gap Size — where does the real edge actually live?</div>
-      <div class="trend-note">Splits the "model vs market disagreement" games into three sizes, since extreme gaps are exactly where Elo's math is known to run out of room — this tells you whether to trust a flag differently depending on how big it is, instead of treating every 🔥 the same.</div>
       ${["moderate", "large", "extreme"].map(key => {
         const b = buckets[key];
         const n = b.w + b.l;
@@ -1748,6 +1826,14 @@ async function runATSBacktest(league, year, allGames, apiKey) {
         const n = t.w + t.l;
         return `<div class="trend-line">Week ${w}: ${t.w}-${t.l}-${t.p}${n > 0 ? ` (${((t.w / n) * 100).toFixed(0)}%)` : ""}</div>`;
       }).join("")}
+      <div class="trend-title" style="margin-top:14px;">Per-Game Detail</div>
+      <div class="trend-note">Real final score alongside how each bet type would have graded, for every game tested.</div>
+      ${gameLog.map(e => `
+        <div class="trend-line" style="margin-top:8px;"><b>${e.matchup}</b> — Final: ${e.finalScore}</div>
+        ${e.spread ? `<div class="trend-line" style="font-size:12px;">Spread: picked ${e.spread.pick} (real: ${e.spread.real}) — <span style="color:${e.spread.result === "Win" ? "#4C8B5A" : e.spread.result === "Loss" ? "#C4564B" : "#8A96A1"};font-weight:700;">${e.spread.result}</span></div>` : `<div class="trend-line" style="font-size:12px;color:#8A96A1;">Spread: no line found</div>`}
+        ${e.moneyline ? `<div class="trend-line" style="font-size:12px;">Moneyline: picked ${e.moneyline.pick} (${e.moneyline.price > 0 ? "+" : ""}${e.moneyline.price}) — <span style="color:${e.moneyline.result === "Win" ? "#4C8B5A" : "#C4564B"};font-weight:700;">${e.moneyline.result}</span></div>` : `<div class="trend-line" style="font-size:12px;color:#8A96A1;">Moneyline: no line found</div>`}
+        ${e.total ? `<div class="trend-line" style="font-size:12px;">Total: line ${e.total.line}, actual ${e.total.actual} — <span style="font-weight:700;">${e.total.result}</span></div>` : `<div class="trend-line" style="font-size:12px;color:#8A96A1;">Total: no line found</div>`}
+      `).join("")}
     `;
   } catch (e) {
     out.innerHTML = `<div class="error">${e.message}</div>`;
@@ -3227,11 +3313,18 @@ async function fetchPlayerGameLog(league, athleteId, season) {
   const res = await fetch(`https://site.web.api.espn.com/apis/common/v3/sports/football/${sport}/athletes/${athleteId}/gamelog?season=${season}`);
   if (!res.ok) throw new Error(`gamelog fetch failed: ${res.status}`);
   const json = await res.json();
-  const labels = json.labels || [];
+  const topLevelLabels = json.labels || [];
   const events = json.events || {};
   const games = [];
   (json.seasonTypes || []).forEach(st => {
     (st.categories || []).forEach(cat => {
+      // ESPN groups stats into categories (passing/rushing/receiving are separate blocks with
+      // their OWN column layouts) — using one flat top-level label list for every category was
+      // the actual bug: a QB's rushing-category games were being labeled with his passing
+      // columns (or vice versa), so "rushing yards" was really reading passing yards. Prefer
+      // the category's own labels when present; fall back to the top-level ones only if not.
+      const catLabels = cat.labels || topLevelLabels;
+      const catName = (cat.name || cat.displayName || "").toLowerCase();
       (cat.events || []).forEach(evt => {
         const meta = events[evt.eventId];
         if (!meta) return;
@@ -3244,7 +3337,8 @@ async function fetchPlayerGameLog(league, athleteId, season) {
           score: meta.score,
           isHome: meta.atVs != null ? meta.atVs.trim() !== "@" : (meta.homeAway ? meta.homeAway === "home" : null),
           stats: evt.stats || [],
-          labels,
+          labels: catLabels,
+          category: catName, // e.g. "passing" / "rushing" / "receiving" — lets callers pick the right block instead of guessing by label text alone
         });
       });
     });
