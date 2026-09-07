@@ -1189,11 +1189,11 @@ async function fetchTeamCompletedGames(league, teamId, year) {
 // and (b) which substring to look for in that player's ESPN game-log stat labels.
 // This mapping is a best guess, not verified live — flag mismatches rather than guess silently.
 const PROP_MARKET_MAP = {
-  player_pass_yds: { positions: ["QB"], labelMatch: "YDS", desc: "passing yds", categoryHint: "pass" },
-  player_pass_tds: { positions: ["QB"], labelMatch: "TD", desc: "passing TDs", categoryHint: "pass" },
-  player_rush_yds: { positions: ["RB", "QB"], labelMatch: "YDS", desc: "rushing yds", categoryHint: "rush" },
-  player_reception_yds: { positions: ["WR", "TE", "RB"], labelMatch: "YDS", desc: "receiving yds", categoryHint: "receiv" },
-  player_receptions: { positions: ["WR", "TE", "RB"], labelMatch: "REC", desc: "receptions", categoryHint: "receiv" },
+  player_pass_yds: { positions: ["QB"], labelMatch: "YDS", desc: "passing yds" },
+  player_pass_tds: { positions: ["QB"], labelMatch: "TD", desc: "passing TDs" },
+  player_rush_yds: { positions: ["RB", "QB"], labelMatch: "YDS", desc: "rushing yds", anchorAfter: "CAR" },
+  player_reception_yds: { positions: ["WR", "TE", "RB"], labelMatch: "YDS", desc: "receiving yds", anchorAfter: "REC" },
+  player_receptions: { positions: ["WR", "TE", "RB"], labelMatch: "REC", desc: "receptions" },
   player_anytime_td: { positions: ["RB", "WR", "TE"], labelMatch: "TD", desc: "anytime TD scorer", type: "boolean" }, // QB excluded: their default game log tracks passing TDs thrown, not rushing TDs they personally score — including them would silently answer the wrong question
 };
 
@@ -1331,41 +1331,25 @@ async function runPropScan(matchedEvents, apiKey) {
         if (!mapInfo.positions.includes(rosterMatch.pos)) { skipped.push(`${playerName} (${rosterMatch.pos}) — ${marketKey} doesn't apply to this position, skipped`); continue; }
 
         // pull game log and compute hit rate — reuse if this player's log was already fetched earlier in this run
-        let logsAll = [];
+        let logs = [];
         if (gameLogCache[rosterMatch.id]) {
-          logsAll = gameLogCache[rosterMatch.id];
+          logs = gameLogCache[rosterMatch.id];
         } else {
           try {
             const seasons = [state.year, state.year - 1, state.year - 2];
             for (const s of seasons) {
-              try { logsAll.push(...(await fetchPlayerGameLog(state.league, rosterMatch.id, s))); } catch (e) {}
+              try { logs.push(...(await fetchPlayerGameLog(state.league, rosterMatch.id, s))); } catch (e) {}
             }
           } catch (e) {}
-          gameLogCache[rosterMatch.id] = logsAll;
+          gameLogCache[rosterMatch.id] = logs;
         }
-        if (logsAll.length === 0) { skipped.push(`${rosterMatch.name}: no game log data found`); continue; }
+        if (logs.length === 0) { skipped.push(`${rosterMatch.name}: no game log data found`); continue; }
 
-        // Different stat categories (passing/rushing/receiving) have entirely different column
-        // layouts — mixing them and applying one column index across all of them was the real
-        // bug (a QB's rushing-game entries were reading his passing columns). Filter down to
-        // the one matching category first, so every game we compute from actually has the same
-        // layout. Falls back to the unfiltered set if the category tag is missing/unrecognized,
-        // so this degrades gracefully rather than silently returning zero games.
-        let logs = logsAll;
-        if (mapInfo.categoryHint) {
-          const catFiltered = logsAll.filter(g2 => (g2.category || "").includes(mapInfo.categoryHint));
-          if (catFiltered.length > 0) {
-            logs = catFiltered;
-          } else if (!window.__propDiagShown) {
-            // one-time raw diagnostic — reveals what ESPN's category field actually contains,
-            // since the categoryHint match found nothing and silently fell back to unfiltered data
-            window.__propDiagShown = true;
-            const uniqueCats = [...new Set(logsAll.map(g2 => JSON.stringify(g2.category)))];
-            const uniqueLabelSets = [...new Set(logsAll.map(g2 => JSON.stringify(g2.labels)))];
-            skipped.push(`DIAG (${rosterMatch.name}, market ${marketKey}): category values found = [${uniqueCats.join(", ")}] — looking for something containing "${mapInfo.categoryHint}". Distinct label sets found = ${uniqueLabelSets.length}: ${uniqueLabelSets.slice(0, 3).join(" | ")}`);
-          }
-        }
-
+        // Each game has ONE combined stat row covering multiple sections (e.g. a QB's row has
+        // passing columns followed by rushing columns) — confirmed via diagnostic, not a guess.
+        // "YDS" and "TD" both appear twice in that single row, so anchorAfter finds the SECOND
+        // occurrence (after the CAR/REC marker that starts the later section) when the market
+        // needs it, instead of always grabbing the first (passing) one.
         const labels = logs[0].labels || [];
         let searchStart = 0;
         if (mapInfo.anchorAfter) {
