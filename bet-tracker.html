@@ -4201,8 +4201,19 @@ async function findBestSix() {
     return;
   }
 
-  candidates.sort((a, b) => b.gapAbs - a.gapAbs);
-  const best6 = candidates.slice(0, 6);
+  // Both sides of the same game (e.g. "Cowboys -2.5" and "Giants +2.5") produce the exact same
+  // gap value and pick recommendation — without deduplicating, pasting a full slate with both
+  // sides listed (very common, since pools display it that way) could fill two of the six
+  // slots with the same game instead of six different ones.
+  const seenMatchups = new Set();
+  const uniqueCandidates = candidates.filter(c => {
+    if (seenMatchups.has(c.matchup)) return false;
+    seenMatchups.add(c.matchup);
+    return true;
+  });
+
+  uniqueCandidates.sort((a, b) => b.gapAbs - a.gapAbs);
+  const best6 = uniqueCandidates.slice(0, 6);
 
   // fill the 6 pick rows
   best6.forEach((c, i) => {
@@ -4217,7 +4228,7 @@ async function findBestSix() {
   out.innerHTML = `
     <div class="trend-title">Best 6 (by model/pool gap)</div>
     ${best6.map(c => `<div class="trend-line"><b>${c.pickTeam}</b> — ${c.matchup} · pool: ${c.poolLineText} · model home line: ${c.modelHomeLine.toFixed(1)} · gap: ${c.gapAbs.toFixed(1)} pts</div>`).join("")}
-    ${candidates.length > 6 ? `<div class="trend-note" style="margin-top:6px;">${candidates.length - 6} other game${candidates.length - 6 > 1 ? "s" : ""} matched but had a smaller gap, not included.</div>` : ""}
+    ${uniqueCandidates.length > 6 ? `<div class="trend-note" style="margin-top:6px;">${uniqueCandidates.length - 6} other game${uniqueCandidates.length - 6 > 1 ? "s" : ""} matched but had a smaller gap, not included.</div>` : ""}
     ${unmatched.length ? `<div class="trend-note">Couldn't match: ${unmatched.join(" · ")}</div>` : ""}
     <div class="trend-note" style="margin-top:6px;">Filled into your 6 picks above — review and edit before saving. A big gap is worth checking why (see The Case on that game), not an automatic bet.</div>
   `;
