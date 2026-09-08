@@ -365,6 +365,29 @@
     </div>
     <div id="backtestResults"></div>
 
+    <div class="card" style="padding:16px; margin-bottom:16px; border:2px dashed #E08A2E;">
+      <div class="trend-title" style="margin-bottom:8px;">🔬 Team Stats Probe (diagnostic)</div>
+      <div class="refresh-note">Before building an efficiency-based model (yards/play, third-down %, turnover margin, etc.) this checks what ESPN's team-stats endpoints <b>actually</b> return, rather than assuming. It tries several known endpoint shapes and reports which work and exactly what stat names are inside. Free — ESPN data only, no paid credits. This is a temporary tool; it comes out once the real model is built.</div>
+      <div class="row">
+        <div>
+          <label>League</label>
+          <select id="probeLeague">
+            <option value="nfl" selected>NFL</option>
+            <option value="cfb">College Football</option>
+          </select>
+        </div>
+        <div>
+          <label>Season</label>
+          <select id="probeYear">
+            <option value="2025" selected>2025</option>
+            <option value="2026">2026</option>
+          </select>
+        </div>
+      </div>
+      <button class="save-btn full" id="runStatsProbeBtn">Run Probe</button>
+      <div id="statsProbeResults" style="margin-top:12px;"></div>
+    </div>
+
     <div class="card" style="padding:16px; margin-bottom:16px;">
       <div class="trend-title" style="margin-bottom:8px;">ATS Backtest — Model vs Real Spread</div>
       <div class="refresh-note">The straight-up backtest above doesn't touch odds at all. This one does: for every game, checks whether the team the Elo model favored (straight-up) would have covered the <b>real posted spread</b> that game. Uses your historical odds data — a full CFB season is expensive (130+ teams), so testing a specific week range instead is much cheaper. If you already ran "Cache All Teams," any weeks already cached come back free.</div>
@@ -4212,7 +4235,18 @@ async function findBestSix() {
     return true;
   });
 
-  uniqueCandidates.sort((a, b) => b.gapAbs - a.gapAbs);
+  // Rank by which gap-size bucket the game falls into FIRST, not raw gap size — the full-season
+  // ATS backtest (Backtest tab) proved the 2-10pt bucket has a real edge (56.4%), while 10-20pt
+  // and 20+pt buckets are both flat coin flips. Ranking by raw gap size alone let the biggest,
+  // least reliable blowout-game gaps dominate the top picks — since Elo is systematically less
+  // confident than Vegas on big favorites, those largest gaps almost always point at the
+  // underdog, which is exactly why "best 6" kept turning into "all underdogs."
+  const bucketRank = (gapAbs) => gapAbs >= 20 ? 2 : gapAbs >= 10 ? 1 : 0; // lower = better/validated
+  uniqueCandidates.sort((a, b) => {
+    const bucketDiff = bucketRank(a.gapAbs) - bucketRank(b.gapAbs);
+    if (bucketDiff !== 0) return bucketDiff;
+    return b.gapAbs - a.gapAbs; // within the same bucket, bigger disagreement still ranks higher
+  });
   const best6 = uniqueCandidates.slice(0, 6);
 
   // fill the 6 pick rows
@@ -4227,7 +4261,10 @@ async function findBestSix() {
 
   out.innerHTML = `
     <div class="trend-title">Best 6 (by model/pool gap)</div>
-    ${best6.map(c => `<div class="trend-line"><b>${c.pickTeam}</b> — ${c.matchup} · pool: ${c.poolLineText} · model home line: ${c.modelHomeLine.toFixed(1)} · gap: ${c.gapAbs.toFixed(1)} pts</div>`).join("")}
+    ${best6.map(c => {
+      const bucket = c.gapAbs >= 20 ? `<span style="color:#C4564B;">20+ pt gap — no proven edge, included only to fill 6</span>` : c.gapAbs >= 10 ? `<span style="color:#8A96A1;">10-20 pt gap — no proven edge</span>` : `<span style="color:#4C8B5A;">2-10 pt gap — the validated range</span>`;
+      return `<div class="trend-line"><b>${c.pickTeam}</b> — ${c.matchup} · pool: ${c.poolLineText} · model home line: ${c.modelHomeLine.toFixed(1)} · gap: ${c.gapAbs.toFixed(1)} pts (${bucket})</div>`;
+    }).join("")}
     ${uniqueCandidates.length > 6 ? `<div class="trend-note" style="margin-top:6px;">${uniqueCandidates.length - 6} other game${uniqueCandidates.length - 6 > 1 ? "s" : ""} matched but had a smaller gap, not included.</div>` : ""}
     ${unmatched.length ? `<div class="trend-note">Couldn't match: ${unmatched.join(" · ")}</div>` : ""}
     <div class="trend-note" style="margin-top:6px;">Filled into your 6 picks above — review and edit before saving. A big gap is worth checking why (see The Case on that game), not an automatic bet.</div>
@@ -4411,6 +4448,86 @@ async function runLiveAccuracy() {
   } catch (e) {
     out.innerHTML = `<div class="error">${e.message}</div>`;
   }
+  btn.disabled = false;
+}
+
+// ---------- diagnostic: probe ESPN's team-stats endpoints ----------
+// Built deliberately as a probe rather than jumping straight to the real model — ESPN's stat
+// endpoints are undocumented, and assuming their structure has burned this project before
+// (the props "category" field turned out to mean something completely different than assumed).
+// This reports what's actually there so the efficiency model can be built on verified fields.
+async function runStatsProbe() {
+  const league = document.getElementById("probeLeague").value;
+  const year = parseInt(document.getElementById("probeYear").value, 10);
+  const out = document.getElementById("statsProbeResults");
+  const btn = document.getElementById("runStatsProbeBtn");
+  btn.disabled = true;
+  out.innerHTML = `<div class="refresh-note">Probing endpoints…</div>`;
+
+  const sportPath = league === "nfl" ? "nfl" : "college-football";
+  const leagueSlug = league === "nfl" ? "nfl" : "college-football";
+
+  // grab a real team id from the current schedule so we probe with something valid
+  let teamId = null, teamName = "";
+  if (state.games.length > 0) { teamId = state.games[0].homeId; teamName = state.games[0].home; }
+  if (!teamId) {
+    out.innerHTML = `<div class="error">Load the Schedule tab first so the probe has a real team ID to test with.</div>`;
+    btn.disabled = false;
+    return;
+  }
+
+  const candidates = [
+    { label: "core API — team season statistics", url: `https://sports.core.api.espn.com/v2/sports/football/leagues/${leagueSlug}/seasons/${year}/types/2/teams/${teamId}/statistics` },
+    { label: "site.web API — team statistics", url: `https://site.web.api.espn.com/apis/common/v3/sports/football/${sportPath}/statistics/byteam?season=${year}&seasontype=2` },
+    { label: "site API — team detail (what we use now)", url: `https://site.api.espn.com/apis/site/v2/sports/football/${sportPath}/teams/${teamId}` },
+  ];
+
+  const findings = [];
+  for (const c of candidates) {
+    try {
+      const res = await fetch(c.url);
+      if (!res.ok) { findings.push({ ...c, ok: false, note: `HTTP ${res.status}` }); continue; }
+      const json = await res.json();
+
+      // walk the response looking for anything that looks like a named stat with a value
+      const statNames = new Set();
+      const walk = (node, depth) => {
+        if (depth > 6 || node == null || typeof node !== "object") return;
+        if (Array.isArray(node)) { node.slice(0, 40).forEach(n => walk(n, depth + 1)); return; }
+        if (typeof node.name === "string" && (node.value !== undefined || node.displayValue !== undefined)) {
+          statNames.add(`${node.name}${node.displayValue !== undefined ? ` = ${node.displayValue}` : ` = ${node.value}`}`);
+        }
+        Object.values(node).forEach(v => walk(v, depth + 1));
+      };
+      walk(json, 0);
+
+      findings.push({
+        ...c,
+        ok: true,
+        topLevelKeys: Object.keys(json).slice(0, 15).join(", "),
+        statCount: statNames.size,
+        sampleStats: [...statNames].slice(0, 60),
+      });
+    } catch (e) {
+      findings.push({ ...c, ok: false, note: e.message });
+    }
+  }
+
+  out.innerHTML = `
+    <div class="trend-line">Probed using <b>${teamName}</b> (id ${teamId}), ${year} ${league.toUpperCase()}.</div>
+    ${findings.map(f => `
+      <div class="trend-line" style="margin-top:10px;">
+        <b style="color:${f.ok ? "#4C8B5A" : "#C4564B"};">${f.ok ? "✓ WORKS" : "✗ FAILED"}</b> — ${f.label}
+      </div>
+      <div class="trend-note" style="font-size:11px; word-break:break-all;">${f.url}</div>
+      ${f.ok ? `
+        <div class="trend-note" style="font-size:11px;">Top-level keys: ${f.topLevelKeys}</div>
+        <div class="trend-note" style="font-size:11px;">Found <b>${f.statCount}</b> named stat fields.${f.statCount > 60 ? " Showing first 60:" : ""}</div>
+        <div class="trend-line" style="font-size:11px; color:#1A4A8A;">${f.sampleStats.join(" · ") || "(none found — structure may differ)"}</div>
+      ` : `<div class="trend-note" style="font-size:11px; color:#C4564B;">${f.note}</div>`}
+    `).join("")}
+    <div class="trend-note" style="margin-top:10px;">Paste these results back into chat — the working endpoint and its real stat names are what the efficiency model gets built on.</div>
+  `;
   btn.disabled = false;
 }
 
@@ -4901,6 +5018,7 @@ document.getElementById("p6Book").addEventListener("change", (e) => {
   renderP6Rows();
 });
 document.getElementById("runBacktestBtn").addEventListener("click", runBacktest);
+document.getElementById("runStatsProbeBtn").addEventListener("click", runStatsProbe);
 document.getElementById("runLiveAccuracyBtn").addEventListener("click", runLiveAccuracy);
 document.getElementById("runWeekTrendsBtn").addEventListener("click", runWeekTrends);
 document.getElementById("runCacheAllBtn").addEventListener("click", estimateCacheAllCost);
