@@ -530,6 +530,12 @@
         </div>
       </div>
       <div class="refresh-note" style="margin-top:-6px;">This book selector is independent from your default sportsbook on the Edge tab — set it to whichever book you want RunYourPool's lines checked against.</div>
+      <div class="card" style="padding:10px; margin-bottom:10px; background:#F7F9FA;">
+        <label>Paste your 6 picks (e.g. "Chiefs -3.5" per line — team named is assumed to be your pick). You can also paste the whole RunYourPool page as-is; the real pick lines get pulled out automatically.</label>
+        <textarea id="p6BulkFill" rows="6" style="width:100%; font-family:inherit;" placeholder="Chiefs -3.5&#10;Eagles -6.5&#10;Ravens +3.5&#10;..."></textarea>
+        <button class="save-btn full" id="p6BulkFillBtn" style="margin-top:6px;">Fill In My 6 Picks</button>
+        <div id="p6BulkFillNote" class="trend-note" style="margin-top:6px;"></div>
+      </div>
       <div id="p6PickRows"></div>
       <button class="save-btn full" id="p6SaveBtn" style="margin-top:10px;">Save This Week's Card</button>
     </div>
@@ -4071,7 +4077,58 @@ function renderP6Rows() {
   });
 }
 
+// ---------- bulk-fill the 6 manual pick rows from pasted pool lines ----------
+function fillP6PicksFromBulk() {
+  const noteEl = document.getElementById("p6BulkFillNote");
+  const raw = document.getElementById("p6BulkFill").value;
+  const allLines = extractCleanPoolLines(raw);
+  if (allLines.length === 0) { noteEl.textContent = "Couldn't find any lines that look like \"Team +/-X.X\" — paste your picks, or the whole RunYourPool page, and try again."; return; }
+  const lines = allLines.slice(0, 6);
+  const overflowWarning = allLines.length > 6 ? ` Found ${allLines.length} valid lines — this box only fills 6, so only the first 6 (in the order they appeared) were used. If you pasted the whole week's slate, use the Auto-Pick tool below instead to find your best 6 from all of them.` : "";
+
+  let filled = 0;
+  const unmatched = [];
+  lines.forEach((line, i) => {
+    const parsed = parsePoolLineEntry(line);
+    if (!parsed) { unmatched.push(line); return; }
+    const matchup = matchGameForTeamText(parsed.teamText);
+    const matchupInput = document.querySelector(`.p6-matchup[data-i="${i}"]`);
+    const lineInput = document.querySelector(`.p6-line[data-i="${i}"]`);
+    const pickInput = document.querySelector(`.p6-pick[data-i="${i}"]`);
+    if (!matchupInput || !lineInput || !pickInput) return;
+    if (matchup) {
+      matchupInput.value = `${matchup.game.away} @ ${matchup.game.home}`;
+      pickInput.value = matchup.side === "home" ? matchup.game.home : matchup.game.away;
+    } else {
+      // no scheduled game matched this team name — still fill what we know so nothing is lost,
+      // just without the model-line comparison this row would otherwise show
+      matchupInput.value = "";
+      pickInput.value = parsed.teamText;
+      unmatched.push(line);
+    }
+    lineInput.value = line;
+    matchupInput.dispatchEvent(new Event("change")); // triggers the existing model-line lookup for this row
+    filled++;
+  });
+
+  noteEl.textContent = `Filled ${filled} of ${lines.length} row${lines.length > 1 ? "s" : ""}.` +
+    (unmatched.length > 0 ? ` Couldn't match a scheduled game for: ${unmatched.join(", ")} — filled the pick/line anyway, but no model comparison for ${unmatched.length > 1 ? "these" : "this"} one${unmatched.length > 1 ? "s" : ""}.` : "") +
+    overflowWarning;
+}
+
 // ---------- auto-pick best 6 from pasted pool lines ----------
+// Pulls real "team + spread" lines out of a raw page paste (e.g. copying the whole RunYourPool
+// page, which includes records, dates, "Winner (ATS)" labels, and "No picks" noise mixed in).
+// Requires an explicit sign and a decimal point on the number — NFL/CFB spreads are almost
+// always half-points, so this reliably tells a real spread apart from a "0-0" record line,
+// which has no sign and no decimal.
+function extractCleanPoolLines(raw) {
+  return raw.split("\n")
+    .map(l => l.trim())
+    .filter(Boolean)
+    .filter(l => /^.+\s+[+-]\d+\.\d+$/.test(l));
+}
+
 function parsePoolLineEntry(line) {
   const trimmed = line.trim();
   if (!trimmed) return null;
@@ -4093,8 +4150,8 @@ function matchGameForTeamText(teamText) {
 async function findBestSix() {
   const out = document.getElementById("p6AutoPickResults");
   const raw = document.getElementById("p6BulkLines").value;
-  const lines = raw.split("\n").map(l => l.trim()).filter(Boolean);
-  if (lines.length === 0) { showToast("Paste in some lines first."); return; }
+  const lines = extractCleanPoolLines(raw);
+  if (lines.length === 0) { showToast("Couldn't find any lines that look like \"Team +/-X.X\" — paste your pool's lines, or the whole RunYourPool page, and try again."); return; }
   if (state.games.length === 0) { out.innerHTML = `<div class="error">No games loaded — open the Schedule tab on this same week first.</div>`; return; }
 
   out.innerHTML = `<div class="refresh-note">Matching games and computing model lines…</div>`;
@@ -4842,6 +4899,7 @@ document.getElementById("calcPropEdgeBtn").addEventListener("click", calcPropEdg
 document.getElementById("propFindTeamBtn").addEventListener("click", findPropTeam);
 document.getElementById("propScanEstimateBtn").addEventListener("click", estimatePropScanCost);
 document.getElementById("p6Week").addEventListener("change", renderP6Rows);
+document.getElementById("p6BulkFillBtn").addEventListener("click", fillP6PicksFromBulk);
 document.getElementById("p6SaveBtn").addEventListener("click", saveP6Week);
 document.getElementById("p6AutoPickBtn").addEventListener("click", findBestSix);
 document.getElementById("leagueNflBtn").addEventListener("click", () => {
