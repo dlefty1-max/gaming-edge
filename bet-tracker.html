@@ -4464,7 +4464,6 @@ async function runStatsProbe() {
   btn.disabled = true;
   out.innerHTML = `<div class="refresh-note">Probing endpoints…</div>`;
 
-  const sportPath = league === "nfl" ? "nfl" : "college-football";
   const leagueSlug = league === "nfl" ? "nfl" : "college-football";
 
   // grab a real team id from the current schedule so we probe with something valid
@@ -4476,57 +4475,44 @@ async function runStatsProbe() {
     return;
   }
 
-  const candidates = [
-    { label: "core API — team season statistics", url: `https://sports.core.api.espn.com/v2/sports/football/leagues/${leagueSlug}/seasons/${year}/types/2/teams/${teamId}/statistics` },
-    { label: "site.web API — team statistics", url: `https://site.web.api.espn.com/apis/common/v3/sports/football/${sportPath}/statistics/byteam?season=${year}&seasontype=2` },
-    { label: "site API — team detail (what we use now)", url: `https://site.api.espn.com/apis/site/v2/sports/football/${sportPath}/teams/${teamId}` },
-  ];
-
+  // The core API endpoint is confirmed working (238 stat fields). The remaining unknown is
+  // STRUCTURE: those stats are grouped into categories under `splits`, and we need to know
+  // which category holds DEFENSIVE numbers (yards/points allowed) vs offensive production —
+  // an offense-vs-defense model is useless without both sides.
+  const coreUrl = `https://sports.core.api.espn.com/v2/sports/football/leagues/${leagueSlug}/seasons/${year}/types/2/teams/${teamId}/statistics`;
   const findings = [];
-  for (const c of candidates) {
-    try {
-      const res = await fetch(c.url);
-      if (!res.ok) { findings.push({ ...c, ok: false, note: `HTTP ${res.status}` }); continue; }
-      const json = await res.json();
-
-      // walk the response looking for anything that looks like a named stat with a value
-      const statNames = new Set();
-      const walk = (node, depth) => {
-        if (depth > 6 || node == null || typeof node !== "object") return;
-        if (Array.isArray(node)) { node.slice(0, 40).forEach(n => walk(n, depth + 1)); return; }
-        if (typeof node.name === "string" && (node.value !== undefined || node.displayValue !== undefined)) {
-          statNames.add(`${node.name}${node.displayValue !== undefined ? ` = ${node.displayValue}` : ` = ${node.value}`}`);
-        }
-        Object.values(node).forEach(v => walk(v, depth + 1));
-      };
-      walk(json, 0);
-
-      findings.push({
-        ...c,
-        ok: true,
-        topLevelKeys: Object.keys(json).slice(0, 15).join(", "),
-        statCount: statNames.size,
-        sampleStats: [...statNames].slice(0, 60),
-      });
-    } catch (e) {
-      findings.push({ ...c, ok: false, note: e.message });
-    }
+  try {
+    const res = await fetch(coreUrl);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    const cats = (json.splits && json.splits.categories) || [];
+    findings.push({
+      label: "core API — category map",
+      url: coreUrl,
+      ok: true,
+      categories: cats.map(c => ({
+        name: c.name || c.displayName || "(unnamed)",
+        statCount: (c.stats || []).length,
+        sample: (c.stats || []).slice(0, 14).map(s => `${s.name}=${s.displayValue !== undefined ? s.displayValue : s.value}`),
+      })),
+    });
+  } catch (e) {
+    findings.push({ label: "core API — category map", url: coreUrl, ok: false, note: e.message });
   }
 
   out.innerHTML = `
     <div class="trend-line">Probed using <b>${teamName}</b> (id ${teamId}), ${year} ${league.toUpperCase()}.</div>
-    ${findings.map(f => `
-      <div class="trend-line" style="margin-top:10px;">
-        <b style="color:${f.ok ? "#4C8B5A" : "#C4564B"};">${f.ok ? "✓ WORKS" : "✗ FAILED"}</b> — ${f.label}
-      </div>
-      <div class="trend-note" style="font-size:11px; word-break:break-all;">${f.url}</div>
-      ${f.ok ? `
-        <div class="trend-note" style="font-size:11px;">Top-level keys: ${f.topLevelKeys}</div>
-        <div class="trend-note" style="font-size:11px;">Found <b>${f.statCount}</b> named stat fields.${f.statCount > 60 ? " Showing first 60:" : ""}</div>
-        <div class="trend-line" style="font-size:11px; color:#1A4A8A;">${f.sampleStats.join(" · ") || "(none found — structure may differ)"}</div>
-      ` : `<div class="trend-note" style="font-size:11px; color:#C4564B;">${f.note}</div>`}
+    ${findings.map(f => !f.ok ? `
+      <div class="trend-line" style="margin-top:10px;"><b style="color:#C4564B;">FAILED</b> — ${f.label}</div>
+      <div class="trend-note" style="font-size:11px;">${f.note}</div>
+    ` : `
+      <div class="trend-line" style="margin-top:10px;"><b style="color:#4C8B5A;">WORKS</b> — ${f.label} · found ${f.categories.length} categories</div>
+      ${f.categories.map(c => `
+        <div class="trend-line" style="margin-top:8px; font-size:12px;"><b>${c.name}</b> (${c.statCount} stats)</div>
+        <div class="trend-line" style="font-size:11px; color:#1A4A8A;">${c.sample.join(" · ")}</div>
+      `).join("")}
     `).join("")}
-    <div class="trend-note" style="margin-top:10px;">Paste these results back into chat — the working endpoint and its real stat names are what the efficiency model gets built on.</div>
+    <div class="trend-note" style="margin-top:10px;">Looking for which category holds DEFENSIVE numbers (yards/points allowed). Paste this back into chat.</div>
   `;
   btn.disabled = false;
 }
