@@ -447,6 +447,19 @@
         </div>
       </div>
       <div class="refresh-note" style="margin-top:-6px;">Sets which book's exact numbers show on the Schedule tab and get used when you tap-to-bet. The edge scanner below still checks all books regardless of this setting, since it's meant to compare across books.</div>
+      <div class="row">
+        <div>
+          <label>Efficiency Model Weight</label>
+          <select id="effWeight">
+            <option value="0">Off — pure Elo (default)</option>
+            <option value="0.25">25% efficiency / 75% Elo</option>
+            <option value="0.5">50 / 50</option>
+            <option value="0.75">75% efficiency / 25% Elo</option>
+            <option value="1">100% efficiency (no Elo)</option>
+          </select>
+        </div>
+      </div>
+      <div class="refresh-note" style="margin-top:-6px;">Blends a per-play efficiency model (yards/play, 3rd down %, red zone %, turnovers, plus defensive disruption stats) into the Elo rating. <b>Default is off</b> — Elo's 73.4% straight-up accuracy is verified, this is not yet. Use the ATS Backtest to test weights against real games before trusting it. Honest limitation: ESPN doesn't publish yards-allowed, so the defensive side is built from sacks/takeaways/TFLs rather than true yards-allowed efficiency.</div>
       <button class="save-btn full" id="runEdgeScanBtn">Scan This Week for Edges</button>
       <div id="edgeScanResults" style="margin-top:12px;"></div>
     </div>
@@ -703,6 +716,43 @@ async function fetchWeekResults(league, year, week, seasonType) {
 // number — the real way to nail this down is running the ATS Backtest tool (Backtest tab)
 // with a few different values and checking which one actually produces the best real
 // cover rate against historical spreads.
+// How much the efficiency model counts vs Elo. 0 = pure Elo (original behavior), 1 = pure
+// efficiency. Adjustable specifically so the ATS backtest can settle which actually performs
+// best on real games rather than picking a number on theory.
+function getEffWeight() {
+  try {
+    const v = parseFloat(localStorage.getItem("eff-weight"));
+    if (isFinite(v) && v >= 0 && v <= 1) return v;
+  } catch (e) {}
+  return 0; // default OFF — existing verified Elo behavior stays intact until the backtest says otherwise
+}
+
+// Produces the effective home/away ratings for one matchup, blending Elo with efficiency.
+// Falls back cleanly to pure Elo whenever efficiency data isn't available for either team,
+// so a missing stat line degrades to the old behavior instead of producing a broken number.
+async function blendedRatings(league, year, homeId, awayId, eloHome, eloAway) {
+  const w = getEffWeight();
+  if (w === 0) return { home: eloHome, away: eloAway, usedEff: false };
+  const [effH, effA] = await Promise.all([
+    fetchTeamEfficiency(league, homeId, year),
+    fetchTeamEfficiency(league, awayId, year),
+  ]);
+  const rH = efficiencyToRatings(effH, league);
+  const rA = efficiencyToRatings(effA, league);
+  if (!rH || !rA) return { home: eloHome, away: eloAway, usedEff: false };
+
+  // Matchup-aware: each side's strength is its own offense weighed against the opponent's
+  // defense — the thing a single combined Elo number structurally can't express.
+  const homeEff = 1500 + ((rH.offense - 1500) - (rA.defense - 1500)) * 0.5 + (rH.defense - 1500) * 0.5;
+  const awayEff = 1500 + ((rA.offense - 1500) - (rH.defense - 1500)) * 0.5 + (rA.defense - 1500) * 0.5;
+
+  return {
+    home: eloHome * (1 - w) + homeEff * w,
+    away: eloAway * (1 - w) + awayEff * w,
+    usedEff: true,
+  };
+}
+
 function getSpreadDivisor(league) {
   return league === "cfb" ? 15 : 25;
 }
@@ -731,6 +781,100 @@ function applyGameToElo(elo, g, K, HOME_ADV, movCap, probDivisor) {
 // win-probability curve is for a given rating gap — a real public NCAAF Elo system
 // (TDRD's model) explicitly uses 300 instead of the standard 400 "for more confident
 // picks," since the same rating gap should mean more in a sport with wider talent variance.
+// ---------- efficiency ratings (offense/defense from real per-play stats) ----------
+// Built on ESPN's core stats API. Every field name below was verified against a live response
+// before being used — no guessing (see the Team Stats Probe on the Backtest tab).
+// IMPORTANT LIMITATION, stated plainly: ESPN's `defensive` category exposes `yardsAllowed` and
+// `pointsAllowed` fields but never populates them (both always 0). So the defensive rating here
+// is built from DISRUPTION stats (sacks, takeaways, tackles-for-loss, passes defended) rather
+// than true yards-allowed efficiency. That's a real, weaker proxy — the backtest is what tells
+// us whether it actually helps, rather than assuming it does.
+const effCache = {};
+
+async function fetchTeamEfficiency(league, teamId, year) {
+  const key = `${league}-${teamId}-${year}`;
+  if (effCache[key] !== undefined) return effCache[key];
+  const leagueSlug = league === "nfl" ? "nfl" : "college-football";
+  const url = `https://sports.core.api.espn.com/v2/sports/football/leagues/${leagueSlug}/seasons/${year}/types/2/teams/${teamId}/statistics`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`status ${res.status}`);
+    const json = await res.json();
+    const cats = (json.splits && json.splits.categories) || [];
+    const grab = (catName, statName) => {
+      const c = cats.find(x => x.name === catName);
+      if (!c) return null;
+      const s = (c.stats || []).find(x => x.name === statName);
+      return s && s.value != null ? s.value : null;
+    };
+
+    const totalYards = grab("passing", "totalYards");
+    const totalPlays = grab("passing", "totalOffensivePlays");
+    const games = grab("general", "gamesPlayed") || grab("passing", "teamGamesPlayed");
+
+    const eff = {
+      gamesPlayed: games,
+      // --- offense: real per-play efficiency ---
+      yardsPerPlay: (totalYards && totalPlays) ? totalYards / totalPlays : null,
+      yardsPerPassAtt: grab("passing", "netYardsPerPassAttempt"),
+      yardsPerRushAtt: grab("rushing", "yardsPerRushAttempt"),
+      thirdDownPct: grab("miscellaneous", "thirdDownConvPct"),
+      redzoneScorePct: grab("miscellaneous", "redzoneScoringPct"),
+      redzoneTdPct: grab("miscellaneous", "redzoneTouchdownPct"),
+      pointsPerGame: grab("scoring", "totalPointsPerGame"),
+      turnoverDiff: grab("miscellaneous", "turnOverDifferential"),
+      giveaways: grab("miscellaneous", "totalGiveaways"),
+      // --- defense: disruption only (yards/points allowed unavailable — see note above) ---
+      takeaways: grab("miscellaneous", "totalTakeaways"),
+      sacks: grab("defensive", "sacks"),
+      tacklesForLoss: grab("defensive", "tacklesForLoss"),
+      passesDefended: grab("defensive", "passesDefended"),
+      defInterceptions: grab("defensiveInterceptions", "interceptions"),
+      defTouchdowns: grab("defensive", "defensiveTouchdowns"),
+    };
+    effCache[key] = eff;
+    return eff;
+  } catch (e) {
+    effCache[key] = null; // cache the miss too, so a bad team id doesn't re-fetch every time
+    return null;
+  }
+}
+
+// Converts raw efficiency numbers into offense/defense ratings on the same ~1500 scale Elo uses,
+// so the two can actually be blended. League baselines are rough NFL/CFB averages — they only
+// need to be in the right ballpark since what matters is each team's distance from average.
+function efficiencyToRatings(eff, league) {
+  if (!eff || !eff.gamesPlayed) return null;
+  const base = league === "cfb"
+    ? { ypp: 5.8, ypa: 7.0, ypr: 4.3, third: 40, rzScore: 85, sacksPerG: 2.3, tflPerG: 5.8, takeawaysPerG: 1.5 }
+    : { ypp: 5.4, ypa: 6.5, ypr: 4.2, third: 39, rzScore: 85, sacksPerG: 2.6, tflPerG: 5.6, takeawaysPerG: 1.3 };
+  const g = eff.gamesPlayed;
+  const z = (val, avg, spread) => (val == null || !isFinite(val)) ? 0 : (val - avg) / spread;
+
+  // Offense — weighted toward per-play efficiency, which is the most stable/predictive piece.
+  const offScore =
+    z(eff.yardsPerPlay, base.ypp, 0.6) * 3.0 +
+    z(eff.yardsPerPassAtt, base.ypa, 1.0) * 2.0 +
+    z(eff.yardsPerRushAtt, base.ypr, 0.5) * 1.0 +
+    z(eff.thirdDownPct, base.third, 5.0) * 1.5 +
+    z(eff.redzoneScorePct, base.rzScore, 7.0) * 1.0 +
+    z(eff.giveaways != null ? -eff.giveaways / g : null, -1.4, 0.5) * 1.0;
+
+  // Defense — disruption-based only (no yards-allowed available from this source).
+  const defScore =
+    z(eff.sacks != null ? eff.sacks / g : null, base.sacksPerG, 0.8) * 2.0 +
+    z(eff.tacklesForLoss != null ? eff.tacklesForLoss / g : null, base.tflPerG, 1.3) * 1.5 +
+    z(eff.takeaways != null ? eff.takeaways / g : null, base.takeawaysPerG, 0.5) * 2.0 +
+    z(eff.passesDefended != null ? eff.passesDefended / g : null, 5.0, 1.5) * 1.0;
+
+  // ~40 rating points per composite unit keeps the spread roughly comparable to Elo's range
+  return {
+    offense: 1500 + offScore * 40,
+    defense: 1500 + defScore * 40,
+    combined: 1500 + (offScore + defScore) * 25,
+  };
+}
+
 function getEloConstants(league) {
   return league === "cfb"
     ? { K: 30, HOME_ADV: 55, movCap: 35, probDivisor: 300 }
@@ -1734,7 +1878,15 @@ async function runATSBacktest(league, year, allGames, apiKey) {
 
         const rh = elo[g.homeId] != null ? elo[g.homeId] : 1500;
         const ra = elo[g.awayId] != null ? elo[g.awayId] : 1500;
-        const diff = (rh + HOME_ADV) - ra;
+        // Blend efficiency in (no-op at weight 0). NOTE: efficiency stats here are FULL-SEASON
+        // totals, not as-of-that-week — so a backtest with weight > 0 has some hindsight baked
+        // in and will look better than live performance. Flagged in the results, not hidden.
+        let bRh = rh, bRa = ra;
+        try {
+          const blended = await blendedRatings(league, year, g.homeId, g.awayId, rh, ra);
+          bRh = blended.home; bRa = blended.away;
+        } catch (e) { /* falls back to pure Elo */ }
+        const diff = (bRh + HOME_ADV) - bRa;
         const modelHomeSpread = -(diff / getSpreadDivisor(league));
         const pickHome = modelHomeSpread <= 0;
 
@@ -1809,8 +1961,11 @@ async function runATSBacktest(league, year, allGames, apiKey) {
 
         gameLog.push(entry);
 
-        // update Elo walk-forward regardless of whether lines were found for this game
-        const expectedHome = 1 / (1 + Math.pow(10, -diff / probDivisor));
+        // update Elo walk-forward regardless of whether lines were found for this game.
+        // Uses the PURE Elo difference (not the blended one) — Elo must keep learning from
+        // real results independently, or the efficiency blend would feed back into it.
+        const eloDiff = (rh + HOME_ADV) - ra;
+        const expectedHome = 1 / (1 + Math.pow(10, -eloDiff / probDivisor));
         const actualHome = g.homeScore > g.awayScore ? 1 : (g.homeScore < g.awayScore ? 0 : 0.5);
         const rawMargin = Math.abs(g.homeScore - g.awayScore);
         const margin = movCap ? Math.min(rawMargin, movCap) : rawMargin;
@@ -1834,6 +1989,7 @@ async function runATSBacktest(league, year, allGames, apiKey) {
       <div class="trend-score">Spread (Elo's SU favorite): ${atsWins}-${atsLosses}-${atsPushes} ATS (${atsPct}%)</div>
       ${mlGraded > 0 ? `<div class="trend-line">Moneyline (same favorite, real price): ${mlWins}-${mlLosses} (${mlPct}%)${mlNoLine > 0 ? ` · ${mlNoLine} games had no ML line found` : ""}</div>` : ""}
       <div class="trend-note">Break-even at standard -110 odds is 52.4%. ${noLineFound > 0 ? `${noLineFound} games had no matched spread line and were skipped.` : ""}</div>
+      ${getEffWeight() > 0 ? `<div class="trend-note" style="color:#B4463A;"><b>⚠ Hindsight warning:</b> this ran with efficiency weight at ${Math.round(getEffWeight() * 100)}%. Those efficiency stats are FULL-SEASON totals, which include games played after the ones being graded — so this result is optimistic and will overstate live performance. Compare it against a 0% (pure Elo) run to see the difference, but treat any improvement as an upper bound, not a real expectation.</div>` : ""}
       <div class="trend-title" style="margin-top:12px;">By Gap Size — where does the real edge actually live?</div>
       ${["moderate", "large", "extreme"].map(key => {
         const b = buckets[key];
@@ -3616,11 +3772,22 @@ async function runEdgeScan() {
         }
       } catch (e) { /* best-effort, unadjusted rating stands on failure */ }
 
+      // Blend in the efficiency model (no-op when weight is 0, which is the default)
+      let effNote = "";
+      try {
+        const blended = await blendedRatings(state.league, state.year, g.homeId, g.awayId, rh, ra);
+        if (blended.usedEff) {
+          rh = blended.home;
+          ra = blended.away;
+          effNote = ` · efficiency-blended (${Math.round(getEffWeight() * 100)}%)`;
+        }
+      } catch (e) { /* falls back to pure Elo */ }
+
       const diff = (rh + 55) - ra;
       const modelHomeWinProb = 1 / (1 + Math.pow(10, -diff / getEloConstants(state.league).probDivisor));
       const modelHomeSpread = -(diff / getSpreadDivisor(state.league)); // negative = model favors home by this many points
 
-      const row = { game: `${g.away} @ ${g.home}`, bookCount: books.length, injuryNote };
+      const row = { game: `${g.away} @ ${g.home}`, bookCount: books.length, injuryNote: injuryNote + effNote };
 
       // --- spread: consensus line (median across books) + best price shopping ---
       const spreadEntries = books.map(b => {
@@ -4984,6 +5151,14 @@ document.getElementById("preferredBook").addEventListener("change", (e) => {
   try { localStorage.setItem("preferred-book", e.target.value); } catch (e2) {}
   renderGames();
 });
+document.getElementById("effWeight").addEventListener("change", (e) => {
+  try { localStorage.setItem("eff-weight", e.target.value); } catch (e2) {}
+  showToast(parseFloat(e.target.value) === 0 ? "Efficiency model off — pure Elo." : `Efficiency weight set to ${Math.round(parseFloat(e.target.value) * 100)}%. Re-run the scan to see it applied.`);
+});
+try {
+  const savedEffW = localStorage.getItem("eff-weight");
+  if (savedEffW != null) document.getElementById("effWeight").value = savedEffW;
+} catch (e) {}
 document.getElementById("tabPropsBtn").addEventListener("click", () => {
   state.tab = "props";
   setActiveTab("tabPropsBtn", "propsTab");
