@@ -468,7 +468,7 @@
   <div id="propsTab" style="display:none;">
     <div class="card" style="padding:16px; margin-bottom:16px; border:2px solid #1A6A3A;">
       <div class="trend-title" style="margin-bottom:6px;">🛡️ Opponent Defense Data</div>
-      <div class="refresh-note">ESPN doesn't publish yards-allowed directly, so this reconstructs it from box scores — walking every completed game and summing what each defense gave up. <b>Free (no API credits), but slow</b> — roughly a minute per 60 games, since it fetches each game individually and paces itself to avoid hammering ESPN. Build it once a week; results are cached. Once built, the props scanner shows how each player's opponent actually defends that stat.</div>
+      <div class="refresh-note">ESPN doesn't publish yards-allowed directly, so this reconstructs it from box scores — walking every completed game and summing what each defense gave up. It also splits receiving by position (RB / WR / TE), since a defense that funnels catches to backs is a completely different matchup than one that gets beaten by receivers. <b>Free (no API credits), but slow</b> — roughly a minute per 60 games, plus a short roster pass up front (box scores carry no position field, so player positions have to be looked up). Build it once a week; results are cached.</div>
       <div class="row">
         <div>
           <label>League</label>
@@ -873,18 +873,115 @@ function readTeamOffenseFromBoxscore(boxTeam) {
 
 // Builds yards/points-allowed for every team across a season. Progress callback so the UI can
 // show it's working — this takes minutes, not seconds.
-async function buildDefensiveStats(league, year, maxWeek, progressCb) {
-  const cacheKey = `defstats-v1-${league}-${year}-w${maxWeek}`;
+// Builds a playerId -> position map from CURRENT rosters across every team in the league.
+// Needed because box scores carry no position field (verified via probe) — so the only way to
+// know whether a reception went to a RB, WR or TE is to look the player up.
+// LIMITATION, stated plainly: rosters are current, so players who changed teams or retired
+// since the season being analyzed won't be found. Their production lands in an "unknown"
+// bucket rather than being silently misfiled. Coverage % is reported after the build.
+async function buildPositionLookup(league, progressCb) {
+  const cacheKey = `poslookup-v1-${league}`;
   const cached = await histDbGet(cacheKey);
   if (cached) return cached;
 
+  const sport = league === "nfl" ? "nfl" : "college-football";
+  const map = {};
+  try {
+    const res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/${sport}/teams`);
+    const json = await res.json();
+    const teams = ((json.sports || [])[0]?.leagues || [])[0]?.teams || [];
+    let done = 0;
+    for (const t of teams) {
+      const id = t.team && t.team.id;
+      if (!id) continue;
+      try {
+        const roster = await fetchRoster(league, id);
+        roster.forEach(p => { if (p.id && p.pos) map[p.id] = p.pos; });
+      } catch (e) { /* skip a team that fails rather than aborting the whole build */ }
+      done++;
+      if (progressCb) progressCb(done, teams.length);
+      await new Promise(r => setTimeout(r, 40));
+    }
+  } catch (e) { /* returns whatever was gathered */ }
+  await histDbSet(cacheKey, map);
+  return map;
+}
+
+// Reads per-position receiving/rushing production out of one team's player box score block.
+// Field names verified against a real response via the Box Score Probe.
+function readPositionSplitsFromBoxscore(playerBlock, posLookup) {
+  const cats = (playerBlock && playerBlock.statistics) || [];
+  const out = {
+    recYards: { RB: 0, WR: 0, TE: 0, unknown: 0 },
+    receptions: { RB: 0, WR: 0, TE: 0, unknown: 0 },
+    targets: { RB: 0, WR: 0, TE: 0, unknown: 0 },
+    rushYards: { RB: 0, QB: 0, unknown: 0 },
+    matched: 0,
+    unmatched: 0,
+  };
+
+  const recCat = cats.find(c => c.name === "receiving");
+  if (recCat) {
+    const keys = recCat.keys || [];
+    const iRec = keys.indexOf("receptions");
+    const iYds = keys.indexOf("receivingYards");
+    const iTgt = keys.indexOf("receivingTargets");
+    (recCat.athletes || []).forEach(a => {
+      const pid = a.athlete && a.athlete.id;
+      const pos = posLookup[pid];
+      const bucket = (pos === "RB" || pos === "FB") ? "RB" : (pos === "WR" ? "WR" : (pos === "TE" ? "TE" : "unknown"));
+      if (bucket === "unknown") out.unmatched++; else out.matched++;
+      const st = a.stats || [];
+      const num = (i) => { if (i < 0) return 0; const v = parseFloat(String(st[i]).replace(/,/g, "")); return isNaN(v) ? 0 : v; };
+      out.receptions[bucket] += num(iRec);
+      out.recYards[bucket] += num(iYds);
+      out.targets[bucket] += num(iTgt);
+    });
+  }
+
+  const rushCat = cats.find(c => c.name === "rushing");
+  if (rushCat) {
+    const keys = rushCat.keys || [];
+    const iYds = keys.indexOf("rushingYards");
+    (rushCat.athletes || []).forEach(a => {
+      const pid = a.athlete && a.athlete.id;
+      const pos = posLookup[pid];
+      const bucket = (pos === "RB" || pos === "FB") ? "RB" : (pos === "QB" ? "QB" : "unknown");
+      const st = a.stats || [];
+      const v = iYds >= 0 ? parseFloat(String(st[iYds]).replace(/,/g, "")) : 0;
+      out.rushYards[bucket] += isNaN(v) ? 0 : v;
+    });
+  }
+
+  return out;
+}
+
+async function buildDefensiveStats(league, year, maxWeek, progressCb) {
+  const cacheKey = `defstats-v2-${league}-${year}-w${maxWeek}`;
+  const cached = await histDbGet(cacheKey);
+  if (cached) return cached;
+
+  // position lookup first — box scores carry no position, so this is what makes the
+  // RB/WR/TE splits possible at all
+  if (progressCb) progressCb(0, 0, 0, "Loading rosters for position lookup…");
+  const posLookup = await buildPositionLookup(league, (d, t) => {
+    if (progressCb) progressCb(0, 0, 0, `Loading rosters… ${d}/${t} teams`);
+  });
+
   const def = {}; // teamId -> accumulated stats ALLOWED
   const ensure = (id) => {
-    if (!def[id]) def[id] = { games: 0, yardsAllowed: 0, playsAgainst: 0, passYardsAllowed: 0, rushYardsAllowed: 0, rushAttAgainst: 0, passAttAgainst: 0, pointsAllowed: 0, firstDownsAllowed: 0, takeaways: 0 };
+    if (!def[id]) def[id] = {
+      games: 0, yardsAllowed: 0, playsAgainst: 0, passYardsAllowed: 0, rushYardsAllowed: 0,
+      rushAttAgainst: 0, passAttAgainst: 0, pointsAllowed: 0, firstDownsAllowed: 0, takeaways: 0,
+      recYardsTo: { RB: 0, WR: 0, TE: 0, unknown: 0 },
+      receptionsTo: { RB: 0, WR: 0, TE: 0, unknown: 0 },
+      targetsTo: { RB: 0, WR: 0, TE: 0, unknown: 0 },
+      rushYardsTo: { RB: 0, QB: 0, unknown: 0 },
+    };
     return def[id];
   };
 
-  let processed = 0, failed = 0;
+  let processed = 0, failed = 0, posMatched = 0, posUnmatched = 0;
   const sport = league === "nfl" ? "nfl" : "college-football";
   for (let w = 1; w <= maxWeek; w++) {
     // reuse the scoreboard to get event IDs for the week
@@ -909,6 +1006,18 @@ async function buildDefensiveStats(league, year, maxWeek, progressCb) {
         const scoreById = {};
         if (comp) (comp.competitors || []).forEach(c => { scoreById[c.team && c.team.id] = parseFloat(c.score); });
 
+        // player-level blocks, matched to the same team order as boxTeams
+        const playerBlocks = (box.boxscore && box.boxscore.players) || [];
+        const splitsById = {};
+        playerBlocks.forEach(pb => {
+          const tid = pb.team && pb.team.id;
+          if (!tid) return;
+          const sp = readPositionSplitsFromBoxscore(pb, posLookup);
+          splitsById[tid] = sp;
+          posMatched += sp.matched;
+          posUnmatched += sp.unmatched;
+        });
+
         const sides = boxTeams.map(bt => ({ id: bt.team && bt.team.id, off: readTeamOffenseFromBoxscore(bt) }));
         // each team's DEFENSE gets credited with what the OTHER team's offense produced
         for (let i = 0; i < 2; i++) {
@@ -926,6 +1035,16 @@ async function buildDefensiveStats(league, year, maxWeek, progressCb) {
           if (them.off.turnovers != null) d.takeaways += them.off.turnovers;
           const oppScore = scoreById[them.id];
           if (oppScore != null && !isNaN(oppScore)) d.pointsAllowed += oppScore;
+          // position splits: what the OPPONENT's RBs/WRs/TEs did against this defense
+          const oppSplits = splitsById[them.id];
+          if (oppSplits) {
+            ["RB", "WR", "TE", "unknown"].forEach(k => {
+              d.recYardsTo[k] += oppSplits.recYards[k] || 0;
+              d.receptionsTo[k] += oppSplits.receptions[k] || 0;
+              d.targetsTo[k] += oppSplits.targets[k] || 0;
+            });
+            ["RB", "QB", "unknown"].forEach(k => { d.rushYardsTo[k] += oppSplits.rushYards[k] || 0; });
+          }
         }
         processed++;
       } catch (e) { failed++; }
@@ -935,12 +1054,32 @@ async function buildDefensiveStats(league, year, maxWeek, progressCb) {
   }
 
   // convert accumulations into per-game / per-play rates
-  const out = { league, year, maxWeek, builtAt: new Date().toISOString(), gamesProcessed: processed, gamesFailed: failed, teams: {} };
+  const totalPosRows = posMatched + posUnmatched;
+  const out = {
+    league, year, maxWeek, builtAt: new Date().toISOString(),
+    gamesProcessed: processed, gamesFailed: failed,
+    positionCoveragePct: totalPosRows ? (posMatched / totalPosRows) * 100 : 0,
+    positionMatched: posMatched, positionUnmatched: posUnmatched,
+    teams: {},
+  };
   Object.keys(def).forEach(id => {
     const d = def[id];
     if (!d.games) return;
+    const perG = (v) => v / d.games;
     out.teams[id] = {
       games: d.games,
+      // per-position receiving allowed — the whole point of this build
+      recYardsToRB: perG(d.recYardsTo.RB),
+      recYardsToWR: perG(d.recYardsTo.WR),
+      recYardsToTE: perG(d.recYardsTo.TE),
+      receptionsToRB: perG(d.receptionsTo.RB),
+      receptionsToWR: perG(d.receptionsTo.WR),
+      receptionsToTE: perG(d.receptionsTo.TE),
+      targetsToRB: perG(d.targetsTo.RB),
+      targetsToWR: perG(d.targetsTo.WR),
+      targetsToTE: perG(d.targetsTo.TE),
+      rushYardsToRB: perG(d.rushYardsTo.RB),
+      rushYardsToQB: perG(d.rushYardsTo.QB),
       yardsAllowedPerGame: d.yardsAllowed / d.games,
       yardsAllowedPerPlay: d.playsAgainst ? d.yardsAllowed / d.playsAgainst : null,
       passYardsAllowedPerGame: d.passYardsAllowed / d.games,
@@ -1569,9 +1708,11 @@ async function runBuildDefensiveStats() {
   out.innerHTML = `<div class="refresh-note">Starting… this runs one fetch per game and paces itself, so expect a few minutes. Leave this tab open.</div>`;
 
   try {
-    const data = await buildDefensiveStats(league, year, maxWeek, (done, failed, week) => {
+    const data = await buildDefensiveStats(league, year, maxWeek, (done, failed, week, msg) => {
       const secs = Math.round((Date.now() - started) / 1000);
-      out.innerHTML = `<div class="refresh-note">Week ${week} · ${done} games processed${failed ? ` · ${failed} skipped` : ""} · ${secs}s elapsed…</div>`;
+      out.innerHTML = msg
+        ? `<div class="refresh-note">${msg} · ${secs}s elapsed…</div>`
+        : `<div class="refresh-note">Week ${week} · ${done} games processed${failed ? ` · ${failed} skipped` : ""} · ${secs}s elapsed…</div>`;
     });
 
     const ids = Object.keys(data.teams);
@@ -1598,6 +1739,19 @@ async function runBuildDefensiveStats() {
       ${withNames.slice(0, 5).map(t => `<div class="trend-line" style="font-size:12px;">${fmt(t)}</div>`).join("")}
       <div class="trend-title" style="margin-top:10px;">Most generous 5</div>
       ${withNames.slice(-5).reverse().map(t => `<div class="trend-line" style="font-size:12px;">${fmt(t)}</div>`).join("")}
+      <div class="trend-title" style="margin-top:12px;">Position Splits — receptions allowed per game</div>
+      <div class="trend-note">Position coverage: <b>${data.positionCoveragePct != null ? data.positionCoveragePct.toFixed(0) : "?"}%</b> of receiving lines matched to a position (${data.positionMatched || 0} matched, ${data.positionUnmatched || 0} unknown). Unmatched are players not on a current roster — traded, retired, or practice-squad callups. Their production sits in an "unknown" bucket rather than being misfiled.</div>
+      ${(() => {
+        const rbSort = withNames.filter(t => t.receptionsToRB != null).sort((a, b) => b.receptionsToRB - a.receptionsToRB);
+        if (rbSort.length === 0) return `<div class="trend-note">No position split data — check that rosters loaded.</div>`;
+        const fmtPos = (t) => `${nameFor(t.id)} — RB ${t.receptionsToRB.toFixed(1)} · WR ${t.receptionsToWR.toFixed(1)} · TE ${t.receptionsToTE.toFixed(1)}${t.receptionsToUnknown ? ` · unk ${t.receptionsToUnknown.toFixed(1)}` : ""}`;
+        return `
+          <div class="trend-line" style="font-size:12px; margin-top:6px;"><b>Most receptions allowed to RBs:</b></div>
+          ${rbSort.slice(0, 3).map(t => `<div class="trend-line" style="font-size:12px;">${fmtPos(t)}</div>`).join("")}
+          <div class="trend-line" style="font-size:12px; margin-top:6px;"><b>Fewest to RBs:</b></div>
+          ${rbSort.slice(-3).reverse().map(t => `<div class="trend-line" style="font-size:12px;">${fmtPos(t)}</div>`).join("")}
+        `;
+      })()}
       <div class="trend-note" style="margin-top:8px;">If these numbers look wrong (e.g. all zeros, or wildly off from reality), the box score field names differ from what this expects — say so and it can be fixed.</div>
     `;
   } catch (e) {
@@ -1901,10 +2055,28 @@ async function runPropScan(matchedEvents, apiKey) {
             const oppId = playerIsAway ? game.homeId : game.awayId;
             const oppDef = defStatsForScan.teams[oppId];
             if (oppDef) {
+              // Prefer POSITION-SPECIFIC allowed stats when we have them — a defense that
+              // funnels catches to backs is a totally different matchup than one that gets
+              // beaten by receivers, and team totals can't tell those apart.
+              const pos = (rosterMatch.pos || "").toUpperCase();
+              const posKey = (pos === "RB" || pos === "FB") ? "RB" : (pos === "WR" ? "WR" : (pos === "TE" ? "TE" : null));
               const isRush = mapInfo.categoryHint === "rush";
-              const isPassGame = mapInfo.categoryHint === "receiv" || marketKey === "player_pass_yds";
-              const metric = isRush ? "rushYardsAllowedPerGame" : isPassGame ? "passYardsAllowedPerGame" : "yardsAllowedPerGame";
-              const label = isRush ? "rush yds allowed" : isPassGame ? "pass yds allowed" : "total yds allowed";
+              const isRecYds = marketKey === "player_reception_yds";
+              const isReceptions = marketKey === "player_receptions";
+              let metric, label;
+              if (isReceptions && posKey) {
+                metric = `receptionsTo${posKey}`; label = `receptions allowed to ${posKey}s`;
+              } else if (isRecYds && posKey) {
+                metric = `recYardsTo${posKey}`; label = `rec yds allowed to ${posKey}s`;
+              } else if (isRush && posKey === "RB") {
+                metric = "rushYardsToRB"; label = "rush yds allowed to RBs";
+              } else if (isRush) {
+                metric = "rushYardsAllowedPerGame"; label = "rush yds allowed";
+              } else if (mapInfo.categoryHint === "receiv" || marketKey === "player_pass_yds") {
+                metric = "passYardsAllowedPerGame"; label = "pass yds allowed";
+              } else {
+                metric = "yardsAllowedPerGame"; label = "total yds allowed";
+              }
               const val = oppDef[metric];
               if (val != null) {
                 const all = Object.values(defStatsForScan.teams).map(t => t[metric]).filter(v => v != null).sort((a, b) => a - b);
