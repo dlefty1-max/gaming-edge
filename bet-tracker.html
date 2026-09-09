@@ -15,8 +15,8 @@
   h1 { color: #fff; font-size: 22px; margin: 0; }
   .bankroll-label { font-size: 10px; text-transform: uppercase; color: #9AA3AC; text-align: right; }
   .bankroll-value { font-size: 18px; font-weight: 700; text-align: right; }
-  nav { display: flex; gap: 8px; max-width: 640px; margin: 16px auto 0; }
-  nav button { flex: 1; padding: 10px; font-size: 14px; font-weight: 700; border-radius: 8px; border: none; background: #26333F; color: #fff; cursor: pointer; }
+  nav { display: flex; gap: 6px; max-width: 640px; margin: 16px auto 0; flex-wrap: wrap; }
+  nav button { flex: 1 1 auto; min-width: 78px; padding: 10px 6px; font-size: 13px; font-weight: 700; border-radius: 8px; border: none; background: #26333F; color: #fff; cursor: pointer; }
   nav button.active { background: #3B7DD8; }
   main { max-width: 640px; margin: 0 auto; padding: 20px 16px; }
   select, input { background: #fff; color: #1A2530; border: 1px solid #CBD3DA; border-radius: 8px; padding: 8px; font-size: 14px; width: 100%; }
@@ -120,6 +120,7 @@
     <button id="tabEdgeBtn">Edge</button>
     <button id="tabPropsBtn">Props</button>
     <button id="tabPickSixBtn">Pick 6</button>
+    <button id="tabSurvivorBtn">Survivor</button>
   </nav>
 </header>
 
@@ -613,6 +614,39 @@
       <div id="p6AutoPickResults" style="margin-top:12px;"></div>
     </div>
     <div id="p6History"></div>
+  </div>
+
+  <div id="survivorTab" style="display:none;">
+    <div class="card" style="padding:16px; margin-bottom:16px;">
+      <div class="trend-title" style="margin-bottom:6px;">Survivor Pool — Season Planner</div>
+      <div class="refresh-note">Straight-up wins only, no spreads. Each team can be used once per entry, so the real question isn't "who wins this week" — it's which week to <i>spend</i> each team. A team that's only a strong favorite once all season should be saved for exactly that week. This plans a full path for both entries and deliberately keeps them on different teams each week, so one upset can't kill both.</div>
+      <div class="row">
+        <div>
+          <label>Season</label>
+          <select id="survYear">
+            <option value="2026" selected>2026</option>
+            <option value="2025">2025</option>
+          </select>
+        </div>
+        <div>
+          <label>Current Week</label>
+          <input id="survWeek" value="1" inputmode="numeric">
+        </div>
+        <div>
+          <label>Plan Through Week</label>
+          <input id="survThroughWeek" value="18" inputmode="numeric">
+        </div>
+      </div>
+      <div class="refresh-note" style="margin-top:-6px;">Assumes a tie eliminates you (standard in most pools). Planning far ahead is useful for spotting scarce weeks, but treat late-season specifics loosely — the model knows very little about Week 15 in September.</div>
+      <button class="save-btn full" id="runSurvivorPlanBtn">Build / Refresh Plan</button>
+      <div id="survivorResults" style="margin-top:12px;"></div>
+    </div>
+
+    <div class="card" style="padding:16px; margin-bottom:16px;">
+      <div class="trend-title" style="margin-bottom:6px;">Teams Already Used</div>
+      <div class="refresh-note">Tap a team to toggle it as used for that entry. Used teams are excluded from all future planning.</div>
+      <div id="survivorUsedEditor" style="margin-top:10px;"></div>
+    </div>
   </div>
 </main>
 
@@ -4867,6 +4901,236 @@ function matchGameForTeamText(teamText) {
   return null;
 }
 
+// ---------- survivor pool planner ----------
+// Straight-up wins, each team usable once per entry. The interesting part isn't ranking this
+// week — it's opportunity cost: a team that's only a strong favorite once should be spent in
+// that week, while a team favored eight times can wait. This plans a full path per entry and
+// keeps the two entries on different teams each week so one upset can't end both.
+const SURVIVOR_STORAGE_KEY = "survivor-data";
+
+function loadSurvivorData() {
+  try {
+    const raw = localStorage.getItem(SURVIVOR_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+  return { entry1Used: [], entry2Used: [] };
+}
+
+function saveSurvivorData(d) {
+  try { localStorage.setItem(SURVIVOR_STORAGE_KEY, JSON.stringify(d)); } catch (e) {}
+}
+
+// Pulls every remaining week's schedule and computes a win probability for each team,
+// using the same Elo (plus efficiency blend, if enabled) the rest of the app uses.
+async function buildSurvivorSchedule(league, year, fromWeek, throughWeek, progressCb) {
+  const { HOME_ADV, probDivisor } = getEloConstants(league);
+  const elo = await buildEloRatings(league, year, fromWeek);
+  const weeks = [];
+
+  for (let w = fromWeek; w <= throughWeek; w++) {
+    if (progressCb) progressCb(w, throughWeek);
+    let events = [];
+    try {
+      const base = league === "nfl" ? NFL_BASE : CFB_BASE;
+      const params = new URLSearchParams({ week: w, seasontype: 2, dates: year });
+      if (league === "cfb") params.set("groups", "80");
+      const res = await fetch(`${base}?${params.toString()}`);
+      const json = await res.json();
+      events = json.events || [];
+    } catch (e) { continue; }
+
+    const games = [];
+    for (const ev of events) {
+      const comp = (ev.competitions || [])[0];
+      if (!comp) continue;
+      const home = (comp.competitors || []).find(c => c.homeAway === "home");
+      const away = (comp.competitors || []).find(c => c.homeAway === "away");
+      if (!home || !away) continue;
+      const homeId = home.team && home.team.id;
+      const awayId = away.team && away.team.id;
+      const homeName = (home.team && (home.team.shortDisplayName || home.team.displayName)) || "?";
+      const awayName = (away.team && (away.team.shortDisplayName || away.team.displayName)) || "?";
+
+      let rh = elo[homeId] != null ? elo[homeId] : 1500;
+      let ra = elo[awayId] != null ? elo[awayId] : 1500;
+      try {
+        const b = await blendedRatings(league, year, homeId, awayId, rh, ra);
+        rh = b.home; ra = b.away;
+      } catch (e) {}
+
+      const diff = (rh + HOME_ADV) - ra;
+      const homeWinProb = 1 / (1 + Math.pow(10, -diff / probDivisor));
+      games.push({
+        week: w, homeId, awayId, homeName, awayName,
+        completed: !!(ev.status && ev.status.type && ev.status.type.completed),
+        picks: [
+          { teamId: homeId, teamName: homeName, oppName: awayName, isHome: true, winProb: homeWinProb },
+          { teamId: awayId, teamName: awayName, oppName: homeName, isHome: false, winProb: 1 - homeWinProb },
+        ],
+      });
+    }
+    weeks.push({ week: w, games });
+  }
+  return weeks;
+}
+
+// Greedy planner with opportunity cost. Walks week by week; for each week picks the option
+// with the best "value" — its win probability discounted by how much better that same team
+// looks in some LATER week. A team with a much better future spot gets held back.
+function planSurvivorPath(weeks, usedTeamIds, blockedByOtherEntry) {
+  const used = new Set(usedTeamIds.map(String));
+  const path = [];
+
+  // best future win prob per team, per week index, so we can compute opportunity cost
+  const bestLaterProb = {}; // teamId -> array aligned to weeks
+  weeks.forEach((wk, i) => {
+    wk.games.forEach(g => g.picks.forEach(p => {
+      if (!bestLaterProb[p.teamId]) bestLaterProb[p.teamId] = new Array(weeks.length).fill(0);
+      bestLaterProb[p.teamId][i] = Math.max(bestLaterProb[p.teamId][i], p.winProb);
+    }));
+  });
+  // suffix max: the best this team looks from week i onward
+  Object.keys(bestLaterProb).forEach(tid => {
+    const arr = bestLaterProb[tid];
+    for (let i = arr.length - 2; i >= 0; i--) arr[i] = Math.max(arr[i], arr[i + 1]);
+  });
+
+  weeks.forEach((wk, i) => {
+    const blocked = blockedByOtherEntry && blockedByOtherEntry[i] ? String(blockedByOtherEntry[i]) : null;
+    const options = [];
+    wk.games.forEach(g => g.picks.forEach(p => {
+      if (used.has(String(p.teamId))) return;
+      if (blocked && String(p.teamId) === blocked) return;
+      // opportunity cost: how much better does this team look later than right now?
+      const laterArr = bestLaterProb[p.teamId] || [];
+      const bestLater = i + 1 < laterArr.length ? laterArr[i + 1] : 0;
+      const heldBackValue = Math.max(0, bestLater - p.winProb);
+      options.push({ ...p, heldBackValue, value: p.winProb - heldBackValue * 0.5 });
+    }));
+    options.sort((a, b) => b.value - a.value);
+    const choice = options[0] || null;
+    if (choice) used.add(String(choice.teamId));
+    path.push({
+      week: wk.week,
+      choice,
+      // how many options this week clear a reasonable safety bar — low = scarce week
+      safeOptionCount: options.filter(o => o.winProb >= 0.7).length,
+      alternatives: options.slice(1, 4),
+    });
+  });
+
+  return path;
+}
+
+async function runSurvivorPlan() {
+  const league = "nfl"; // survivor pools are NFL in practice; CFB has far too many teams to matter
+  const year = parseInt(document.getElementById("survYear").value, 10);
+  const fromWeek = Math.max(1, parseInt(document.getElementById("survWeek").value, 10) || 1);
+  const throughWeek = Math.min(18, parseInt(document.getElementById("survThroughWeek").value, 10) || 18);
+  const out = document.getElementById("survivorResults");
+  const btn = document.getElementById("runSurvivorPlanBtn");
+  btn.disabled = true;
+  out.innerHTML = `<div class="refresh-note">Building schedule and ratings…</div>`;
+
+  try {
+    const weeks = await buildSurvivorSchedule(league, year, fromWeek, throughWeek, (w, t) => {
+      out.innerHTML = `<div class="refresh-note">Loading week ${w} of ${t}…</div>`;
+    });
+    if (weeks.length === 0 || weeks.every(w => w.games.length === 0)) {
+      out.innerHTML = `<div class="error">No games found for that range.</div>`;
+      btn.disabled = false;
+      return;
+    }
+
+    const sd = loadSurvivorData();
+    // plan entry 1 first, then entry 2 while blocking entry 1's weekly picks — that's what
+    // keeps the two entries diversified instead of both riding the same team
+    const path1 = planSurvivorPath(weeks, sd.entry1Used, null);
+    const blocked = path1.map(p => p.choice ? p.choice.teamId : null);
+    const path2 = planSurvivorPath(weeks, sd.entry2Used, blocked);
+
+    const pct = (v) => `${(v * 100).toFixed(0)}%`;
+    const rowFor = (step) => {
+      if (!step.choice) return `<div class="trend-line" style="color:#C4564B;">Week ${step.week}: no eligible team left</div>`;
+      const c = step.choice;
+      const scarce = step.safeOptionCount <= 2;
+      return `<div class="trend-line" style="${step.week === fromWeek ? "font-weight:700;" : ""}">
+        Week ${step.week}: <b>${c.teamName}</b> ${c.isHome ? "vs" : "@"} ${c.oppName} — ${pct(c.winProb)}
+        ${scarce ? `<span style="color:#C4564B;"> · thin week (${step.safeOptionCount} safe option${step.safeOptionCount === 1 ? "" : "s"})</span>` : ""}
+        ${c.heldBackValue > 0.05 ? `<span style="color:#8A96A1;"> · better later (${pct(c.winProb + c.heldBackValue)}), used anyway</span>` : ""}
+      </div>`;
+    };
+
+    const thisWeek1 = path1[0], thisWeek2 = path2[0];
+    out.innerHTML = `
+      <div class="trend-title">This Week (Week ${fromWeek})</div>
+      <div class="trend-score">Entry 1: ${thisWeek1 && thisWeek1.choice ? `${thisWeek1.choice.teamName} — ${pct(thisWeek1.choice.winProb)}` : "no eligible team"}</div>
+      <div class="trend-score">Entry 2: ${thisWeek2 && thisWeek2.choice ? `${thisWeek2.choice.teamName} — ${pct(thisWeek2.choice.winProb)}` : "no eligible team"}</div>
+      ${thisWeek1 && thisWeek1.alternatives.length ? `<div class="trend-note">Other Entry 1 options: ${thisWeek1.alternatives.map(a => `${a.teamName} ${pct(a.winProb)}`).join(" · ")}</div>` : ""}
+
+      <div class="trend-title" style="margin-top:14px;">Entry 1 — Full Path</div>
+      ${path1.map(rowFor).join("")}
+
+      <div class="trend-title" style="margin-top:14px;">Entry 2 — Full Path</div>
+      ${path2.map(rowFor).join("")}
+
+      <div class="trend-note" style="margin-top:10px;">"Thin week" flags weeks with two or fewer teams above 70% — those are the ones that strand people, so the planner tries to keep a usable team in reserve for them. "Better later" means the planner spent a team in a worse spot than its best remaining week, which it only does when the alternative is worse overall. The two entries never share a team in the same week. This is a plan, not a prediction — re-run it weekly as real results come in and the ratings sharpen.</div>
+    `;
+  } catch (e) {
+    out.innerHTML = `<div class="error">${e.message}</div>`;
+  }
+  btn.disabled = false;
+}
+
+// Simple used-team editor so the plan reflects reality
+async function renderSurvivorUsedEditor() {
+  const el = document.getElementById("survivorUsedEditor");
+  const sd = loadSurvivorData();
+  let teams = [];
+  try {
+    const base = NFL_BASE;
+    const params = new URLSearchParams({ week: 1, seasontype: 2, dates: parseInt(document.getElementById("survYear").value, 10) });
+    const res = await fetch(`${base}?${params.toString()}`);
+    const json = await res.json();
+    const seen = {};
+    (json.events || []).forEach(ev => {
+      const comp = (ev.competitions || [])[0];
+      (comp ? comp.competitors || [] : []).forEach(c => {
+        if (c.team && c.team.id) seen[c.team.id] = c.team.shortDisplayName || c.team.displayName;
+      });
+    });
+    teams = Object.keys(seen).map(id => ({ id, name: seen[id] })).sort((a, b) => a.name.localeCompare(b.name));
+  } catch (e) {}
+
+  if (teams.length === 0) { el.innerHTML = `<div class="trend-note">Couldn't load the team list.</div>`; return; }
+
+  const chip = (t, entry) => {
+    const usedList = entry === 1 ? sd.entry1Used : sd.entry2Used;
+    const on = usedList.map(String).includes(String(t.id));
+    return `<button class="odds-btn" data-surv-team="${t.id}" data-surv-entry="${entry}" style="margin:2px; padding:4px 8px; font-size:11px; ${on ? "background:#C4564B; color:#fff;" : ""}">${t.name}</button>`;
+  };
+
+  el.innerHTML = `
+    <div class="trend-line" style="font-weight:700; margin-top:6px;">Entry 1 used</div>
+    <div>${teams.map(t => chip(t, 1)).join("")}</div>
+    <div class="trend-line" style="font-weight:700; margin-top:10px;">Entry 2 used</div>
+    <div>${teams.map(t => chip(t, 2)).join("")}</div>
+  `;
+
+  el.querySelectorAll("[data-surv-team]").forEach(b => {
+    b.addEventListener("click", () => {
+      const id = String(b.getAttribute("data-surv-team"));
+      const entry = parseInt(b.getAttribute("data-surv-entry"), 10);
+      const d = loadSurvivorData();
+      const key = entry === 1 ? "entry1Used" : "entry2Used";
+      const list = (d[key] || []).map(String);
+      d[key] = list.includes(id) ? list.filter(x => x !== id) : [...list, id];
+      saveSurvivorData(d);
+      renderSurvivorUsedEditor();
+    });
+  });
+}
+
 async function findBestSix() {
   const out = document.getElementById("p6AutoPickResults");
   const raw = document.getElementById("p6BulkLines").value;
@@ -5656,11 +5920,13 @@ function populateWeeks() {
 
 // ---------- wiring ----------
 function setActiveTab(btnId, tabId) {
-  ["tabScheduleBtn", "tabLedgerBtn", "tabBacktestBtn", "tabEdgeBtn", "tabPropsBtn", "tabPickSixBtn"].forEach(id => {
-    document.getElementById(id).classList.toggle("active", id === btnId);
+  ["tabScheduleBtn", "tabLedgerBtn", "tabBacktestBtn", "tabEdgeBtn", "tabPropsBtn", "tabPickSixBtn", "tabSurvivorBtn"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle("active", id === btnId);
   });
-  ["scheduleTab", "ledgerTab", "backtestTab", "edgeTab", "propsTab", "pickSixTab"].forEach(id => {
-    document.getElementById(id).style.display = id === tabId ? "block" : "none";
+  ["scheduleTab", "ledgerTab", "backtestTab", "edgeTab", "propsTab", "pickSixTab", "survivorTab"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = id === tabId ? "block" : "none";
   });
 }
 document.getElementById("tabScheduleBtn").addEventListener("click", () => {
@@ -5713,6 +5979,14 @@ document.getElementById("tabPickSixBtn").addEventListener("click", () => {
   renderP6Rows();
   renderP6History();
 });
+document.getElementById("tabSurvivorBtn").addEventListener("click", () => {
+  state.tab = "survivor";
+  setActiveTab("tabSurvivorBtn", "survivorTab");
+  // default the current-week box to whatever week the app is on
+  try { document.getElementById("survWeek").value = state.week || 1; } catch (e) {}
+  renderSurvivorUsedEditor();
+});
+document.getElementById("runSurvivorPlanBtn").addEventListener("click", runSurvivorPlan);
 document.getElementById("p6Book").addEventListener("change", (e) => {
   try { localStorage.setItem("picksix-book", e.target.value); } catch (e2) {}
   renderP6Rows();
