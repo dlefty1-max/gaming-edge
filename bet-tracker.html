@@ -490,6 +490,7 @@
         </div>
       </div>
       <div class="refresh-note" style="margin-top:-6px;">For the current season, set Through Week to whatever's actually been played — fetching future weeks just wastes time. CFB is far slower (many more games); NFL is the quick one.</div>
+      <label style="display:block; margin:6px 0; font-size:12px;"><input type="checkbox" id="defStatsForce"> Force full rebuild (ignore cache — use this if results look stale or wrong)</label>
       <button class="save-btn full" id="buildDefStatsBtn">Build / Rebuild Defensive Stats</button>
       <div id="defStatsResults" style="margin-top:12px;"></div>
     </div>
@@ -879,10 +880,12 @@ function readTeamOffenseFromBoxscore(boxTeam) {
 // LIMITATION, stated plainly: rosters are current, so players who changed teams or retired
 // since the season being analyzed won't be found. Their production lands in an "unknown"
 // bucket rather than being silently misfiled. Coverage % is reported after the build.
-async function buildPositionLookup(league, progressCb) {
+async function buildPositionLookup(league, progressCb, force) {
   const cacheKey = `poslookup-v2-${league}`;
-  const cached = await histDbGet(cacheKey);
-  if (cached) return cached;
+  if (!force) {
+    const cached = await histDbGet(cacheKey);
+    if (cached && Object.keys(cached).length > 0) return cached;
+  }
 
   const sport = league === "nfl" ? "nfl" : "college-football";
   const map = {};
@@ -985,17 +988,19 @@ function readPositionSplitsFromBoxscore(playerBlock, posLookup) {
   return out;
 }
 
-async function buildDefensiveStats(league, year, maxWeek, progressCb) {
-  const cacheKey = `defstats-v2-${league}-${year}-w${maxWeek}`;
-  const cached = await histDbGet(cacheKey);
-  if (cached) return cached;
+async function buildDefensiveStats(league, year, maxWeek, progressCb, force) {
+  const cacheKey = `defstats-v3-${league}-${year}-w${maxWeek}`;
+  if (!force) {
+    const cached = await histDbGet(cacheKey);
+    if (cached) return { ...cached, fromCache: true };
+  }
 
   // position lookup first — box scores carry no position, so this is what makes the
   // RB/WR/TE splits possible at all
   if (progressCb) progressCb(0, 0, 0, "Loading rosters for position lookup…");
   const posLookup = await buildPositionLookup(league, (d, t) => {
     if (progressCb) progressCb(0, 0, 0, `Loading rosters… ${d}/${t} teams`);
-  });
+  }, force);
 
   const def = {}; // teamId -> accumulated stats ALLOWED
   const ensure = (id) => {
@@ -1737,12 +1742,13 @@ async function runBuildDefensiveStats() {
   out.innerHTML = `<div class="refresh-note">Starting… this runs one fetch per game and paces itself, so expect a few minutes. Leave this tab open.</div>`;
 
   try {
+    const force = document.getElementById("defStatsForce").checked;
     const data = await buildDefensiveStats(league, year, maxWeek, (done, failed, week, msg) => {
       const secs = Math.round((Date.now() - started) / 1000);
       out.innerHTML = msg
         ? `<div class="refresh-note">${msg} · ${secs}s elapsed…</div>`
         : `<div class="refresh-note">Week ${week} · ${done} games processed${failed ? ` · ${failed} skipped` : ""} · ${secs}s elapsed…</div>`;
-    });
+    }, force);
 
     const ids = Object.keys(data.teams);
     if (ids.length === 0) {
@@ -1763,7 +1769,7 @@ async function runBuildDefensiveStats() {
 
     out.innerHTML = `
       <div class="trend-score">Built defensive stats for ${ids.length} teams from ${data.gamesProcessed} games${data.gamesFailed ? ` (${data.gamesFailed} skipped)` : ""}.</div>
-      <div class="trend-note">Took ${Math.round((Date.now() - started) / 1000)}s. Cached — the props scanner will use this automatically.</div>
+      <div class="trend-note">${data.fromCache ? `<b style="color:#B4463A;">Loaded from cache — nothing was rebuilt.</b> Tick "Force full rebuild" above to actually re-run it.` : `Took ${Math.round((Date.now() - started) / 1000)}s.`} The props scanner will use this automatically.</div>
       <div class="trend-title" style="margin-top:10px;">Stingiest 5 (sanity check)</div>
       ${withNames.slice(0, 5).map(t => `<div class="trend-line" style="font-size:12px;">${fmt(t)}</div>`).join("")}
       <div class="trend-title" style="margin-top:10px;">Most generous 5</div>
