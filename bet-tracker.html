@@ -880,30 +880,50 @@ function readTeamOffenseFromBoxscore(boxTeam) {
 // since the season being analyzed won't be found. Their production lands in an "unknown"
 // bucket rather than being silently misfiled. Coverage % is reported after the build.
 async function buildPositionLookup(league, progressCb) {
-  const cacheKey = `poslookup-v1-${league}`;
+  const cacheKey = `poslookup-v2-${league}`;
   const cached = await histDbGet(cacheKey);
   if (cached) return cached;
 
   const sport = league === "nfl" ? "nfl" : "college-football";
   const map = {};
+  // Track WHY this fails rather than swallowing errors — an empty map with no explanation
+  // is exactly what made the first attempt impossible to diagnose.
+  const trouble = { teamsFetch: null, teamsFound: 0, rosterErrors: [], rostersOk: 0 };
   try {
-    const res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/${sport}/teams`);
+    const res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/${sport}/teams?limit=50`);
+    if (!res.ok) trouble.teamsFetch = `HTTP ${res.status}`;
     const json = await res.json();
     const teams = ((json.sports || [])[0]?.leagues || [])[0]?.teams || [];
+    trouble.teamsFound = teams.length;
     let done = 0;
     for (const t of teams) {
       const id = t.team && t.team.id;
       if (!id) continue;
       try {
         const roster = await fetchRoster(league, id);
-        roster.forEach(p => { if (p.id && p.pos) map[p.id] = p.pos; });
-      } catch (e) { /* skip a team that fails rather than aborting the whole build */ }
+        let added = 0;
+        roster.forEach(p => { if (p.id && p.pos) { map[String(p.id)] = p.pos; added++; } });
+        if (added > 0) trouble.rostersOk++;
+        else trouble.rosterErrors.push(`team ${id}: roster had ${roster.length} players but 0 with id+pos`);
+      } catch (e) {
+        if (trouble.rosterErrors.length < 4) trouble.rosterErrors.push(`team ${id}: ${e.message}`);
+      }
       done++;
       if (progressCb) progressCb(done, teams.length);
       await new Promise(r => setTimeout(r, 40));
     }
-  } catch (e) { /* returns whatever was gathered */ }
+  } catch (e) { trouble.teamsFetch = trouble.teamsFetch || e.message; }
+  try { window.__posLookupTrouble = trouble; } catch (e) {}
   await histDbSet(cacheKey, map);
+  try {
+    const keys = Object.keys(map);
+    window.__posLookupDiag = {
+      count: keys.length,
+      sampleKeys: keys.slice(0, 5),
+      sampleKeyTypes: keys.slice(0, 5).map(k => typeof k),
+      sampleValues: keys.slice(0, 5).map(k => map[k]),
+    };
+  } catch (e) {}
   return map;
 }
 
@@ -928,7 +948,16 @@ function readPositionSplitsFromBoxscore(playerBlock, posLookup) {
     const iTgt = keys.indexOf("receivingTargets");
     (recCat.athletes || []).forEach(a => {
       const pid = a.athlete && a.athlete.id;
-      const pos = posLookup[pid];
+      if (!window.__boxAthleteDiag && pid != null) {
+        window.__boxAthleteDiag = {
+          rawId: pid,
+          idType: typeof pid,
+          lookupHit: posLookup[pid] !== undefined,
+          lookupHitAsString: posLookup[String(pid)] !== undefined,
+          athleteKeys: Object.keys(a.athlete || {}).slice(0, 12),
+        };
+      }
+      const pos = posLookup[String(pid)];
       const bucket = (pos === "RB" || pos === "FB") ? "RB" : (pos === "WR" ? "WR" : (pos === "TE" ? "TE" : "unknown"));
       if (bucket === "unknown") out.unmatched++; else out.matched++;
       const st = a.stats || [];
@@ -945,7 +974,7 @@ function readPositionSplitsFromBoxscore(playerBlock, posLookup) {
     const iYds = keys.indexOf("rushingYards");
     (rushCat.athletes || []).forEach(a => {
       const pid = a.athlete && a.athlete.id;
-      const pos = posLookup[pid];
+      const pos = posLookup[String(pid)];
       const bucket = (pos === "RB" || pos === "FB") ? "RB" : (pos === "QB" ? "QB" : "unknown");
       const st = a.stats || [];
       const v = iYds >= 0 ? parseFloat(String(st[iYds]).replace(/,/g, "")) : 0;
@@ -1752,6 +1781,13 @@ async function runBuildDefensiveStats() {
           ${rbSort.slice(-3).reverse().map(t => `<div class="trend-line" style="font-size:12px;">${fmtPos(t)}</div>`).join("")}
         `;
       })()}
+      ${(data.positionCoveragePct != null && data.positionCoveragePct < 50) ? `
+        <div class="trend-title" style="margin-top:12px; color:#C4463A;">Diagnostic (position matching failed)</div>
+        <div class="trend-line" style="font-size:11px;">Build trouble: ${window.__posLookupTrouble ? `teams endpoint: ${window.__posLookupTrouble.teamsFetch || "ok"} · teams found: ${window.__posLookupTrouble.teamsFound} · rosters with data: ${window.__posLookupTrouble.rostersOk} · errors: ${window.__posLookupTrouble.rosterErrors.join(" | ") || "none"}` : "(not captured)"}</div>
+        <div class="trend-line" style="font-size:11px;">Roster map: ${window.__posLookupDiag ? `${window.__posLookupDiag.count} players · sample keys ${JSON.stringify(window.__posLookupDiag.sampleKeys)} (types: ${window.__posLookupDiag.sampleKeyTypes.join(", ")}) · sample values ${JSON.stringify(window.__posLookupDiag.sampleValues)}` : "(not captured)"}</div>
+        <div class="trend-line" style="font-size:11px;">Box score athlete: ${window.__boxAthleteDiag ? `raw id ${JSON.stringify(window.__boxAthleteDiag.rawId)} (type ${window.__boxAthleteDiag.idType}) · direct hit: ${window.__boxAthleteDiag.lookupHit} · string hit: ${window.__boxAthleteDiag.lookupHitAsString} · athlete fields: ${window.__boxAthleteDiag.athleteKeys.join(", ")}` : "(not captured)"}</div>
+        <div class="trend-note">Paste this into chat — it shows exactly where the ID matching breaks.</div>
+      ` : ""}
       <div class="trend-note" style="margin-top:8px;">If these numbers look wrong (e.g. all zeros, or wildly off from reality), the box score field names differ from what this expects — say so and it can be fixed.</div>
     `;
   } catch (e) {
