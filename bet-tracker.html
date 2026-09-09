@@ -466,6 +466,34 @@
   </div>
 
   <div id="propsTab" style="display:none;">
+    <div class="card" style="padding:16px; margin-bottom:16px; border:2px solid #1A6A3A;">
+      <div class="trend-title" style="margin-bottom:6px;">🛡️ Opponent Defense Data</div>
+      <div class="refresh-note">ESPN doesn't publish yards-allowed directly, so this reconstructs it from box scores — walking every completed game and summing what each defense gave up. <b>Free (no API credits), but slow</b> — roughly a minute per 60 games, since it fetches each game individually and paces itself to avoid hammering ESPN. Build it once a week; results are cached. Once built, the props scanner shows how each player's opponent actually defends that stat.</div>
+      <div class="row">
+        <div>
+          <label>League</label>
+          <select id="defStatsLeague">
+            <option value="nfl" selected>NFL</option>
+            <option value="cfb">College Football</option>
+          </select>
+        </div>
+        <div>
+          <label>Season</label>
+          <select id="defStatsYear">
+            <option value="2026" selected>2026</option>
+            <option value="2025">2025</option>
+          </select>
+        </div>
+        <div>
+          <label>Through Week</label>
+          <input id="defStatsWeek" value="18" inputmode="numeric">
+        </div>
+      </div>
+      <div class="refresh-note" style="margin-top:-6px;">For the current season, set Through Week to whatever's actually been played — fetching future weeks just wastes time. CFB is far slower (many more games); NFL is the quick one.</div>
+      <button class="save-btn full" id="buildDefStatsBtn">Build / Rebuild Defensive Stats</button>
+      <div id="defStatsResults" style="margin-top:12px;"></div>
+    </div>
+
     <div class="card" style="padding:16px; margin-bottom:16px;">
       <div class="trend-title" style="margin-bottom:6px;">Weekly Props Scanner</div>
       <div class="refresh-note">Pulls posted player prop lines for every game this week, cross-references each player's real game log, and ranks every prop by how often they've actually gone over that number. This wires together several new pieces at once — real API cost, and worth checking the first run carefully.</div>
@@ -789,6 +817,151 @@ function applyGameToElo(elo, g, K, HOME_ADV, movCap, probDivisor) {
 // is built from DISRUPTION stats (sacks, takeaways, tackles-for-loss, passes defended) rather
 // than true yards-allowed efficiency. That's a real, weaker proxy — the backtest is what tells
 // us whether it actually helps, rather than assuming it does.
+// ---------- defensive stats reconstructed from box scores ----------
+// ESPN never populates yardsAllowed/pointsAllowed on the team endpoint (verified — always 0).
+// But every team's OFFENSIVE box score is complete, so a defense's yards-allowed is just the
+// sum of what its opponents gained. This walks completed games and accumulates that.
+// SLOW BY DESIGN: one fetch per game (~270 for an NFL season). Free, but must be run on
+// demand and cached, never on every scan. ESPN throttles heavy request volume, so there's a
+// small delay between calls.
+async function fetchGameBoxscore(league, eventId) {
+  const sport = league === "nfl" ? "nfl" : "college-football";
+  const res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/${sport}/summary?event=${eventId}`);
+  if (!res.ok) throw new Error(`boxscore ${eventId}: status ${res.status}`);
+  return res.json();
+}
+
+// Reads one team's offensive line out of a box score. Field names are matched loosely against
+// several known variants because ESPN isn't consistent across sports/seasons — and guessing a
+// single exact name has broken this project before.
+function readTeamOffenseFromBoxscore(boxTeam) {
+  const stats = (boxTeam && boxTeam.statistics) || [];
+  const get = (...names) => {
+    for (const n of names) {
+      const s = stats.find(x => (x.name || "").toLowerCase() === n.toLowerCase());
+      if (s) {
+        const v = parseFloat(String(s.displayValue).replace(/,/g, ""));
+        if (!isNaN(v)) return v;
+      }
+    }
+    return null;
+  };
+  // "completions-attempts" style fields need splitting
+  const splitPair = (...names) => {
+    for (const n of names) {
+      const s = stats.find(x => (x.name || "").toLowerCase() === n.toLowerCase());
+      if (s && typeof s.displayValue === "string" && s.displayValue.includes("-")) {
+        const parts = s.displayValue.split("-").map(p => parseFloat(p.replace(/,/g, "")));
+        if (parts.length >= 2 && !parts.some(isNaN)) return parts;
+      }
+    }
+    return null;
+  };
+  const compAtt = splitPair("completionAttempts");
+  return {
+    totalYards: get("totalYards", "netTotalYards"),
+    totalPlays: get("totalOffensivePlays", "totalPlays"),
+    passYards: get("netPassingYards", "passingYards"),
+    rushYards: get("rushingYards", "netRushingYards"),
+    rushAttempts: get("rushingAttempts", "rushingAtt"),
+    passCompletions: compAtt ? compAtt[0] : null,
+    passAttempts: compAtt ? compAtt[1] : null,
+    firstDowns: get("firstDowns"),
+    turnovers: get("turnovers", "totalTurnovers"),
+  };
+}
+
+// Builds yards/points-allowed for every team across a season. Progress callback so the UI can
+// show it's working — this takes minutes, not seconds.
+async function buildDefensiveStats(league, year, maxWeek, progressCb) {
+  const cacheKey = `defstats-v1-${league}-${year}-w${maxWeek}`;
+  const cached = await histDbGet(cacheKey);
+  if (cached) return cached;
+
+  const def = {}; // teamId -> accumulated stats ALLOWED
+  const ensure = (id) => {
+    if (!def[id]) def[id] = { games: 0, yardsAllowed: 0, playsAgainst: 0, passYardsAllowed: 0, rushYardsAllowed: 0, rushAttAgainst: 0, passAttAgainst: 0, pointsAllowed: 0, firstDownsAllowed: 0, takeaways: 0 };
+    return def[id];
+  };
+
+  let processed = 0, failed = 0;
+  const sport = league === "nfl" ? "nfl" : "college-football";
+  for (let w = 1; w <= maxWeek; w++) {
+    // reuse the scoreboard to get event IDs for the week
+    let events = [];
+    try {
+      const base = league === "nfl" ? NFL_BASE : CFB_BASE;
+      const params = new URLSearchParams({ week: w, seasontype: 2, dates: year });
+      if (league === "cfb") params.set("groups", "80");
+      const res = await fetch(`${base}?${params.toString()}`);
+      const json = await res.json();
+      events = (json.events || []).filter(ev => ev.status && ev.status.type && ev.status.type.completed);
+    } catch (e) { continue; }
+
+    for (const ev of events) {
+      try {
+        const box = await fetchGameBoxscore(league, ev.id);
+        const boxTeams = (box.boxscore && box.boxscore.teams) || [];
+        if (boxTeams.length < 2) { failed++; continue; }
+
+        // scores come from the competition, not the boxscore stat list
+        const comp = (box.header && box.header.competitions && box.header.competitions[0]) || null;
+        const scoreById = {};
+        if (comp) (comp.competitors || []).forEach(c => { scoreById[c.team && c.team.id] = parseFloat(c.score); });
+
+        const sides = boxTeams.map(bt => ({ id: bt.team && bt.team.id, off: readTeamOffenseFromBoxscore(bt) }));
+        // each team's DEFENSE gets credited with what the OTHER team's offense produced
+        for (let i = 0; i < 2; i++) {
+          const me = sides[i], them = sides[1 - i];
+          if (!me.id || !them.id) continue;
+          const d = ensure(me.id);
+          d.games++;
+          if (them.off.totalYards != null) d.yardsAllowed += them.off.totalYards;
+          if (them.off.totalPlays != null) d.playsAgainst += them.off.totalPlays;
+          if (them.off.passYards != null) d.passYardsAllowed += them.off.passYards;
+          if (them.off.rushYards != null) d.rushYardsAllowed += them.off.rushYards;
+          if (them.off.rushAttempts != null) d.rushAttAgainst += them.off.rushAttempts;
+          if (them.off.passAttempts != null) d.passAttAgainst += them.off.passAttempts;
+          if (them.off.firstDowns != null) d.firstDownsAllowed += them.off.firstDowns;
+          if (them.off.turnovers != null) d.takeaways += them.off.turnovers;
+          const oppScore = scoreById[them.id];
+          if (oppScore != null && !isNaN(oppScore)) d.pointsAllowed += oppScore;
+        }
+        processed++;
+      } catch (e) { failed++; }
+      if (progressCb) progressCb(processed, failed, w);
+      await new Promise(r => setTimeout(r, 60)); // be a good citizen — ESPN throttles heavy volume
+    }
+  }
+
+  // convert accumulations into per-game / per-play rates
+  const out = { league, year, maxWeek, builtAt: new Date().toISOString(), gamesProcessed: processed, gamesFailed: failed, teams: {} };
+  Object.keys(def).forEach(id => {
+    const d = def[id];
+    if (!d.games) return;
+    out.teams[id] = {
+      games: d.games,
+      yardsAllowedPerGame: d.yardsAllowed / d.games,
+      yardsAllowedPerPlay: d.playsAgainst ? d.yardsAllowed / d.playsAgainst : null,
+      passYardsAllowedPerGame: d.passYardsAllowed / d.games,
+      rushYardsAllowedPerGame: d.rushYardsAllowed / d.games,
+      yardsPerRushAllowed: d.rushAttAgainst ? d.rushYardsAllowed / d.rushAttAgainst : null,
+      yardsPerPassAllowed: d.passAttAgainst ? d.passYardsAllowed / d.passAttAgainst : null,
+      pointsAllowedPerGame: d.pointsAllowed / d.games,
+      firstDownsAllowedPerGame: d.firstDownsAllowed / d.games,
+      takeawaysPerGame: d.takeaways / d.games,
+    };
+  });
+
+  await histDbSet(cacheKey, out);
+  return out;
+}
+
+// Convenience: read cached defensive stats without triggering a rebuild.
+async function getCachedDefensiveStats(league, year, maxWeek) {
+  try { return await histDbGet(`defstats-v1-${league}-${year}-w${maxWeek}`); } catch (e) { return null; }
+}
+
 const effCache = {};
 
 async function fetchTeamEfficiency(league, teamId, year) {
@@ -1385,6 +1558,54 @@ async function fetchEventPlayerProps(league, seasonType, eventId, apiKey) {
   return await res.json();
 }
 
+async function runBuildDefensiveStats() {
+  const league = document.getElementById("defStatsLeague").value;
+  const year = parseInt(document.getElementById("defStatsYear").value, 10);
+  const maxWeek = Math.max(1, Math.min(18, parseInt(document.getElementById("defStatsWeek").value, 10) || 18));
+  const out = document.getElementById("defStatsResults");
+  const btn = document.getElementById("buildDefStatsBtn");
+  btn.disabled = true;
+  const started = Date.now();
+  out.innerHTML = `<div class="refresh-note">Starting… this runs one fetch per game and paces itself, so expect a few minutes. Leave this tab open.</div>`;
+
+  try {
+    const data = await buildDefensiveStats(league, year, maxWeek, (done, failed, week) => {
+      const secs = Math.round((Date.now() - started) / 1000);
+      out.innerHTML = `<div class="refresh-note">Week ${week} · ${done} games processed${failed ? ` · ${failed} skipped` : ""} · ${secs}s elapsed…</div>`;
+    });
+
+    const ids = Object.keys(data.teams);
+    if (ids.length === 0) {
+      out.innerHTML = `<div class="error">No defensive data could be built — ${data.gamesFailed} games failed to parse. The box score format may differ from what this expects.</div>`;
+      btn.disabled = false;
+      return;
+    }
+
+    // sanity check: show the extremes so it's obvious at a glance whether numbers look real
+    const withNames = ids.map(id => ({ id, ...data.teams[id] })).filter(t => t.yardsAllowedPerGame > 0);
+    withNames.sort((a, b) => a.yardsAllowedPerGame - b.yardsAllowedPerGame);
+    const nameFor = (id) => {
+      const g = state.games.find(x => String(x.homeId) === String(id) || String(x.awayId) === String(id));
+      if (!g) return `team ${id}`;
+      return String(g.homeId) === String(id) ? g.home : g.away;
+    };
+    const fmt = (t) => `${nameFor(t.id)} — ${t.yardsAllowedPerGame.toFixed(1)} yds/g, ${t.pointsAllowedPerGame.toFixed(1)} pts/g${t.yardsAllowedPerPlay ? `, ${t.yardsAllowedPerPlay.toFixed(2)} yds/play` : ""}`;
+
+    out.innerHTML = `
+      <div class="trend-score">Built defensive stats for ${ids.length} teams from ${data.gamesProcessed} games${data.gamesFailed ? ` (${data.gamesFailed} skipped)` : ""}.</div>
+      <div class="trend-note">Took ${Math.round((Date.now() - started) / 1000)}s. Cached — the props scanner will use this automatically.</div>
+      <div class="trend-title" style="margin-top:10px;">Stingiest 5 (sanity check)</div>
+      ${withNames.slice(0, 5).map(t => `<div class="trend-line" style="font-size:12px;">${fmt(t)}</div>`).join("")}
+      <div class="trend-title" style="margin-top:10px;">Most generous 5</div>
+      ${withNames.slice(-5).reverse().map(t => `<div class="trend-line" style="font-size:12px;">${fmt(t)}</div>`).join("")}
+      <div class="trend-note" style="margin-top:8px;">If these numbers look wrong (e.g. all zeros, or wildly off from reality), the box score field names differ from what this expects — say so and it can be fixed.</div>
+    `;
+  } catch (e) {
+    out.innerHTML = `<div class="error">${e.message}</div>`;
+  }
+  btn.disabled = false;
+}
+
 async function estimatePropScanCost() {
   const out = document.getElementById("propScanResults");
   let apiKey = "";
@@ -1436,6 +1657,15 @@ async function runPropScan(matchedEvents, apiKey) {
   const skipped = [];
   let done = 0;
   const gameLogCache = {}; // keyed by athleteId — a player with props in multiple markets (e.g. a WR with reception_yds AND receptions) only gets fetched once per scan run
+  // Load reconstructed defensive stats if they've been built (Props tab → Build Defensive Stats).
+  // Read-only here — never triggers a rebuild, since that's slow and should stay deliberate.
+  let defStatsForScan = null;
+  try {
+    for (const wk of [18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]) {
+      defStatsForScan = await getCachedDefensiveStats(state.league, state.year, wk);
+      if (defStatsForScan) break;
+    }
+  } catch (e) {}
 
   for (const { event, game } of matchedEvents) {
     done++;
@@ -1662,7 +1892,37 @@ async function runPropScan(matchedEvents, apiKey) {
             vsOppNote = { opponent: opponentName, avg: oppAvg, games: oppVals.length };
           }
 
+
+          // Opponent defense context — uses reconstructed box-score data if it's been built.
+          // Ranks the opponent against the league for the specific stat this prop is about,
+          // so a hit rate can be read against whether that defense is soft or stingy there.
+          let oppDefNote = null;
+          if (defStatsForScan && defStatsForScan.teams) {
+            const oppId = playerIsAway ? game.homeId : game.awayId;
+            const oppDef = defStatsForScan.teams[oppId];
+            if (oppDef) {
+              const isRush = mapInfo.categoryHint === "rush";
+              const isPassGame = mapInfo.categoryHint === "receiv" || marketKey === "player_pass_yds";
+              const metric = isRush ? "rushYardsAllowedPerGame" : isPassGame ? "passYardsAllowedPerGame" : "yardsAllowedPerGame";
+              const label = isRush ? "rush yds allowed" : isPassGame ? "pass yds allowed" : "total yds allowed";
+              const val = oppDef[metric];
+              if (val != null) {
+                const all = Object.values(defStatsForScan.teams).map(t => t[metric]).filter(v => v != null).sort((a, b) => a - b);
+                const rank = all.findIndex(v => v >= val) + 1;
+                const pct = all.length ? rank / all.length : 0.5;
+                oppDefNote = {
+                  opponent: opponentName,
+                  label,
+                  value: val,
+                  rank,
+                  total: all.length,
+                  verdict: pct >= 0.7 ? "generous" : pct <= 0.3 ? "stingy" : "middling",
+                };
+              }
+            }
+          }
           results.push({
+            oppDefNote,
             player: rosterMatch.name,
             pos: rosterMatch.pos,
             desc: mapInfo.desc,
@@ -1725,17 +1985,25 @@ async function runPropScan(matchedEvents, apiKey) {
           ? `<div style="font-size:11px; color:#8A96A1; margin-top:2px;">Vs. ${v.opponent}: scored in ${v.hitPct.toFixed(0)}% of ${v.games} past meeting${v.games > 1 ? "s" : ""}</div>`
           : `<div style="font-size:11px; color:#8A96A1; margin-top:2px;">Vs. ${v.opponent}: averaged ${v.avg.toFixed(1)} over ${v.games} past meeting${v.games > 1 ? "s" : ""}</div>`;
       }
+      let oppDefHtml = "";
+      if (r.oppDefNote) {
+        const d = r.oppDefNote;
+        // green = good FOR the bettor taking the Over (generous defense), red = tough matchup
+        const color = d.verdict === "generous" ? "#4C8B5A" : d.verdict === "stingy" ? "#C4564B" : "#8A96A1";
+        oppDefHtml = `<div style="font-size:11px; color:${color}; margin-top:2px;">${d.opponent} defense: ${d.value.toFixed(1)} ${d.label}/g — <b>${d.verdict}</b> (${d.rank} of ${d.total}, 1 = stingiest)</div>`;
+      }
       return `<div class="trend-line" style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px; padding-bottom:6px;">
         <span>
           <div><b>${r.player}</b> (${r.pos}) ${r.desc} ${r.isBoolean ? r.side : `${r.side} ${r.line}`} — hit <b>${r.hitPct.toFixed(0)}%</b> of last ${r.sampleSize}${r.thisSeasonPct != null ? ` <span style="color:#3B7DD8;">(${state.year}: ${r.thisSeasonPct.toFixed(0)}% of ${r.thisSeasonSample})</span>` : ""} · ${r.matchup} · ${r.isBoolean ? r.overPrice : (r.side === "Over" ? r.overPrice : r.underPrice)}${r.edgePct != null ? ` · <span style="color:${r.edgePct > 0 ? "#4C8B5A" : "#C4564B"};font-weight:700;">edge ${r.edgePct > 0 ? "+" : ""}${r.edgePct.toFixed(1)}%</span>` : ` <span style="color:#8A96A1;">(no price to compare)</span>`}</div>
           ${usageHtml}
           ${statTrendHtml}
           ${vsOppHtml}
+          ${oppDefHtml}
         </span>
         <button class="odds-btn" style="flex:none; padding:6px 10px;" data-add-prop="${i}">+ Add</button>
       </div>`;
     }).join("")}
-    <div class="trend-note" style="margin-top:8px;">Ranked by edge — real hit rate minus what the price implies (vig removed when both sides are priced), highest edge first. Every prop now shows extra verification where available: TD-scorer props show an opportunity trend (targets/carries, since TDs themselves are the noisiest stat in football); yardage/reception props show the stat's own recent trend directly (more meaningful there, since usage IS the stat); all props show history against this exact opponent when any exists. "No price to compare" means only one side had odds available. Once ${state.year} games start piling up, a blue ${state.year}-only figure appears next to the multi-season one. ${skipped.length ? `${skipped.length} props skipped along the way (name mismatches, missing stat data, or too few games to judge).` : ""}</div>
+    <div class="trend-note" style="margin-top:8px;">Ranked by edge — real hit rate minus what the price implies (vig removed when both sides are priced), highest edge first. Every prop now shows extra verification where available: TD-scorer props show an opportunity trend (targets/carries, since TDs themselves are the noisiest stat in football); yardage/reception props show the stat's own recent trend directly (more meaningful there, since usage IS the stat); all props show history against this exact opponent when any exists. If you've built the defensive data (card at the top of this tab), each prop also shows how that opponent actually defends this specific stat, ranked against the league. "No price to compare" means only one side had odds available. Once ${state.year} games start piling up, a blue ${state.year}-only figure appears next to the multi-season one. ${skipped.length ? `${skipped.length} props skipped along the way (name mismatches, missing stat data, or too few games to judge).` : ""}</div>
     ${skipped.some(s => s.startsWith("DIAG")) ? `<div class="trend-title" style="margin-top:10px;">Diagnostic</div>${skipped.filter(s => s.startsWith("DIAG")).map(s => `<div class="trend-line" style="font-size:11px;">${s}</div>`).join("")}` : ""}
   `;
 
@@ -5189,6 +5457,7 @@ document.getElementById("runEdgeScanBtn").addEventListener("click", runEdgeScan)
 document.getElementById("calcPropEdgeBtn").addEventListener("click", calcPropEdge);
 document.getElementById("propFindTeamBtn").addEventListener("click", findPropTeam);
 document.getElementById("propScanEstimateBtn").addEventListener("click", estimatePropScanCost);
+document.getElementById("buildDefStatsBtn").addEventListener("click", runBuildDefensiveStats);
 document.getElementById("p6Week").addEventListener("change", renderP6Rows);
 document.getElementById("p6BulkFillBtn").addEventListener("click", fillP6PicksFromBulk);
 document.getElementById("p6SaveBtn").addEventListener("click", saveP6Week);
