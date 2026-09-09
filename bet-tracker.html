@@ -1002,8 +1002,13 @@ function readPositionSplitsFromBoxscore(playerBlock, posLookup) {
   return out;
 }
 
+// Bump this whenever the shape or contents of the defensive build change. Both the writer
+// and every reader use it, so they can't drift apart — a silent version mismatch already
+// cost one debugging round here.
+const DEFSTATS_CACHE_VERSION = "v4";
+
 async function buildDefensiveStats(league, year, maxWeek, progressCb, force) {
-  const cacheKey = `defstats-v4-${league}-${year}-w${maxWeek}`;
+  const cacheKey = `defstats-${DEFSTATS_CACHE_VERSION}-${league}-${year}-w${maxWeek}`;
   if (!force) {
     const cached = await histDbGet(cacheKey);
     if (cached) return { ...cached, fromCache: true };
@@ -1161,8 +1166,25 @@ async function buildDefensiveStats(league, year, maxWeek, progressCb, force) {
 }
 
 // Convenience: read cached defensive stats without triggering a rebuild.
+// Reads whatever defensive build exists, newest season first. Deliberately falls back to a
+// PRIOR season if the current one hasn't been built (or barely has games yet) — early in a
+// season last year's defensive tendencies are far more useful than one week of noise.
+// Cache version must match buildDefensiveStats — a mismatch here silently returns nothing.
 async function getCachedDefensiveStats(league, year, maxWeek) {
-  try { return await histDbGet(`defstats-v1-${league}-${year}-w${maxWeek}`); } catch (e) { return null; }
+  try { return await histDbGet(`defstats-${DEFSTATS_CACHE_VERSION}-${league}-${year}-w${maxWeek}`); } catch (e) { return null; }
+}
+
+// Searches across recent seasons and week counts for any build that exists.
+async function findAnyDefensiveStats(league, currentYear) {
+  for (const yr of [currentYear, currentYear - 1]) {
+    for (let wk = 18; wk >= 1; wk--) {
+      try {
+        const hit = await histDbGet(`defstats-${DEFSTATS_CACHE_VERSION}-${league}-${yr}-w${wk}`);
+        if (hit && hit.teams && Object.keys(hit.teams).length > 0) return { ...hit, sourceYear: yr, sourceWeek: wk };
+      } catch (e) {}
+    }
+  }
+  return null;
 }
 
 const effCache = {};
@@ -1886,12 +1908,7 @@ async function runPropScan(matchedEvents, apiKey) {
   // Load reconstructed defensive stats if they've been built (Props tab → Build Defensive Stats).
   // Read-only here — never triggers a rebuild, since that's slow and should stay deliberate.
   let defStatsForScan = null;
-  try {
-    for (const wk of [18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]) {
-      defStatsForScan = await getCachedDefensiveStats(state.league, state.year, wk);
-      if (defStatsForScan) break;
-    }
-  } catch (e) {}
+  try { defStatsForScan = await findAnyDefensiveStats(state.league, state.year); } catch (e) {}
 
   for (const { event, game } of matchedEvents) {
     done++;
@@ -2247,7 +2264,7 @@ async function runPropScan(matchedEvents, apiKey) {
         <button class="odds-btn" style="flex:none; padding:6px 10px;" data-add-prop="${i}">+ Add</button>
       </div>`;
     }).join("")}
-    <div class="trend-note" style="margin-top:8px;">Ranked by edge — real hit rate minus what the price implies (vig removed when both sides are priced), highest edge first. Every prop now shows extra verification where available: TD-scorer props show an opportunity trend (targets/carries, since TDs themselves are the noisiest stat in football); yardage/reception props show the stat's own recent trend directly (more meaningful there, since usage IS the stat); all props show history against this exact opponent when any exists. If you've built the defensive data (card at the top of this tab), each prop also shows how that opponent actually defends this specific stat, ranked against the league. "No price to compare" means only one side had odds available. Once ${state.year} games start piling up, a blue ${state.year}-only figure appears next to the multi-season one. ${skipped.length ? `${skipped.length} props skipped along the way (name mismatches, missing stat data, or too few games to judge).` : ""}</div>
+    <div class="trend-note" style="margin-top:8px;">Ranked by edge — real hit rate minus what the price implies (vig removed when both sides are priced), highest edge first. Every prop now shows extra verification where available: TD-scorer props show an opportunity trend (targets/carries, since TDs themselves are the noisiest stat in football); yardage/reception props show the stat's own recent trend directly (more meaningful there, since usage IS the stat); all props show history against this exact opponent when any exists. ${defStatsForScan ? `Opponent-defense context is on, using the <b>${defStatsForScan.sourceYear}</b> build (${defStatsForScan.positionCoveragePct != null ? `${defStatsForScan.positionCoveragePct.toFixed(0)}% position coverage` : "team totals only"}).` : `<b>No defensive data loaded</b> — build it with the card at the top of this tab to see how each opponent actually defends this stat.`} "No price to compare" means only one side had odds available. Once ${state.year} games start piling up, a blue ${state.year}-only figure appears next to the multi-season one. ${skipped.length ? `${skipped.length} props skipped along the way (name mismatches, missing stat data, or too few games to judge).` : ""}</div>
     ${skipped.some(s => s.startsWith("DIAG")) ? `<div class="trend-title" style="margin-top:10px;">Diagnostic</div>${skipped.filter(s => s.startsWith("DIAG")).map(s => `<div class="trend-line" style="font-size:11px;">${s}</div>`).join("")}` : ""}
   `;
 
