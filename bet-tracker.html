@@ -366,8 +366,8 @@
     <div id="backtestResults"></div>
 
     <div class="card" style="padding:16px; margin-bottom:16px; border:2px dashed #E08A2E;">
-      <div class="trend-title" style="margin-bottom:8px;">🔬 Team Stats Probe (diagnostic)</div>
-      <div class="refresh-note">Before building an efficiency-based model (yards/play, third-down %, turnover margin, etc.) this checks what ESPN's team-stats endpoints <b>actually</b> return, rather than assuming. It tries several known endpoint shapes and reports which work and exactly what stat names are inside. Free — ESPN data only, no paid credits. This is a temporary tool; it comes out once the real model is built.</div>
+      <div class="trend-title" style="margin-bottom:8px;">🔬 Box Score Probe (diagnostic)</div>
+      <div class="refresh-note">Inspects the <b>player-level</b> box score for one completed game, so position-split defensive stats (receptions allowed to RBs vs WRs vs TEs) can be built on verified field names instead of guesses. Shows every stat category, its column keys, and a sample player with their position. Free — ESPN data only. Temporary tool; it comes out once the real build is done.</div>
       <div class="row">
         <div>
           <label>League</label>
@@ -4898,58 +4898,67 @@ async function runStatsProbe() {
   const out = document.getElementById("statsProbeResults");
   const btn = document.getElementById("runStatsProbeBtn");
   btn.disabled = true;
-  out.innerHTML = `<div class="refresh-note">Probing endpoints…</div>`;
+  out.innerHTML = `<div class="refresh-note">Finding a completed game to inspect…</div>`;
 
-  const leagueSlug = league === "nfl" ? "nfl" : "college-football";
-
-  // grab a real team id from the current schedule so we probe with something valid
-  let teamId = null, teamName = "";
-  if (state.games.length > 0) { teamId = state.games[0].homeId; teamName = state.games[0].home; }
-  if (!teamId) {
-    out.innerHTML = `<div class="error">Load the Schedule tab first so the probe has a real team ID to test with.</div>`;
-    btn.disabled = false;
-    return;
-  }
-
-  // The core API endpoint is confirmed working (238 stat fields). The remaining unknown is
-  // STRUCTURE: those stats are grouped into categories under `splits`, and we need to know
-  // which category holds DEFENSIVE numbers (yards/points allowed) vs offensive production —
-  // an offense-vs-defense model is useless without both sides.
-  const coreUrl = `https://sports.core.api.espn.com/v2/sports/football/leagues/${leagueSlug}/seasons/${year}/types/2/teams/${teamId}/statistics`;
-  const findings = [];
+  // Probe the PLAYER-level box score structure, so position-split defensive stats
+  // (receptions allowed to RB vs WR vs TE) can be built on verified field names.
   try {
-    const res = await fetch(coreUrl);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = await res.json();
-    const cats = (json.splits && json.splits.categories) || [];
-    findings.push({
-      label: "core API — category map",
-      url: coreUrl,
-      ok: true,
-      categories: cats.map(c => ({
-        name: c.name || c.displayName || "(unnamed)",
-        statCount: (c.stats || []).length,
-        sample: (c.stats || []).slice(0, 14).map(s => `${s.name}=${s.displayValue !== undefined ? s.displayValue : s.value}`),
-      })),
-    });
-  } catch (e) {
-    findings.push({ label: "core API — category map", url: coreUrl, ok: false, note: e.message });
-  }
+    const base = league === "nfl" ? NFL_BASE : CFB_BASE;
+    const params = new URLSearchParams({ week: 1, seasontype: 2, dates: year });
+    if (league === "cfb") params.set("groups", "80");
+    const sbRes = await fetch(`${base}?${params.toString()}`);
+    const sb = await sbRes.json();
+    const done = (sb.events || []).filter(ev => ev.status && ev.status.type && ev.status.type.completed);
+    if (done.length === 0) {
+      out.innerHTML = `<div class="error">No completed games found for ${year} week 1 — try an earlier season.</div>`;
+      btn.disabled = false;
+      return;
+    }
+    const ev = done[0];
+    out.innerHTML = `<div class="refresh-note">Inspecting ${ev.name || ev.id}…</div>`;
+    const box = await fetchGameBoxscore(league, ev.id);
+    const players = (box.boxscore && box.boxscore.players) || [];
 
-  out.innerHTML = `
-    <div class="trend-line">Probed using <b>${teamName}</b> (id ${teamId}), ${year} ${league.toUpperCase()}.</div>
-    ${findings.map(f => !f.ok ? `
-      <div class="trend-line" style="margin-top:10px;"><b style="color:#C4564B;">FAILED</b> — ${f.label}</div>
-      <div class="trend-note" style="font-size:11px;">${f.note}</div>
-    ` : `
-      <div class="trend-line" style="margin-top:10px;"><b style="color:#4C8B5A;">WORKS</b> — ${f.label} · found ${f.categories.length} categories</div>
-      ${f.categories.map(c => `
-        <div class="trend-line" style="margin-top:8px; font-size:12px;"><b>${c.name}</b> (${c.statCount} stats)</div>
-        <div class="trend-line" style="font-size:11px; color:#1A4A8A;">${c.sample.join(" · ")}</div>
+    if (players.length === 0) {
+      out.innerHTML = `<div class="error">No <code>boxscore.players</code> array in this response — top-level boxscore keys: ${Object.keys(box.boxscore || {}).join(", ")}</div>`;
+      btn.disabled = false;
+      return;
+    }
+
+    const teamBlocks = players.map(p => ({
+      team: (p.team && (p.team.displayName || p.team.abbreviation)) || "(unknown)",
+      teamId: p.team && p.team.id,
+      categories: (p.statistics || []).map(c => ({
+        name: c.name || "(unnamed)",
+        keys: c.keys || [],
+        labels: c.labels || [],
+        athleteCount: (c.athletes || []).length,
+        sampleAthlete: (c.athletes || [])[0]
+          ? {
+              name: ((c.athletes[0].athlete || {}).displayName) || "?",
+              position: (((c.athletes[0].athlete || {}).position || {}).abbreviation) || "(no position field)",
+              stats: c.athletes[0].stats || [],
+            }
+          : null,
+      })),
+    }));
+
+    out.innerHTML = `
+      <div class="trend-line">Game: <b>${ev.name || ev.id}</b> (${year} wk 1)</div>
+      ${teamBlocks.map(tb => `
+        <div class="trend-line" style="margin-top:10px;"><b>${tb.team}</b> — ${tb.categories.length} stat categories</div>
+        ${tb.categories.map(c => `
+          <div class="trend-line" style="margin-top:6px; font-size:12px;"><b>${c.name}</b> · ${c.athleteCount} players</div>
+          <div class="trend-line" style="font-size:11px; color:#1A4A8A;">keys: ${c.keys.join(", ") || "(none)"}</div>
+          <div class="trend-line" style="font-size:11px; color:#8A96A1;">labels: ${c.labels.join(", ") || "(none)"}</div>
+          ${c.sampleAthlete ? `<div class="trend-line" style="font-size:11px;">sample: ${c.sampleAthlete.name} [pos: ${c.sampleAthlete.position}] → ${c.sampleAthlete.stats.join(", ")}</div>` : ""}
+        `).join("")}
       `).join("")}
-    `).join("")}
-    <div class="trend-note" style="margin-top:10px;">Looking for which category holds DEFENSIVE numbers (yards/points allowed). Paste this back into chat.</div>
-  `;
+      <div class="trend-note" style="margin-top:10px;">Key question: does each athlete carry a <b>position</b>, and which category holds receptions? Paste this back into chat.</div>
+    `;
+  } catch (e) {
+    out.innerHTML = `<div class="error">${e.message}</div>`;
+  }
   btn.disabled = false;
 }
 
