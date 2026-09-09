@@ -880,24 +880,38 @@ function readTeamOffenseFromBoxscore(boxTeam) {
 // LIMITATION, stated plainly: rosters are current, so players who changed teams or retired
 // since the season being analyzed won't be found. Their production lands in an "unknown"
 // bucket rather than being silently misfiled. Coverage % is reported after the build.
-async function buildPositionLookup(league, progressCb, force) {
-  const cacheKey = `poslookup-v2-${league}`;
+async function buildPositionLookup(league, progressCb, force, knownTeamIds) {
+  const cacheKey = `poslookup-v3-${league}`;
   if (!force) {
     const cached = await histDbGet(cacheKey);
     if (cached && Object.keys(cached).length > 0) return cached;
   }
 
-  const sport = league === "nfl" ? "nfl" : "college-football";
   const map = {};
   // Track WHY this fails rather than swallowing errors — an empty map with no explanation
   // is exactly what made the first attempt impossible to diagnose.
   const trouble = { teamsFetch: null, teamsFound: 0, rosterErrors: [], rostersOk: 0 };
   try {
-    const res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/${sport}/teams?limit=50`);
-    if (!res.ok) trouble.teamsFetch = `HTTP ${res.status}`;
-    const json = await res.json();
-    const teams = ((json.sports || [])[0]?.leagues || [])[0]?.teams || [];
+    // Team IDs come from the SCHEDULE, not the /teams endpoint — that one is CORS-blocked
+    // from the browser ("Failed to fetch"), confirmed via diagnostic. Scoreboard endpoints
+    // already work fine everywhere else in this app, so walk a few weeks and collect IDs.
+    const teamIds = new Set(knownTeamIds || []);
+    const base = league === "nfl" ? NFL_BASE : CFB_BASE;
+    for (let w = 1; w <= 4 && teamIds.size < (league === "nfl" ? 32 : 400); w++) {
+      try {
+        const params = new URLSearchParams({ week: w, seasontype: 2, dates: new Date().getFullYear() });
+        if (league === "cfb") params.set("groups", "80");
+        const r = await fetch(`${base}?${params.toString()}`);
+        const j = await r.json();
+        (j.events || []).forEach(ev => {
+          const comp = (ev.competitions || [])[0];
+          (comp ? comp.competitors || [] : []).forEach(c => { if (c.team && c.team.id) teamIds.add(String(c.team.id)); });
+        });
+      } catch (e) { /* try the next week */ }
+    }
+    const teams = [...teamIds].map(id => ({ team: { id } }));
     trouble.teamsFound = teams.length;
+    if (teams.length === 0) trouble.teamsFetch = "no team IDs found in schedule — load the Schedule tab first";
     let done = 0;
     for (const t of teams) {
       const id = t.team && t.team.id;
@@ -989,7 +1003,7 @@ function readPositionSplitsFromBoxscore(playerBlock, posLookup) {
 }
 
 async function buildDefensiveStats(league, year, maxWeek, progressCb, force) {
-  const cacheKey = `defstats-v3-${league}-${year}-w${maxWeek}`;
+  const cacheKey = `defstats-v4-${league}-${year}-w${maxWeek}`;
   if (!force) {
     const cached = await histDbGet(cacheKey);
     if (cached) return { ...cached, fromCache: true };
@@ -997,10 +1011,26 @@ async function buildDefensiveStats(league, year, maxWeek, progressCb, force) {
 
   // position lookup first — box scores carry no position, so this is what makes the
   // RB/WR/TE splits possible at all
-  if (progressCb) progressCb(0, 0, 0, "Loading rosters for position lookup…");
+  if (progressCb) progressCb(0, 0, 0, "Collecting team IDs for position lookup…");
+  // Gather team IDs straight from the season being analyzed — guaranteed to be exactly the
+  // teams we need, and avoids depending on any single endpoint being reachable.
+  const seasonTeamIds = new Set();
+  try {
+    const base0 = league === "nfl" ? NFL_BASE : CFB_BASE;
+    for (let w = 1; w <= Math.min(3, maxWeek); w++) {
+      const params0 = new URLSearchParams({ week: w, seasontype: 2, dates: year });
+      if (league === "cfb") params0.set("groups", "80");
+      const r0 = await fetch(`${base0}?${params0.toString()}`);
+      const j0 = await r0.json();
+      (j0.events || []).forEach(ev => {
+        const comp = (ev.competitions || [])[0];
+        (comp ? comp.competitors || [] : []).forEach(c => { if (c.team && c.team.id) seasonTeamIds.add(String(c.team.id)); });
+      });
+    }
+  } catch (e) {}
   const posLookup = await buildPositionLookup(league, (d, t) => {
     if (progressCb) progressCb(0, 0, 0, `Loading rosters… ${d}/${t} teams`);
-  }, force);
+  }, force, [...seasonTeamIds]);
 
   const def = {}; // teamId -> accumulated stats ALLOWED
   const ensure = (id) => {
