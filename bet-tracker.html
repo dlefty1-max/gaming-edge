@@ -3841,6 +3841,7 @@ async function runEdgeScan() {
           row.moneyline = {
             modelHome: (modelHomeWinProb * 100).toFixed(0),
             mktHome: (avgMktHome * 100).toFixed(0),
+            homeTeam: g.home, // so the display can label WHOSE win probability these percentages are
             gapPct: (Math.abs(gap) * 100).toFixed(1),
             side: favorsHome ? g.home : g.away,
             meaningful: Math.abs(gap) >= 0.05,
@@ -3939,7 +3940,7 @@ async function runEdgeScan() {
         if (r.spread.numBooks > 1) line += `<div class="trend-note">Best line: ${r.spread.bestLine} at ${r.spread.bestBook}</div>`;
       }
       if (r.moneyline) {
-        line += `<div class="trend-line" style="${r.moneyline.meaningful ? "font-weight:700;" : ""}">Moneyline — model ${r.moneyline.modelHome}% vs consensus market ${r.moneyline.mktHome}% — ${r.moneyline.meaningful ? `⚑ ${r.moneyline.gapPct}% gap, leans <b>${r.moneyline.side}</b>` : `${r.moneyline.gapPct}% gap, below threshold`}</div>`;
+        line += `<div class="trend-line" style="${r.moneyline.meaningful ? "font-weight:700;" : ""}">Moneyline — ${r.moneyline.homeTeam} to win: model ${r.moneyline.modelHome}% vs market ${r.moneyline.mktHome}% — ${r.moneyline.meaningful ? `⚑ ${r.moneyline.gapPct}% gap, leans <b>${r.moneyline.side}</b>` : `${r.moneyline.gapPct}% gap, below threshold`}</div>`;
         if (r.moneyline.numBooks > 1) line += `<div class="trend-note">Best price: ${r.moneyline.side} ${r.moneyline.bestOdds} at ${r.moneyline.bestBook}</div>`;
       }
       if (r.total) {
