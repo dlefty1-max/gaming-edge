@@ -2181,6 +2181,16 @@ async function runPropScan(matchedEvents, apiKey) {
             usageNote,
             vsOppNote,
             oppDefNote,
+            gameLog: logs.slice(0, 20).map(g2 => ({
+              date: g2.date,
+              opponent: g2.opponent,
+              isHome: g2.isHome,
+              result: g2.result,
+              score: g2.score,
+              value: parseFloat(g2.stats[idx]),
+            })).filter(x => !isNaN(x.value)),
+            statLabel: mapInfo.desc,
+            propLine: null,
             sampleSize: vals.length,
             edgePct,
             isBoolean: true,
@@ -2258,6 +2268,17 @@ async function runPropScan(matchedEvents, apiKey) {
             hitPct: finalHitPct,
             sampleSize: vals.length,
             edgePct,
+            // game-by-game detail so the row can expand without re-fetching anything
+            gameLog: logs.slice(0, 20).map(g2 => ({
+              date: g2.date,
+              opponent: g2.opponent,
+              isHome: g2.isHome,
+              result: g2.result,
+              score: g2.score,
+              value: parseFloat(g2.stats[idx]),
+            })).filter(x => !isNaN(x.value)),
+            statLabel: mapInfo.desc,
+            propLine: propInfo.line,
           });
         }
       }
@@ -2327,18 +2348,56 @@ async function runPropScan(matchedEvents, apiKey) {
       }
       return `<div class="trend-line" style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px; padding-bottom:6px;">
         <span>
-          <div><b>${r.player}</b> (${r.pos}) ${r.desc} ${r.isBoolean ? r.side : `${r.side} ${r.line}`} — hit <b>${r.hitPct.toFixed(0)}%</b> of last ${r.sampleSize}${r.sampleSize < 10 ? ` <span style="color:#C4564B; font-weight:700;">⚠ thin sample</span>` : ""}${r.thisSeasonPct != null ? ` <span style="color:#3B7DD8;">(${state.year}: ${r.thisSeasonPct.toFixed(0)}% of ${r.thisSeasonSample})</span>` : ""} · ${r.matchup} · ${r.isBoolean ? r.overPrice : (r.side === "Over" ? r.overPrice : r.underPrice)}${r.edgePct != null ? ` · <span style="color:${r.edgePct > 0 ? "#4C8B5A" : "#C4564B"};font-weight:700;">edge ${r.edgePct > 0 ? "+" : ""}${r.edgePct.toFixed(1)}%</span>` : ` <span style="color:#8A96A1;">(no price to compare)</span>`}</div>
+          <div><b class="prop-player" data-prop-idx="${i}" style="color:#3B7DD8; cursor:pointer; text-decoration:underline dotted;">${r.player}</b> (${r.pos}) ${r.desc} ${r.isBoolean ? r.side : `${r.side} ${r.line}`} — hit <b>${r.hitPct.toFixed(0)}%</b> of last ${r.sampleSize}${r.sampleSize < 10 ? ` <span style="color:#C4564B; font-weight:700;">⚠ thin sample</span>` : ""}${r.thisSeasonPct != null ? ` <span style="color:#3B7DD8;">(${state.year}: ${r.thisSeasonPct.toFixed(0)}% of ${r.thisSeasonSample})</span>` : ""} · ${r.matchup} · ${r.isBoolean ? r.overPrice : (r.side === "Over" ? r.overPrice : r.underPrice)}${r.edgePct != null ? ` · <span style="color:${r.edgePct > 0 ? "#4C8B5A" : "#C4564B"};font-weight:700;">edge ${r.edgePct > 0 ? "+" : ""}${r.edgePct.toFixed(1)}%</span>` : ` <span style="color:#8A96A1;">(no price to compare)</span>`}</div>
           ${usageHtml}
           ${statTrendHtml}
           ${vsOppHtml}
           ${oppDefHtml}
+          <div class="prop-detail" data-prop-detail="${i}" style="display:none; margin-top:6px; padding:8px; background:#F4F7F9; border-radius:6px;"></div>
         </span>
         <button class="odds-btn" style="flex:none; padding:6px 10px;" data-add-prop="${i}">+ Add</button>
       </div>`;
     }).join("")}
-    <div class="trend-note" style="margin-top:8px;">Ranked by edge — real hit rate minus what the price implies (vig removed when both sides are priced) — <b>scaled down when the sample is small</b>, since a 100% rate over 3 games is far less trustworthy than 73% over 33. Anything under 10 games is flagged as a thin sample. Every prop now shows extra verification where available: TD-scorer props show an opportunity trend (targets/carries, since TDs themselves are the noisiest stat in football); yardage/reception props show the stat's own recent trend directly (more meaningful there, since usage IS the stat); all props show history against this exact opponent when any exists. ${defStatsForScan ? `Opponent-defense context is on, using the <b>${defStatsForScan.sourceYear}</b> build (${defStatsForScan.positionCoveragePct != null ? `${defStatsForScan.positionCoveragePct.toFixed(0)}% position coverage` : "team totals only"}).` : `<b>No defensive data loaded</b> — build it with the card at the top of this tab to see how each opponent actually defends this stat.`} "No price to compare" means only one side had odds available. Once ${state.year} games start piling up, a blue ${state.year}-only figure appears next to the multi-season one. ${skipped.length ? `${skipped.length} props skipped along the way (name mismatches, missing stat data, or too few games to judge).` : ""}</div>
+    <div class="trend-note" style="margin-top:8px;">Ranked by edge — real hit rate minus what the price implies (vig removed when both sides are priced) — <b>scaled down when the sample is small</b>, since a 100% rate over 3 games is far less trustworthy than 73% over 33. Anything under 10 games is flagged as a thin sample. <b>Tap any player's name</b> to see their game-by-game history for that stat. Every prop now shows extra verification where available: TD-scorer props show an opportunity trend (targets/carries, since TDs themselves are the noisiest stat in football); yardage/reception props show the stat's own recent trend directly (more meaningful there, since usage IS the stat); all props show history against this exact opponent when any exists. ${defStatsForScan ? `Opponent-defense context is on, using the <b>${defStatsForScan.sourceYear}</b> build (${defStatsForScan.positionCoveragePct != null ? `${defStatsForScan.positionCoveragePct.toFixed(0)}% position coverage` : "team totals only"}).` : `<b>No defensive data loaded</b> — build it with the card at the top of this tab to see how each opponent actually defends this stat.`} "No price to compare" means only one side had odds available. Once ${state.year} games start piling up, a blue ${state.year}-only figure appears next to the multi-season one. ${skipped.length ? `${skipped.length} props skipped along the way (name mismatches, missing stat data, or too few games to judge).` : ""}</div>
     ${skipped.some(s => s.startsWith("DIAG")) ? `<div class="trend-title" style="margin-top:10px;">Diagnostic</div>${skipped.filter(s => s.startsWith("DIAG")).map(s => `<div class="trend-line" style="font-size:11px;">${s}</div>`).join("")}` : ""}
   `;
+
+  // click a player name to expand their game-by-game history for this stat
+  out.querySelectorAll("[data-prop-idx]").forEach(el => {
+    el.addEventListener("click", () => {
+      const i = parseInt(el.getAttribute("data-prop-idx"), 10);
+      const panel = out.querySelector(`[data-prop-detail="${i}"]`);
+      if (!panel) return;
+      if (panel.style.display !== "none") { panel.style.display = "none"; return; }
+      const r = lastPropScanResults[i];
+      const games = (r && r.gameLog) || [];
+      if (games.length === 0) {
+        panel.innerHTML = `<div class="trend-note">No game-by-game detail available.</div>`;
+      } else {
+        const vals = games.map(g => g.value);
+        const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+        const hi = Math.max(...vals), lo = Math.min(...vals);
+        const line = r.propLine;
+        const fmtDate = (d) => { try { return new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric" }); } catch (e) { return ""; } };
+        panel.innerHTML = `
+          <div class="trend-line" style="font-size:11px; font-weight:700;">${r.player} — ${r.statLabel}, last ${games.length} games</div>
+          <div class="trend-line" style="font-size:11px;">Average ${avg.toFixed(1)} · high ${hi} · low ${lo}${line != null ? ` · line ${line}` : ""}</div>
+          <div style="margin-top:4px; max-height:220px; overflow-y:auto;">
+            ${games.map(g => {
+              const over = line != null && g.value > line;
+              const color = line == null ? "#1A2530" : (over ? "#4C8B5A" : "#C4564B");
+              return `<div style="font-size:11px; display:flex; justify-content:space-between; gap:8px; padding:1px 0;">
+                <span style="color:#5C6B78;">${fmtDate(g.date)} ${g.isHome ? "vs" : "@"} ${g.opponent || "?"}${g.score ? ` (${g.result || ""} ${g.score})` : ""}</span>
+                <span style="color:${color}; font-weight:700;">${g.value}</span>
+              </div>`;
+            }).join("")}
+          </div>
+          ${line != null ? `<div class="trend-note" style="font-size:10px; margin-top:4px;">Green = over the line, red = under.</div>` : ""}
+        `;
+      }
+      panel.style.display = "block";
+    });
+  });
 
   out.querySelectorAll("[data-add-prop]").forEach(btn => {
     btn.addEventListener("click", () => {
