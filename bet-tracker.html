@@ -1799,6 +1799,78 @@ async function fetchTeamCompletedGames(league, teamId, year) {
 // Maps an Odds API player-prop market key to (a) which positions it applies to,
 // and (b) which substring to look for in that player's ESPN game-log stat labels.
 // This mapping is a best guess, not verified live — flag mismatches rather than guess silently.
+// Weather note tailored to the specific prop. Wind suppresses passing volume most; rushing
+// props are barely affected and can even benefit when a team abandons the pass. Deliberately
+// directional guidance only — these are rules of thumb, not empirically fitted coefficients,
+// and saying otherwise would overstate what this knows.
+function buildPropWeatherNote(wx, marketKey) {
+  if (!wx) return null;
+  const wind = wx.windMax || 0;
+  const precip = wx.precipProb || 0;
+  const cold = wx.tempMin != null ? wx.tempMin : (wx.tempMax != null ? wx.tempMax : null);
+
+  const severe = wind >= 20 || precip >= 70 || (cold != null && cold <= 20);
+  const notable = wind >= 15 || precip >= 50 || (cold != null && cold <= 32);
+  if (!notable) return null;
+
+  const conditions = [];
+  if (wind >= 15) conditions.push(`${wind} mph wind`);
+  if (precip >= 50) conditions.push(`${precip}% precip`);
+  if (cold != null && cold <= 32) conditions.push(`${cold}°F`);
+
+  const isPassing = marketKey === "player_pass_yds" || marketKey === "player_pass_tds"
+    || marketKey === "player_reception_yds" || marketKey === "player_receptions";
+  const isRushing = marketKey === "player_rush_yds";
+
+  let effect;
+  if (isPassing) {
+    effect = severe
+      ? "conditions that meaningfully suppress passing — leans Under"
+      : "conditions that mildly suppress passing — slight Under lean";
+  } else if (isRushing) {
+    effect = "bad passing weather often means more carries — slight Over lean on rushing";
+  } else {
+    effect = "rough conditions generally suppress scoring";
+  }
+
+  return { conditions: conditions.join(", "), effect, severe, favorsUnder: isPassing, favorsOver: isRushing };
+}
+
+// Flags when a prop's usage assumptions may be broken by a teammate being out.
+// The app already feeds injuries into Elo, but nothing connected "player X is out" to
+// "player Y's role just got bigger" — which is exactly what invalidates a historical hit
+// rate. Every game behind that rate was played with a different depth chart.
+function buildTeammateInjuryNote(playerName, playerPos, teamInjuries) {
+  if (!teamInjuries || teamInjuries.length === 0) return null;
+  const p = (playerPos || "").toUpperCase();
+  // which positions materially change this player's workload if they're missing
+  const relevant = {
+    RB: ["RB", "FB"],
+    FB: ["RB", "FB"],
+    WR: ["WR", "TE"],
+    TE: ["TE", "WR"],
+    QB: ["QB"],
+  }[p];
+  if (!relevant) return null;
+
+  const out = teamInjuries.filter(inj => {
+    const s = (inj.status || "").toLowerCase();
+    if (!(s.includes("out") || s.includes("doubtful") || s.includes("injured reserve") || s.includes("ir"))) return false;
+    const ip = (inj.pos || "").toUpperCase();
+    if (!relevant.includes(ip)) return false;
+    // don't flag the player against himself
+    return inj.name.toLowerCase() !== (playerName || "").toLowerCase();
+  });
+  if (out.length === 0) return null;
+
+  const samePos = out.filter(i => (i.pos || "").toUpperCase() === p);
+  return {
+    players: out.map(i => `${i.name} (${i.pos || "?"}, ${i.status})`),
+    // a same-position absence is the strongest signal — direct competition for touches
+    direction: samePos.length > 0 ? "up" : "possible",
+  };
+}
+
 // Picks which defensive metric matches a given prop, plus a broader one for context.
 // Driven by marketKey + the player's position — NOT by categoryHint, which no longer exists
 // (removing it silently broke rushing props once already).
@@ -2034,6 +2106,25 @@ async function runPropScan(matchedEvents, apiKey) {
     } catch (e) { skipped.push(`${game.away} @ ${game.home}: couldn't load rosters (${e.message})`); continue; }
     const fullRoster = [...awayRoster, ...homeRoster];
 
+    // injuries per team, so props can warn when a teammate's absence changes usage
+    let awayInjuries = [], homeInjuries = [];
+    try {
+      [awayInjuries, homeInjuries] = await Promise.all([
+        fetchInjuries(state.league, game.awayId).catch(() => []),
+        fetchInjuries(state.league, game.homeId).catch(() => []),
+      ]);
+    } catch (e) { /* best-effort — a missing injury report just means no warning */ }
+
+    // Weather, once per game. Wind is the one that really matters for props — it suppresses
+    // passing volume, which hits receiving yards and attempts directly. Indoor games skip it.
+    let gameWeather = null;
+    if (!game.indoor && game.venueCity) {
+      try {
+        const wx = await fetchWeather(game.venueCity, game.venueState, game.date);
+        if (wx && !wx.unavailable) gameWeather = wx;
+      } catch (e) { /* no weather just means no note */ }
+    }
+
     const books = propsData.bookmakers || [];
     if (books.length === 0) {
       skipped.push(`${game.away} @ ${game.home}: no bookmaker had props posted for this event`);
@@ -2173,6 +2264,7 @@ async function runPropScan(matchedEvents, apiKey) {
           // TD-scorer props had no opponent-defense context at all — add it via the same helper
           const oppIdForTd = playerIsAway ? game.homeId : game.awayId;
           const oppDefNote = buildOppDefNote(defStatsForScan, oppIdForTd, opponentName, marketKey, rosterMatch.pos);
+          const teammateInjuryNote = buildTeammateInjuryNote(rosterMatch.name, rosterMatch.pos, playerIsAway ? awayInjuries : homeInjuries);
 
           results.push({
             player: rosterMatch.name,
@@ -2187,6 +2279,8 @@ async function runPropScan(matchedEvents, apiKey) {
             usageNote,
             vsOppNote,
             oppDefNote,
+            teammateInjuryNote,
+            weatherNote: buildPropWeatherNote(gameWeather, marketKey),
             gameLog: logs.slice(0, 20).map(g2 => ({
               date: g2.date,
               opponent: g2.opponent,
@@ -2257,8 +2351,12 @@ async function runPropScan(matchedEvents, apiKey) {
           // so a hit rate can be read against whether that defense is soft or stingy there.
           const oppIdForDef = playerIsAway ? game.homeId : game.awayId;
           const oppDefNote = buildOppDefNote(defStatsForScan, oppIdForDef, opponentName, marketKey, rosterMatch.pos);
+          const teammateInjuryNote = buildTeammateInjuryNote(rosterMatch.name, rosterMatch.pos, playerIsAway ? awayInjuries : homeInjuries);
+          const weatherNote = buildPropWeatherNote(gameWeather, marketKey);
           results.push({
             oppDefNote,
+            teammateInjuryNote,
+            weatherNote,
             player: rosterMatch.name,
             pos: rosterMatch.pos,
             desc: mapInfo.desc,
@@ -2274,6 +2372,24 @@ async function runPropScan(matchedEvents, apiKey) {
             hitPct: finalHitPct,
             sampleSize: vals.length,
             edgePct,
+            // home/away split on the actual stat — same logs, sliced differently. Some players
+            // are genuinely different on the road; the blended hit rate hides that.
+            splits: (() => {
+              const home = [], away = [];
+              logs.forEach(g2 => {
+                const v = parseFloat(g2.stats[idx]);
+                if (isNaN(v) || g2.isHome == null) return;
+                (g2.isHome ? home : away).push(v);
+              });
+              const rate = (arr) => {
+                if (arr.length === 0 || propInfo.line == null) return null;
+                const overs = arr.filter(v => v > propInfo.line).length;
+                const pctOver = (overs / arr.length) * 100;
+                return { n: arr.length, pct: pickedSide === "Over" ? pctOver : 100 - pctOver, avg: arr.reduce((a, b) => a + b, 0) / arr.length };
+              };
+              const playerAtHome = !playerIsAway;
+              return { home: rate(home), away: rate(away), playingAt: playerAtHome ? "home" : "away" };
+            })(),
             // game-by-game detail so the row can expand without re-fetching anything
             gameLog: logs.slice(0, 20).map(g2 => ({
               date: g2.date,
@@ -2359,12 +2475,33 @@ async function runPropScan(matchedEvents, apiKey) {
           ${statTrendHtml}
           ${vsOppHtml}
           ${oppDefHtml}
+          ${(() => {
+            const sp = r.splits;
+            if (!sp || (!sp.home && !sp.away)) return "";
+            const rel = sp.playingAt === "home" ? sp.home : sp.away;
+            const other = sp.playingAt === "home" ? sp.away : sp.home;
+            if (!rel || rel.n < 4) return "";
+            // only worth showing when the two splits actually diverge
+            if (other && other.n >= 4 && Math.abs(rel.pct - other.pct) < 12) return "";
+            const color = rel.pct >= r.hitPct ? "#4C8B5A" : "#C4564B";
+            return `<div style="font-size:11px; color:${color}; margin-top:2px;">Playing ${sp.playingAt}: <b>${rel.pct.toFixed(0)}%</b> over ${rel.n} such games (avg ${rel.avg.toFixed(1)})${other && other.n >= 4 ? ` · ${sp.playingAt === "home" ? "away" : "home"} it's ${other.pct.toFixed(0)}% of ${other.n}` : ""}</div>`;
+          })()}
+          ${(() => {
+            const w = r.weatherNote;
+            if (!w) return "";
+            // colour by whether the weather supports or fights the side being recommended
+            const supports = (w.favorsUnder && r.side === "Under") || (w.favorsOver && r.side === "Over");
+            const fights = (w.favorsUnder && r.side === "Over") || (w.favorsOver && r.side === "Under");
+            const color = fights ? "#C4564B" : supports ? "#4C8B5A" : "#8A96A1";
+            return `<div style="font-size:11px; color:${color}; margin-top:2px;">${w.severe ? "🌧" : "💨"} ${w.conditions} — ${w.effect}${fights ? ` <b>(argues against this ${r.side})</b>` : ""}</div>`;
+          })()}
+          ${r.teammateInjuryNote ? `<div style="font-size:11px; color:#B4463A; margin-top:2px;"><b>⚠ Usage may shift:</b> ${r.teammateInjuryNote.players.join(", ")} ${r.teammateInjuryNote.players.length > 1 ? "are" : "is"} out — the hit rate above is from games with a different depth chart.</div>` : ""}
           <div class="prop-detail" data-prop-detail="${i}" style="display:none; margin-top:6px; padding:8px; background:#F4F7F9; border-radius:6px;"></div>
         </span>
         <button class="odds-btn" style="flex:none; padding:6px 10px;" data-add-prop="${i}">+ Add</button>
       </div>`;
     }).join("")}
-    <div class="trend-note" style="margin-top:8px;">Ranked by edge — real hit rate minus what the price implies (vig removed when both sides are priced) — <b>scaled down when the sample is small</b>, since a 100% rate over 3 games is far less trustworthy than 73% over 33. Anything under 10 games is flagged as a thin sample. <b>Tap any player's name</b> to see their game-by-game history for that stat. Every prop now shows extra verification where available: TD-scorer props show an opportunity trend (targets/carries, since TDs themselves are the noisiest stat in football); yardage/reception props show the stat's own recent trend directly (more meaningful there, since usage IS the stat); all props show history against this exact opponent when any exists. ${defStatsForScan ? `Opponent-defense context is on, using the <b>${defStatsForScan.sourceYear}</b> build (${defStatsForScan.positionCoveragePct != null ? `${defStatsForScan.positionCoveragePct.toFixed(0)}% position coverage` : "team totals only"}).` : `<b>No defensive data loaded</b> — build it with the card at the top of this tab to see how each opponent actually defends this stat.`} "No price to compare" means only one side had odds available. Once ${state.year} games start piling up, a blue ${state.year}-only figure appears next to the multi-season one. ${skipped.length ? `${skipped.length} props skipped along the way (name mismatches, missing stat data, or too few games to judge).` : ""}</div>
+    <div class="trend-note" style="margin-top:8px;">Ranked by edge — real hit rate minus what the price implies (vig removed when both sides are priced) — <b>scaled down when the sample is small</b>, since a 100% rate over 3 games is far less trustworthy than 73% over 33. Anything under 10 games is flagged as a thin sample. <b>Tap any player's name</b> to see their game-by-game history for that stat. Weather is shown for outdoor games when wind, precipitation or cold is notable — green when it supports the pick, red when it argues against it. Every prop now shows extra verification where available: TD-scorer props show an opportunity trend (targets/carries, since TDs themselves are the noisiest stat in football); yardage/reception props show the stat's own recent trend directly (more meaningful there, since usage IS the stat); all props show history against this exact opponent when any exists. ${defStatsForScan ? `Opponent-defense context is on, using the <b>${defStatsForScan.sourceYear}</b> build (${defStatsForScan.positionCoveragePct != null ? `${defStatsForScan.positionCoveragePct.toFixed(0)}% position coverage` : "team totals only"}).` : `<b>No defensive data loaded</b> — build it with the card at the top of this tab to see how each opponent actually defends this stat.`} "No price to compare" means only one side had odds available. Once ${state.year} games start piling up, a blue ${state.year}-only figure appears next to the multi-season one. ${skipped.length ? `${skipped.length} props skipped along the way (name mismatches, missing stat data, or too few games to judge).` : ""}</div>
     ${skipped.some(s => s.startsWith("DIAG")) ? `<div class="trend-title" style="margin-top:10px;">Diagnostic</div>${skipped.filter(s => s.startsWith("DIAG")).map(s => `<div class="trend-line" style="font-size:11px;">${s}</div>`).join("")}` : ""}
   `;
 
@@ -5992,12 +6129,52 @@ function decimalToAmerican(dec) {
   return Math.round(-100 / (dec - 1)).toString();
 }
 
+// Detects parlay legs that are effectively the same bet. Books price parlays as if legs are
+// independent; correlated legs aren't, which is why a "safe-looking" 4-leg parlay can be much
+// riskier (or occasionally better value) than the combined odds suggest.
+function findCorrelatedLegs(legs) {
+  const warnings = [];
+  for (let i = 0; i < legs.length; i++) {
+    for (let j = i + 1; j < legs.length; j++) {
+      const a = legs[i], b = legs[j];
+      if (!a.matchup || !b.matchup || a.matchup !== b.matchup) continue; // only same-game legs can correlate here
+      const sa = (a.selection || "").toLowerCase();
+      const sb = (b.selection || "").toLowerCase();
+
+      // same game, opposite sides of the same market — these can't both win
+      const isOverA = sa.includes("over"), isUnderA = sa.includes("under");
+      const isOverB = sb.includes("over"), isUnderB = sb.includes("under");
+      if ((isOverA && isUnderB) || (isUnderA && isOverB)) {
+        warnings.push({ a: a.selection, b: b.selection, severity: "conflict", why: "opposite sides of the same total — these can't both hit" });
+        continue;
+      }
+
+      // two overs in one game: both need a shootout, so they rise and fall together
+      if (isOverA && isOverB) {
+        warnings.push({ a: a.selection, b: b.selection, severity: "positive", why: "both need the same game to go high — they win or lose together, so the real odds are shorter than the parlay pays" });
+        continue;
+      }
+      if (isUnderA && isUnderB) {
+        warnings.push({ a: a.selection, b: b.selection, severity: "positive", why: "both need the same game to stay low — they win or lose together, so the real odds are shorter than the parlay pays" });
+        continue;
+      }
+
+      // a team's spread/ML alongside a total from the same game is mildly correlated
+      warnings.push({ a: a.selection, b: b.selection, severity: "mild", why: "same game — outcomes are linked, so these aren't the independent bets the parlay price assumes" });
+    }
+  }
+  return warnings;
+}
+
 function renderParlayModeBar() {
   const el = document.getElementById("parlayModeBar");
   if (!state.parlayMode) { el.innerHTML = ""; return; }
+  const corr = findCorrelatedLegs(parlayLegsState);
+  const conflict = corr.find(c => c.severity === "conflict");
+  const positive = corr.filter(c => c.severity === "positive");
   el.innerHTML = `
     <div class="parlay-mode-bar">
-      <span>🎫 Building parlay — ${parlayLegsState.length} leg${parlayLegsState.length !== 1 ? "s" : ""} added</span>
+      <span>🎫 Building parlay — ${parlayLegsState.length} leg${parlayLegsState.length !== 1 ? "s" : ""} added${conflict ? ` · <b style="color:#FFD2CC;">⚠ conflicting legs</b>` : positive.length ? ` · <b style="color:#FFE9C2;">⚠ correlated legs</b>` : ""}</span>
       <div>
         <button id="reviewParlayBtn">Review Parlay →</button>
         <button class="cancel-link" id="cancelParlayBtn">Cancel</button>
@@ -6033,7 +6210,17 @@ function renderParlayLegs() {
       <div style="flex:2;"><label>Selection</label><input class="pl-selection" data-i="${i}" value="${leg.selection}" placeholder="e.g. Chiefs -3.5"></div>
       <div style="display:flex;align-items:flex-end;"><button class="delete-link" data-remove="${i}" type="button">Remove</button></div>
     </div>
-  `).join("");
+  `).join("") + (() => {
+    const corr = findCorrelatedLegs(parlayLegsState);
+    if (corr.length === 0) return "";
+    const sevColor = { conflict: "#C4564B", positive: "#B4463A", mild: "#8A96A1" };
+    const sevLabel = { conflict: "Conflict", positive: "Correlated", mild: "Same game" };
+    return `
+      <div class="trend-title" style="margin-top:10px;">Leg Correlation</div>
+      <div class="trend-note">Parlay odds assume every leg is independent. These aren't, so the payout doesn't match the true risk.</div>
+      ${corr.map(c => `<div class="trend-line" style="font-size:11px; color:${sevColor[c.severity]};"><b>${sevLabel[c.severity]}:</b> "${c.a}" + "${c.b}" — ${c.why}</div>`).join("")}
+    `;
+  })();
   el.querySelectorAll(".pl-matchup, .pl-odds, .pl-selection").forEach(input => {
     input.addEventListener("input", () => {
       const i = parseInt(input.getAttribute("data-i"), 10);
