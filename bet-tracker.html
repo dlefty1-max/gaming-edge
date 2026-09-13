@@ -1793,6 +1793,67 @@ async function fetchTeamCompletedGames(league, teamId, year) {
 // Maps an Odds API player-prop market key to (a) which positions it applies to,
 // and (b) which substring to look for in that player's ESPN game-log stat labels.
 // This mapping is a best guess, not verified live — flag mismatches rather than guess silently.
+// Picks which defensive metric matches a given prop, plus a broader one for context.
+// Driven by marketKey + the player's position — NOT by categoryHint, which no longer exists
+// (removing it silently broke rushing props once already).
+function pickDefensiveMetric(marketKey, pos) {
+  const p = (pos || "").toUpperCase();
+  const posKey = (p === "RB" || p === "FB") ? "RB" : (p === "WR" ? "WR" : (p === "TE" ? "TE" : (p === "QB" ? "QB" : null)));
+
+  switch (marketKey) {
+    case "player_receptions":
+      return posKey && posKey !== "QB"
+        ? { metric: `receptionsTo${posKey}`, label: `receptions allowed to ${posKey}s`, broadMetric: "passYardsAllowedPerGame", broadLabel: "pass yds allowed overall" }
+        : { metric: "passYardsAllowedPerGame", label: "pass yds allowed" };
+    case "player_reception_yds":
+      return posKey && posKey !== "QB"
+        ? { metric: `recYardsTo${posKey}`, label: `rec yds allowed to ${posKey}s`, broadMetric: "passYardsAllowedPerGame", broadLabel: "pass yds allowed overall" }
+        : { metric: "passYardsAllowedPerGame", label: "pass yds allowed" };
+    case "player_rush_yds":
+      // QBs scramble; RBs carry. Both have their own reconstructed split.
+      if (posKey === "QB") return { metric: "rushYardsToQB", label: "rush yds allowed to QBs", broadMetric: "rushYardsAllowedPerGame", broadLabel: "rush yds allowed overall" };
+      if (posKey === "RB") return { metric: "rushYardsToRB", label: "rush yds allowed to RBs", broadMetric: "rushYardsAllowedPerGame", broadLabel: "rush yds allowed overall" };
+      return { metric: "rushYardsAllowedPerGame", label: "rush yds allowed", broadMetric: "yardsAllowedPerGame", broadLabel: "total yds allowed" };
+    case "player_pass_yds":
+      return { metric: "passYardsAllowedPerGame", label: "pass yds allowed", broadMetric: "yardsAllowedPerGame", broadLabel: "total yds allowed" };
+    case "player_pass_tds":
+      // no "passing TDs allowed" field exists; points allowed is the closest honest proxy,
+      // with pass yards allowed as the secondary read
+      return { metric: "pointsAllowedPerGame", label: "points allowed", broadMetric: "passYardsAllowedPerGame", broadLabel: "pass yds allowed" };
+    case "player_anytime_td":
+      // scoring props: how much a defense gives up overall, plus the position-specific
+      // receiving volume that drives most non-RB touchdowns
+      return posKey && posKey !== "QB"
+        ? { metric: "pointsAllowedPerGame", label: "points allowed", broadMetric: `recYardsTo${posKey}`, broadLabel: `rec yds allowed to ${posKey}s` }
+        : { metric: "pointsAllowedPerGame", label: "points allowed" };
+    default:
+      return { metric: "yardsAllowedPerGame", label: "total yds allowed" };
+  }
+}
+
+// Builds the opponent-defense annotation for one prop. Returns null when data isn't available.
+function buildOppDefNote(defStats, oppId, opponentName, marketKey, pos) {
+  if (!defStats || !defStats.teams) return null;
+  const oppDef = defStats.teams[oppId];
+  if (!oppDef) return null;
+  const { metric, label, broadMetric, broadLabel } = pickDefensiveMetric(marketKey, pos);
+
+  const rankMetric = (m) => {
+    const v = oppDef[m];
+    if (v == null) return null;
+    const all = Object.values(defStats.teams).map(t => t[m]).filter(x => x != null).sort((a, b) => a - b);
+    if (!all.length) return null;
+    const rank = all.findIndex(x => x >= v) + 1;
+    const pct = rank / all.length;
+    return { value: v, rank, total: all.length, verdict: pct >= 0.7 ? "generous" : pct <= 0.3 ? "stingy" : "middling" };
+  };
+
+  const primary = rankMetric(metric);
+  if (!primary) return null;
+  const broad = broadMetric && broadMetric !== metric ? rankMetric(broadMetric) : null;
+  return { opponent: opponentName, label, ...primary, broad: broad ? { label: broadLabel, ...broad } : null };
+}
+
 const PROP_MARKET_MAP = {
   player_pass_yds: { positions: ["QB"], labelMatch: "YDS", desc: "passing yds" },
   player_pass_tds: { positions: ["QB"], labelMatch: "TD", desc: "passing TDs" },
@@ -2103,6 +2164,10 @@ async function runPropScan(matchedEvents, apiKey) {
             vsOppNote = { opponent: opponentName, hitPct: (oppScoredCount / oppValsForTd.length) * 100, games: oppValsForTd.length, isBoolean: true };
           }
 
+          // TD-scorer props had no opponent-defense context at all — add it via the same helper
+          const oppIdForTd = playerIsAway ? game.homeId : game.awayId;
+          const oppDefNote = buildOppDefNote(defStatsForScan, oppIdForTd, opponentName, marketKey, rosterMatch.pos);
+
           results.push({
             player: rosterMatch.name,
             pos: rosterMatch.pos,
@@ -2115,6 +2180,7 @@ async function runPropScan(matchedEvents, apiKey) {
             hitPct,
             usageNote,
             vsOppNote,
+            oppDefNote,
             sampleSize: vals.length,
             edgePct,
             isBoolean: true,
@@ -2173,49 +2239,8 @@ async function runPropScan(matchedEvents, apiKey) {
           // Opponent defense context — uses reconstructed box-score data if it's been built.
           // Ranks the opponent against the league for the specific stat this prop is about,
           // so a hit rate can be read against whether that defense is soft or stingy there.
-          let oppDefNote = null;
-          if (defStatsForScan && defStatsForScan.teams) {
-            const oppId = playerIsAway ? game.homeId : game.awayId;
-            const oppDef = defStatsForScan.teams[oppId];
-            if (oppDef) {
-              // Prefer POSITION-SPECIFIC allowed stats when we have them — a defense that
-              // funnels catches to backs is a totally different matchup than one that gets
-              // beaten by receivers, and team totals can't tell those apart.
-              const pos = (rosterMatch.pos || "").toUpperCase();
-              const posKey = (pos === "RB" || pos === "FB") ? "RB" : (pos === "WR" ? "WR" : (pos === "TE" ? "TE" : null));
-              const isRush = mapInfo.categoryHint === "rush";
-              const isRecYds = marketKey === "player_reception_yds";
-              const isReceptions = marketKey === "player_receptions";
-              let metric, label;
-              if (isReceptions && posKey) {
-                metric = `receptionsTo${posKey}`; label = `receptions allowed to ${posKey}s`;
-              } else if (isRecYds && posKey) {
-                metric = `recYardsTo${posKey}`; label = `rec yds allowed to ${posKey}s`;
-              } else if (isRush && posKey === "RB") {
-                metric = "rushYardsToRB"; label = "rush yds allowed to RBs";
-              } else if (isRush) {
-                metric = "rushYardsAllowedPerGame"; label = "rush yds allowed";
-              } else if (mapInfo.categoryHint === "receiv" || marketKey === "player_pass_yds") {
-                metric = "passYardsAllowedPerGame"; label = "pass yds allowed";
-              } else {
-                metric = "yardsAllowedPerGame"; label = "total yds allowed";
-              }
-              const val = oppDef[metric];
-              if (val != null) {
-                const all = Object.values(defStatsForScan.teams).map(t => t[metric]).filter(v => v != null).sort((a, b) => a - b);
-                const rank = all.findIndex(v => v >= val) + 1;
-                const pct = all.length ? rank / all.length : 0.5;
-                oppDefNote = {
-                  opponent: opponentName,
-                  label,
-                  value: val,
-                  rank,
-                  total: all.length,
-                  verdict: pct >= 0.7 ? "generous" : pct <= 0.3 ? "stingy" : "middling",
-                };
-              }
-            }
-          }
+          const oppIdForDef = playerIsAway ? game.homeId : game.awayId;
+          const oppDefNote = buildOppDefNote(defStatsForScan, oppIdForDef, opponentName, marketKey, rosterMatch.pos);
           results.push({
             oppDefNote,
             player: rosterMatch.name,
@@ -2247,7 +2272,18 @@ async function runPropScan(matchedEvents, apiKey) {
     return;
   }
 
-  const withEdge = results.filter(r => r.edgePct != null).sort((a, b) => b.edgePct - a.edgePct);
+  // Shrink the edge toward zero when the sample is thin. A 100% rate over 3 games carries
+  // nowhere near the confidence of 73% over 33, but raw edge treats them identically and
+  // floats injured/third-string players with almost no history to the top of the list.
+  // 20 games = full credit; below that the edge is scaled down proportionally.
+  const SAMPLE_FULL_CREDIT = 20;
+  results.forEach(r => {
+    if (r.edgePct == null) return;
+    const n = r.sampleSize || 0;
+    r.sampleWeight = Math.min(1, n / SAMPLE_FULL_CREDIT);
+    r.adjustedEdge = r.edgePct * r.sampleWeight;
+  });
+  const withEdge = results.filter(r => r.edgePct != null).sort((a, b) => b.adjustedEdge - a.adjustedEdge);
   const withoutEdge = results.filter(r => r.edgePct == null).sort((a, b) => b.hitPct - a.hitPct);
   const rankedResults = [...withEdge, ...withoutEdge];
   const count = parseInt(document.getElementById("propScanCount").value, 10);
@@ -2285,11 +2321,13 @@ async function runPropScan(matchedEvents, apiKey) {
         const d = r.oppDefNote;
         // green = good FOR the bettor taking the Over (generous defense), red = tough matchup
         const color = d.verdict === "generous" ? "#4C8B5A" : d.verdict === "stingy" ? "#C4564B" : "#8A96A1";
-        oppDefHtml = `<div style="font-size:11px; color:${color}; margin-top:2px;">${d.opponent} defense: ${d.value.toFixed(1)} ${d.label}/g — <b>${d.verdict}</b> (${d.rank} of ${d.total}, 1 = stingiest)</div>`;
+        const broadColor = d.broad ? (d.broad.verdict === "generous" ? "#4C8B5A" : d.broad.verdict === "stingy" ? "#C4564B" : "#8A96A1") : null;
+        oppDefHtml = `<div style="font-size:11px; color:${color}; margin-top:2px;">${d.opponent} defense: ${d.value.toFixed(1)} ${d.label}/g — <b>${d.rank}${d.rank === 1 ? "st" : d.rank === 2 ? "nd" : d.rank === 3 ? "rd" : "th"} of ${d.total}</b> (${d.verdict})</div>`
+          + (d.broad ? `<div style="font-size:11px; color:${broadColor}; margin-top:1px;">&nbsp;&nbsp;↳ ${d.broad.value.toFixed(1)} ${d.broad.label}/g — ${d.broad.rank}${d.broad.rank === 1 ? "st" : d.broad.rank === 2 ? "nd" : d.broad.rank === 3 ? "rd" : "th"} of ${d.broad.total} (${d.broad.verdict})</div>` : "");
       }
       return `<div class="trend-line" style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px; padding-bottom:6px;">
         <span>
-          <div><b>${r.player}</b> (${r.pos}) ${r.desc} ${r.isBoolean ? r.side : `${r.side} ${r.line}`} — hit <b>${r.hitPct.toFixed(0)}%</b> of last ${r.sampleSize}${r.thisSeasonPct != null ? ` <span style="color:#3B7DD8;">(${state.year}: ${r.thisSeasonPct.toFixed(0)}% of ${r.thisSeasonSample})</span>` : ""} · ${r.matchup} · ${r.isBoolean ? r.overPrice : (r.side === "Over" ? r.overPrice : r.underPrice)}${r.edgePct != null ? ` · <span style="color:${r.edgePct > 0 ? "#4C8B5A" : "#C4564B"};font-weight:700;">edge ${r.edgePct > 0 ? "+" : ""}${r.edgePct.toFixed(1)}%</span>` : ` <span style="color:#8A96A1;">(no price to compare)</span>`}</div>
+          <div><b>${r.player}</b> (${r.pos}) ${r.desc} ${r.isBoolean ? r.side : `${r.side} ${r.line}`} — hit <b>${r.hitPct.toFixed(0)}%</b> of last ${r.sampleSize}${r.sampleSize < 10 ? ` <span style="color:#C4564B; font-weight:700;">⚠ thin sample</span>` : ""}${r.thisSeasonPct != null ? ` <span style="color:#3B7DD8;">(${state.year}: ${r.thisSeasonPct.toFixed(0)}% of ${r.thisSeasonSample})</span>` : ""} · ${r.matchup} · ${r.isBoolean ? r.overPrice : (r.side === "Over" ? r.overPrice : r.underPrice)}${r.edgePct != null ? ` · <span style="color:${r.edgePct > 0 ? "#4C8B5A" : "#C4564B"};font-weight:700;">edge ${r.edgePct > 0 ? "+" : ""}${r.edgePct.toFixed(1)}%</span>` : ` <span style="color:#8A96A1;">(no price to compare)</span>`}</div>
           ${usageHtml}
           ${statTrendHtml}
           ${vsOppHtml}
@@ -2298,7 +2336,7 @@ async function runPropScan(matchedEvents, apiKey) {
         <button class="odds-btn" style="flex:none; padding:6px 10px;" data-add-prop="${i}">+ Add</button>
       </div>`;
     }).join("")}
-    <div class="trend-note" style="margin-top:8px;">Ranked by edge — real hit rate minus what the price implies (vig removed when both sides are priced), highest edge first. Every prop now shows extra verification where available: TD-scorer props show an opportunity trend (targets/carries, since TDs themselves are the noisiest stat in football); yardage/reception props show the stat's own recent trend directly (more meaningful there, since usage IS the stat); all props show history against this exact opponent when any exists. ${defStatsForScan ? `Opponent-defense context is on, using the <b>${defStatsForScan.sourceYear}</b> build (${defStatsForScan.positionCoveragePct != null ? `${defStatsForScan.positionCoveragePct.toFixed(0)}% position coverage` : "team totals only"}).` : `<b>No defensive data loaded</b> — build it with the card at the top of this tab to see how each opponent actually defends this stat.`} "No price to compare" means only one side had odds available. Once ${state.year} games start piling up, a blue ${state.year}-only figure appears next to the multi-season one. ${skipped.length ? `${skipped.length} props skipped along the way (name mismatches, missing stat data, or too few games to judge).` : ""}</div>
+    <div class="trend-note" style="margin-top:8px;">Ranked by edge — real hit rate minus what the price implies (vig removed when both sides are priced) — <b>scaled down when the sample is small</b>, since a 100% rate over 3 games is far less trustworthy than 73% over 33. Anything under 10 games is flagged as a thin sample. Every prop now shows extra verification where available: TD-scorer props show an opportunity trend (targets/carries, since TDs themselves are the noisiest stat in football); yardage/reception props show the stat's own recent trend directly (more meaningful there, since usage IS the stat); all props show history against this exact opponent when any exists. ${defStatsForScan ? `Opponent-defense context is on, using the <b>${defStatsForScan.sourceYear}</b> build (${defStatsForScan.positionCoveragePct != null ? `${defStatsForScan.positionCoveragePct.toFixed(0)}% position coverage` : "team totals only"}).` : `<b>No defensive data loaded</b> — build it with the card at the top of this tab to see how each opponent actually defends this stat.`} "No price to compare" means only one side had odds available. Once ${state.year} games start piling up, a blue ${state.year}-only figure appears next to the multi-season one. ${skipped.length ? `${skipped.length} props skipped along the way (name mismatches, missing stat data, or too few games to judge).` : ""}</div>
     ${skipped.some(s => s.startsWith("DIAG")) ? `<div class="trend-title" style="margin-top:10px;">Diagnostic</div>${skipped.filter(s => s.startsWith("DIAG")).map(s => `<div class="trend-line" style="font-size:11px;">${s}</div>`).join("")}` : ""}
   `;
 
