@@ -220,6 +220,12 @@
   </div>
 
   <div id="ledgerTab" style="display:none;">
+    <div class="card" style="padding:16px; margin-bottom:16px; border:2px solid #3B7DD8;">
+      <div class="trend-title" style="margin-bottom:6px;">📊 Model Track Record</div>
+      <div class="refresh-note">Every Edge scan is saved automatically. This grades those saved calls against real results — a live record of how the model actually performs, which is the one thing a backtest can't give you honestly (backtests can always smuggle in hindsight). Free, ESPN scores only. Only covers scans run after tracking was added.</div>
+      <button class="save-btn full" id="gradeTrackRecordBtn">Grade &amp; Refresh Record</button>
+      <div id="trackRecordResults" style="margin-top:12px;"></div>
+    </div>
     <div class="card" style="padding: 16px; margin-bottom: 16px;">
       <div class="between" style="margin-bottom:12px;">
         <label style="margin:0;">Starting Bankroll</label>
@@ -4447,7 +4453,7 @@ async function runEdgeScan() {
       const modelHomeWinProb = 1 / (1 + Math.pow(10, -diff / getEloConstants(state.league).probDivisor));
       const modelHomeSpread = -(diff / getSpreadDivisor(state.league)); // negative = model favors home by this many points
 
-      const row = { game: `${g.away} @ ${g.home}`, bookCount: books.length, injuryNote: injuryNote + effNote };
+      const row = { game: `${g.away} @ ${g.home}`, bookCount: books.length, injuryNote: injuryNote + effNote, homeId: g.homeId, awayId: g.awayId, homeName: g.home, awayName: g.away };
 
       // --- spread: consensus line (median across books) + best price shopping ---
       const spreadEntries = books.map(b => {
@@ -4473,6 +4479,8 @@ async function runEdgeScan() {
           bestBook: best.book,
           bestLine: favorsHome ? `${g.home} ${best.point}` : `${g.away} ${-best.point}`,
           numBooks: spreadEntries.length,
+          rawHomeLine: marketHomeSpread, // raw numbers so snapshots can compare across scans
+          sideKey: gap > 0 ? "away" : "home",
         };
       }
 
@@ -4502,6 +4510,8 @@ async function runEdgeScan() {
             modelHome: (modelHomeWinProb * 100).toFixed(0),
             mktHome: (avgMktHome * 100).toFixed(0),
             homeTeam: g.home, // so the display can label WHOSE win probability these percentages are
+            rawMktHomeProb: avgMktHome,
+            sideKey: gap > 0 ? "home" : "away",
             gapPct: (Math.abs(gap) * 100).toFixed(1),
             side: favorsHome ? g.home : g.away,
             meaningful: Math.abs(gap) >= 0.05,
@@ -4562,13 +4572,57 @@ async function runEdgeScan() {
               numBooks: totalPts.length,
               usingLastSeason: awayRec.fromLastSeason || homeRec.fromLastSeason,
               weatherNote,
+              rawMarketTotal: marketTotal,
+              sideKey: totalGap > 0 ? "over" : "under",
             };
           }
         }
       } catch (e) { /* totals comparison is best-effort — skip silently if team records aren't available */ }
 
       if (row.spread || row.moneyline || row.total) rows.push(row);
+      // (snapshot + movement handled after the loop, once all rows exist)
     }
+    // Line movement: compare today's numbers against the earliest snapshot we have for this
+    // week, then save today's as another snapshot. Only shows movement from whenever tracking
+    // started — there's no way to recover numbers from before this existed.
+    try {
+      const opening = await getOpeningSnapshots("edge", state.league, state.year, state.week);
+      rows.forEach(r => {
+        if (r.spread && r.spread.rawHomeLine != null) {
+          const o = opening[`${r.homeId}-${r.awayId}-spread`];
+          if (o && o.line != null && o.line !== r.spread.rawHomeLine) {
+            r.spread.movement = { from: o.line, to: r.spread.rawHomeLine, since: o.capturedAt };
+          }
+        }
+        if (r.total && r.total.rawMarketTotal != null) {
+          const o = opening[`${r.homeId}-${r.awayId}-total`];
+          if (o && o.line != null && o.line !== r.total.rawMarketTotal) {
+            r.total.movement = { from: o.line, to: r.total.rawMarketTotal, since: o.capturedAt };
+          }
+        }
+      });
+
+      const picks = [];
+      rows.forEach(r => {
+        if (r.spread) picks.push({
+          id: `${r.homeId}-${r.awayId}-spread`, market: "spread", homeId: r.homeId, awayId: r.awayId,
+          game: r.game, side: r.spread.sideKey, line: r.spread.rawHomeLine,
+          gap: parseFloat(r.spread.gapPoints), flagged: !!r.spread.meaningful, outcome: null,
+        });
+        if (r.moneyline) picks.push({
+          id: `${r.homeId}-${r.awayId}-moneyline`, market: "moneyline", homeId: r.homeId, awayId: r.awayId,
+          game: r.game, side: r.moneyline.sideKey, price: r.moneyline.rawMktHomeProb,
+          gap: parseFloat(r.moneyline.gapPct), flagged: !!r.moneyline.meaningful, outcome: null,
+        });
+        if (r.total) picks.push({
+          id: `${r.homeId}-${r.awayId}-total`, market: "total", homeId: r.homeId, awayId: r.awayId,
+          game: r.game, side: r.total.sideKey, line: r.total.rawMarketTotal,
+          gap: parseFloat(r.total.gapPts), flagged: !!r.total.meaningful, outcome: null,
+        });
+      });
+      await saveScanSnapshot("edge", state.league, state.year, state.week, picks, { effWeight: getEffWeight() });
+    } catch (e) { /* tracking is best-effort; never let it break the scan */ }
+
     if (rows.length === 0) {
       if (mismatchGames.length > 0) {
         out.innerHTML = `
@@ -4595,8 +4649,15 @@ async function runEdgeScan() {
       const isValidatedEdge = r.spread && r.spread.meaningful; // 2+ pt spread gap — the specific threshold the ATS backtest confirmed actually beats break-even
       let line = `<div class="trend-line" style="margin-top:6px;"><b>${r.game}</b> <span style="color:#5C6B78;font-weight:400;">(${r.bookCount} book${r.bookCount > 1 ? "s" : ""})</span>${isValidatedEdge ? ` <span class="edge-badge">🔥 2+ PT EDGE</span>` : ""}</div>`;
       if (r.injuryNote) line += `<div class="trend-note" style="color:#B4463A;">${r.injuryNote.replace(" · ", "")}</div>`;
+      const moveBadge = (m, unit) => {
+        if (!m) return "";
+        const delta = m.to - m.from;
+        const dir = delta > 0 ? "▲" : "▼";
+        const when = (() => { try { return new Date(m.since).toLocaleDateString(undefined, { month: "short", day: "numeric" }); } catch (e) { return ""; } })();
+        return ` <span style="color:#7A5AA8; font-weight:700;">${dir} moved ${Math.abs(delta).toFixed(1)}${unit} since ${when} (was ${m.from})</span>`;
+      };
       if (r.spread) {
-        line += `<div class="trend-line" style="${r.spread.meaningful ? "font-weight:700;" : ""}">Spread — consensus ${r.spread.marketLine}, model implies ${r.spread.modelLine} — ${r.spread.meaningful ? `⚑ ${r.spread.gapPoints}-pt gap, leans <b>${r.spread.side}</b>` : `${r.spread.gapPoints}-pt gap, below threshold`}</div>`;
+        line += `<div class="trend-line" style="${r.spread.meaningful ? "font-weight:700;" : ""}">Spread — consensus ${r.spread.marketLine}, model implies ${r.spread.modelLine} — ${r.spread.meaningful ? `⚑ ${r.spread.gapPoints}-pt gap, leans <b>${r.spread.side}</b>` : `${r.spread.gapPoints}-pt gap, below threshold`}${moveBadge(r.spread.movement, " pts")}</div>`;
         if (r.spread.numBooks > 1) line += `<div class="trend-note">Best line: ${r.spread.bestLine} at ${r.spread.bestBook}</div>`;
       }
       if (r.moneyline) {
@@ -4604,7 +4665,7 @@ async function runEdgeScan() {
         if (r.moneyline.numBooks > 1) line += `<div class="trend-note">Best price: ${r.moneyline.side} ${r.moneyline.bestOdds} at ${r.moneyline.bestBook}</div>`;
       }
       if (r.total) {
-        line += `<div class="trend-line" style="${r.total.meaningful ? "font-weight:700;" : ""}">Total — consensus ${r.total.marketTotal}, model implies ${r.total.modelTotal}${r.total.usingLastSeason ? " (last season's scoring)" : ""}${r.total.weatherNote || ""} — ${r.total.meaningful ? `⚑ ${r.total.gapPts}-pt gap, leans <b>${r.total.side}</b> (${r.total.odds})` : `${r.total.gapPts}-pt gap, below threshold`}</div>`;
+        line += `<div class="trend-line" style="${r.total.meaningful ? "font-weight:700;" : ""}">Total — consensus ${r.total.marketTotal}, model implies ${r.total.modelTotal}${r.total.usingLastSeason ? " (last season's scoring)" : ""}${r.total.weatherNote || ""} — ${r.total.meaningful ? `⚑ ${r.total.gapPts}-pt gap, leans <b>${r.total.side}</b> (${r.total.odds})` : `${r.total.gapPts}-pt gap, below threshold`}${moveBadge(r.total.movement, " pts")}</div>`;
       }
       return `<div class="${isValidatedEdge ? "edge-highlight-card" : ""}">${line}</div>`;
     }).join("") + `<div class="trend-note" style="margin-top:10px;">🔥 = a 2+ point spread gap specifically — the threshold a real backtest (ATS Backtest, Backtest tab) confirmed hits ~58% ATS, above the ~52.4% break-even line. ⚑ = model and book disagree meaningfully (2+ pts on spread, 5%+ on moneyline, 3+ pts on total) but not all of these thresholds have been backtested individually. "Best line/price" shows the most favorable number found across all books returned for that game — worth grabbing regardless of the model's opinion. The total's model number is the same scoring-average blend shown in each game's trends panel, not the Elo model.${mismatchGames.length > 0 ? ` ${mismatchGames.length} lopsided game${mismatchGames.length > 1 ? "s" : ""} (likely FCS opponents) couldn't get a model comparison — real team info shown below instead.` : ""}</div>` + (mismatchGames.length > 0 ? `
@@ -4996,6 +5057,182 @@ function matchGameForTeamText(teamText) {
     if (teamText.includes(awayLower) || awayLower.includes(teamText)) return { game: g, side: "away" };
   }
   return null;
+}
+
+// ---------- scan history: track what the model said, then grade it ----------
+// Two purposes, sharing one store:
+//   1. Performance tracking — a real record of live calls, which no backtest can give you
+//      (backtests can always smuggle in hindsight without anyone intending it).
+//   2. Line movement — snapshots of the market number each scan, so later scans can show
+//      which way it moved. Only works going forward; there's no retroactive version.
+// IndexedDB rather than localStorage: a season of weekly snapshots outgrows the ~5MB cap.
+const SCAN_HISTORY_PREFIX = "scanhist-v1";
+
+function scanHistoryKey(kind, league, year, week, stamp) {
+  return `${SCAN_HISTORY_PREFIX}-${kind}-${league}-${year}-w${week}-${stamp}`;
+}
+
+// Saves a snapshot of one scan. `picks` is a normalized list so grading can be generic.
+async function saveScanSnapshot(kind, league, year, week, picks, meta) {
+  if (!picks || picks.length === 0) return null;
+  const stamp = Date.now();
+  const record = {
+    kind, league, year, week,
+    capturedAt: new Date(stamp).toISOString(),
+    meta: meta || {},
+    picks,
+    graded: false,
+  };
+  try {
+    await histDbSet(scanHistoryKey(kind, league, year, week, stamp), record);
+    return record;
+  } catch (e) { return null; }
+}
+
+async function getAllScanSnapshots() {
+  try {
+    const all = await histDbGetAll();
+    return Object.keys(all)
+      .filter(k => k.startsWith(SCAN_HISTORY_PREFIX))
+      .map(k => ({ key: k, ...all[k] }))
+      .sort((a, b) => (a.capturedAt < b.capturedAt ? 1 : -1));
+  } catch (e) { return []; }
+}
+
+// Finds the EARLIEST snapshot for a given game+market so we can compare today's number
+// against the first one we ever saw — that difference is the line movement.
+async function getOpeningSnapshots(kind, league, year, week) {
+  const all = await getAllScanSnapshots();
+  const relevant = all
+    .filter(s => s.kind === kind && s.league === league && s.year === year && s.week === week)
+    .sort((a, b) => (a.capturedAt > b.capturedAt ? 1 : -1)); // oldest first
+  const first = {};
+  relevant.forEach(snap => {
+    snap.picks.forEach(p => {
+      if (p.id && first[p.id] === undefined) first[p.id] = { line: p.line, price: p.price, capturedAt: snap.capturedAt };
+    });
+  });
+  return first;
+}
+
+// Grades saved game-line snapshots against real results. Free — ESPN scores only.
+async function gradeScanSnapshots(progressCb) {
+  const all = await getAllScanSnapshots();
+  const ungraded = all.filter(s => !s.graded && s.kind === "edge");
+  let updated = 0;
+
+  for (const snap of ungraded) {
+    let results = [];
+    try { results = await fetchWeekResults(snap.league, snap.year, snap.week, 2); } catch (e) { continue; }
+    if (results.length === 0) continue;
+
+    let anyGraded = false;
+    snap.picks.forEach(p => {
+      const g = results.find(r => String(r.homeId) === String(p.homeId) && String(r.awayId) === String(p.awayId));
+      if (!g) return;
+      const margin = g.homeScore - g.awayScore; // positive = home won by this much
+      if (p.market === "spread") {
+        // p.line is the HOME team's spread; p.side is which team the model liked
+        const covered = p.side === "home" ? (margin + p.line) > 0 : (-margin - p.line) > 0;
+        const push = p.side === "home" ? (margin + p.line) === 0 : (-margin - p.line) === 0;
+        p.outcome = push ? "push" : (covered ? "win" : "loss");
+        anyGraded = true;
+      } else if (p.market === "moneyline") {
+        const won = p.side === "home" ? margin > 0 : margin < 0;
+        p.outcome = margin === 0 ? "push" : (won ? "win" : "loss");
+        anyGraded = true;
+      } else if (p.market === "total") {
+        const total = g.homeScore + g.awayScore;
+        if (total === p.line) p.outcome = "push";
+        else p.outcome = (p.side === "over" ? total > p.line : total < p.line) ? "win" : "loss";
+        anyGraded = true;
+      }
+    });
+
+    if (anyGraded) {
+      snap.graded = true;
+      try { await histDbSet(snap.key, snap); updated++; } catch (e) {}
+    }
+    if (progressCb) progressCb(updated, ungraded.length);
+  }
+  return updated;
+}
+
+async function runTrackRecordReport() {
+  const out = document.getElementById("trackRecordResults");
+  const btn = document.getElementById("gradeTrackRecordBtn");
+  btn.disabled = true;
+  out.innerHTML = `<div class="refresh-note">Grading saved scans against real results…</div>`;
+
+  try {
+    await gradeScanSnapshots((d, t) => {
+      out.innerHTML = `<div class="refresh-note">Grading… ${d} of ${t} snapshots</div>`;
+    });
+    const all = await getAllScanSnapshots();
+    const edge = all.filter(s => s.kind === "edge");
+    if (edge.length === 0) {
+      out.innerHTML = `<div class="trend-note">No saved scans yet. Run an Edge scan and the picks get recorded automatically — the record builds from there.</div>`;
+      btn.disabled = false;
+      return;
+    }
+
+    // Deduplicate: the same game+market may appear in several scans of one week.
+    // Keep the earliest, so the record reflects the model's first call, not a revised one.
+    const seen = {};
+    edge.slice().sort((a, b) => (a.capturedAt > b.capturedAt ? 1 : -1)).forEach(s => {
+      s.picks.forEach(p => {
+        const k = `${s.year}-w${s.week}-${p.id}`;
+        if (seen[k] === undefined) seen[k] = { ...p, week: s.week, year: s.year };
+      });
+    });
+    const picks = Object.values(seen).filter(p => p.outcome && p.outcome !== "push");
+
+    if (picks.length === 0) {
+      out.innerHTML = `<div class="trend-note">${Object.keys(seen).length} picks recorded across ${edge.length} scan${edge.length === 1 ? "" : "s"}, but none have completed results yet. Come back after the games finish.</div>`;
+      btn.disabled = false;
+      return;
+    }
+
+    const tally = (list) => {
+      const w = list.filter(p => p.outcome === "win").length;
+      const l = list.filter(p => p.outcome === "loss").length;
+      const n = w + l;
+      return { w, l, n, pct: n ? (w / n) * 100 : 0 };
+    };
+    const color = (pct, n) => n < 20 ? "#8A96A1" : (pct >= 52.4 ? "#4C8B5A" : "#C4564B");
+    const row = (label, list, note) => {
+      const t = tally(list);
+      if (t.n === 0) return "";
+      return `<div class="trend-line"><b>${label}</b>: <span style="color:${color(t.pct, t.n)}; font-weight:700;">${t.w}-${t.l} (${t.pct.toFixed(1)}%)</span>${note ? ` <span style="color:#8A96A1;">${note}</span>` : ""}</div>`;
+    };
+
+    const flagged = picks.filter(p => p.flagged);
+    const spreadFlagged = flagged.filter(p => p.market === "spread");
+    const bucket = (lo, hi) => spreadFlagged.filter(p => p.gap >= lo && (hi == null || p.gap < hi));
+
+    out.innerHTML = `
+      <div class="trend-score">All flagged calls: ${tally(flagged).w}-${tally(flagged).l} (${tally(flagged).pct.toFixed(1)}%)</div>
+      <div class="trend-note">Break-even is 52.4% at standard -110. Grey means fewer than 20 results — too few to read anything into.</div>
+
+      <div class="trend-title" style="margin-top:12px;">By Market (flagged only)</div>
+      ${row("Spread", flagged.filter(p => p.market === "spread"))}
+      ${row("Moneyline", flagged.filter(p => p.market === "moneyline"))}
+      ${row("Total", flagged.filter(p => p.market === "total"))}
+
+      <div class="trend-title" style="margin-top:12px;">Spread Flags by Gap Size</div>
+      ${row("2-10 pt gap", bucket(2, 10), "the range the full-season backtest validated")}
+      ${row("10-20 pt gap", bucket(10, 20))}
+      ${row("20+ pt gap", bucket(20, null))}
+
+      <div class="trend-title" style="margin-top:12px;">Unflagged (below threshold)</div>
+      ${row("All unflagged", picks.filter(p => !p.flagged), "sanity check — these shouldn't beat the flagged ones")}
+
+      <div class="trend-note" style="margin-top:10px;">${Object.keys(seen).length} picks recorded across ${edge.length} scan${edge.length === 1 ? "" : "s"}; ${picks.length} graded so far. When the same game appears in multiple scans, the earliest call counts — otherwise a revised pick could be scored with information the original didn't have.</div>
+    `;
+  } catch (e) {
+    out.innerHTML = `<div class="error">${e.message}</div>`;
+  }
+  btn.disabled = false;
 }
 
 // ---------- survivor pool planner ----------
@@ -6084,6 +6321,7 @@ document.getElementById("tabSurvivorBtn").addEventListener("click", () => {
   renderSurvivorUsedEditor();
 });
 document.getElementById("runSurvivorPlanBtn").addEventListener("click", runSurvivorPlan);
+document.getElementById("gradeTrackRecordBtn").addEventListener("click", runTrackRecordReport);
 document.getElementById("p6Book").addEventListener("change", (e) => {
   try { localStorage.setItem("picksix-book", e.target.value); } catch (e2) {}
   renderP6Rows();
