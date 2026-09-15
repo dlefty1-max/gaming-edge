@@ -151,6 +151,8 @@
         </select>
       </div>
     </div>
+    <button class="start-parlay-btn" id="runSundayBtn" style="background:#1A4A8A; margin-top:4px;">🏈 Run My Sunday — one tap, full briefing</button>
+    <div id="sundayBriefing"></div>
     <div id="scheduleError"></div>
     <div id="preseasonTrendsCard"></div>
     <div id="regularSeasonTrendsCard"></div>
@@ -2429,6 +2431,7 @@ async function runPropScan(matchedEvents, apiKey) {
   const withEdge = results.filter(r => r.edgePct != null).sort((a, b) => b.adjustedEdge - a.adjustedEdge);
   const withoutEdge = results.filter(r => r.edgePct == null).sort((a, b) => b.hitPct - a.hitPct);
   const rankedResults = [...withEdge, ...withoutEdge];
+  window.__lastPropRanked = rankedResults; // full ranked list for the Run My Sunday briefing
   const count = parseInt(document.getElementById("propScanCount").value, 10);
   const top = rankedResults.slice(0, count);
   lastPropScanResults = top; // module-level, so the Add-to-Bets buttons below can reference results by index
@@ -4810,6 +4813,11 @@ async function runEdgeScan() {
       await saveScanSnapshot("edge", state.league, state.year, state.week, picks, { effWeight: getEffWeight() });
     } catch (e) { /* tracking is best-effort; never let it break the scan */ }
 
+    // Stash structured results so the Run My Sunday briefing can read them without re-scanning.
+    // Deliberately on window (like __slateScaleCache) so ordering in the file doesn't matter.
+    window.__lastEdgeRows = rows;
+    window.__lastEdgeMeta = { scaleFit: edgeScaleFit, mismatchCount: mismatchGames.length, skippedCount: skipped.length, league: state.league, year: state.year, week: state.week };
+
     if (rows.length === 0) {
       if (mismatchGames.length > 0) {
         out.innerHTML = `
@@ -6643,6 +6651,140 @@ document.getElementById("runBacktestBtn").addEventListener("click", runBacktest)
 document.getElementById("runStatsProbeBtn").addEventListener("click", runStatsProbe);
 document.getElementById("runLiveAccuracyBtn").addEventListener("click", runLiveAccuracy);
 document.getElementById("runWeekTrendsBtn").addEventListener("click", runWeekTrends);
+// ============ RUN MY SUNDAY ============
+// One tap: load slate → cost estimate → Edge scan → props scan → single ranked briefing.
+// Everything it calls already exists; this is pure orchestration. It reads results from
+// window.__lastEdgeRows / __lastPropRanked, stashed by the scans themselves.
+async function runMySunday() {
+  const out = document.getElementById("sundayBriefing");
+  let apiKey = "";
+  try { apiKey = localStorage.getItem("odds-api-key") || ""; } catch (e) {}
+  const keyInput = document.getElementById("oddsApiKey");
+  if (!apiKey && keyInput && keyInput.value.trim()) apiKey = keyInput.value.trim();
+  if (!apiKey) { out.innerHTML = `<div class="trend-note" style="margin-top:8px;">Add your Odds API key on the Edge tab first — the Sunday run needs it for lines and props.</div>`; return; }
+
+  out.innerHTML = `<div class="refresh-note" style="margin-top:8px;">Checking this week's slate…</div>`;
+  try {
+    if (state.games.length === 0) await loadSchedule();
+    if (state.games.length === 0) { out.innerHTML = `<div class="error">No games found for the selected league/week above.</div>`; return; }
+
+    // Cost gate BEFORE spending anything — same principle as the props tab's estimate step.
+    const events = await fetchOddsEventsList(state.league, state.seasonType, apiKey);
+    const matchedEvents = [];
+    state.games.forEach(g => {
+      const ev = events.find(e => nameMatchesEvent(e, g));
+      if (ev) matchedEvents.push({ event: ev, game: g });
+    });
+    const propCost = matchedEvents.length * Object.keys(PROP_MARKET_MAP).length;
+    out.innerHTML = `
+      <div class="card" style="margin-top:8px;">
+        <div class="trend-title">🏈 Run My Sunday — ${state.league === "nfl" ? "NFL" : "CFB"} Week ${state.week}, ${state.year}</div>
+        <div class="trend-line">${state.games.length} games on the slate · ${matchedEvents.length} with odds posted.</div>
+        <div class="trend-note">Full run = one Edge scan (~3 credits) + one props scan (~${propCost} credits est.), then everything lands in a single briefing below. Nothing has been spent yet.</div>
+        <button class="save-btn full" id="sundayFullBtn" style="margin-top:8px;">Full run — edges + top 10 props (~${propCost + 3} credits)</button>
+        <button class="save-btn full" id="sundayEdgeOnlyBtn" style="margin-top:6px; background:#5C6B78;">Edges only — skip props (~3 credits)</button>
+      </div>`;
+    document.getElementById("sundayFullBtn").addEventListener("click", () => executeSundayRun(matchedEvents, apiKey, true));
+    document.getElementById("sundayEdgeOnlyBtn").addEventListener("click", () => executeSundayRun(matchedEvents, apiKey, false));
+  } catch (e) {
+    out.innerHTML = `<div class="error">${e.message}</div>`;
+  }
+}
+
+async function executeSundayRun(matchedEvents, apiKey, includeProps) {
+  const out = document.getElementById("sundayBriefing");
+  out.innerHTML = `<div class="refresh-note" style="margin-top:8px;">Step 1 of ${includeProps ? 2 : 1}: scanning game lines for edges…</div>`;
+  try {
+    await runEdgeScan();
+    const rows = window.__lastEdgeRows || [];
+    const meta = window.__lastEdgeMeta || {};
+
+    let propTop = [];
+    if (includeProps && matchedEvents.length > 0) {
+      out.innerHTML = `<div class="refresh-note" style="margin-top:8px;">Step 2 of 2: scanning player props — the slow part, usually a minute or two…</div><div class="refresh-note" id="sundayPropProgress" style="font-size:11px;"></div>`;
+      // mirror the props tab's own progress line here so there's something to watch
+      const propsDiv = document.getElementById("propScanResults");
+      const mirror = setInterval(() => {
+        const p = document.getElementById("sundayPropProgress");
+        if (p && propsDiv) p.textContent = (propsDiv.textContent || "").slice(0, 140);
+      }, 600);
+      try { await runPropScan(matchedEvents, apiKey); } finally { clearInterval(mirror); }
+      propTop = (window.__lastPropRanked || []).slice(0, 10);
+    }
+    renderSundayBriefing(rows, meta, propTop, includeProps);
+  } catch (e) {
+    out.innerHTML = `<div class="error">${e.message}</div>`;
+  }
+}
+
+function renderSundayBriefing(rows, meta, propTop, includeProps) {
+  const out = document.getElementById("sundayBriefing");
+  const now = new Date();
+
+  // Bucket the spread results by the ranges the full-season ATS backtest actually validated:
+  // 2-10 pt gap = real edge (56.4% ATS over 388 games); 10-20 and 20+ = proven coin flips.
+  const validated = [], otherSpread = [], mlFlags = [], totalFlags = [];
+  rows.forEach(r => {
+    if (r.spread) {
+      const gap = parseFloat(r.spread.gapPoints);
+      if (gap >= 2 && gap < 10) validated.push(r);
+      else if (gap >= 10) otherSpread.push(r);
+    }
+    if (r.moneyline && r.moneyline.meaningful) mlFlags.push(r);
+    if (r.total && r.total.meaningful) totalFlags.push(r);
+  });
+  validated.sort((a, b) => parseFloat(b.spread.gapPoints) - parseFloat(a.spread.gapPoints));
+
+  const fitNote = meta.scaleFit
+    ? `<div class="trend-note">Model calibrated to this slate: scale ×${meta.scaleFit.k.toFixed(2)} across ${meta.scaleFit.n} games (R² ${meta.scaleFit.r2.toFixed(2)}).${meta.scaleFit.r2 < 0.3 ? ` <span style="color:#C4564B;font-weight:700;">Low R² — the model's ordering disagrees with the market this week, treat everything below with suspicion.</span>` : ""}</div>`
+    : "";
+
+  const edgeSection = validated.length > 0
+    ? `<div class="trend-title" style="margin-top:10px;">✅ Validated spread edges — ${validated.length} (2-10 pt gap, the backtested range)</div>` +
+      validated.map(r => `
+        <div class="trend-line" style="margin-top:6px;"><b>${r.game}</b> — lean <b>${r.spread.side}</b></div>
+        <div class="trend-line" style="font-size:12px;">Book: ${r.spread.marketLine} · model implies ${r.spread.modelLine} · ${r.spread.gapPoints}-pt gap · best line: ${r.spread.bestLine} (${r.spread.bestBook})</div>
+        ${r.injuryNote ? `<div class="trend-note" style="color:#B4463A; font-size:11px;">${r.injuryNote.replace(" · ", "")}</div>` : ""}`).join("")
+    : `<div class="trend-title" style="margin-top:10px;">😴 Quiet week on spreads</div>
+       <div class="trend-line">No gaps in the validated 2-10 pt range — the model largely agrees with the market. <b>Skipping is a result</b>, not a failure; the backtest says the bets worth making simply aren't there this week.</div>`;
+
+  const otherBits = [];
+  if (otherSpread.length) otherBits.push(`${otherSpread.length} spread gap${otherSpread.length > 1 ? "s" : ""} of 10+ pts (proven no-edge range — ignore)`);
+  if (mlFlags.length) otherBits.push(`${mlFlags.length} moneyline flag${mlFlags.length > 1 ? "s" : ""} (5%+ gap, threshold never backtested)`);
+  if (totalFlags.length) otherBits.push(`${totalFlags.length} totals flag${totalFlags.length > 1 ? "s" : ""} (3+ pts, threshold never backtested)`);
+  const otherSection = otherBits.length
+    ? `<div class="trend-note" style="margin-top:8px;">Also flagged but unproven: ${otherBits.join(" · ")} — details on the Edge tab if curious.</div>`
+    : "";
+
+  let propSection = "";
+  if (includeProps) {
+    propSection = propTop.length > 0
+      ? `<div class="trend-title" style="margin-top:14px;">🎯 Top 10 props — by price-adjusted, sample-weighted edge</div>` +
+        propTop.map((r, i) => {
+          const priceShown = r.isBoolean ? r.overPrice : (r.side === "Over" ? r.overPrice : r.underPrice);
+          return `
+          <div class="trend-line" style="margin-top:6px;"><b>${i + 1}. ${r.player}</b> (${r.pos}) ${r.desc} <b>${r.isBoolean ? r.side : `${r.side} ${r.line}`}</b> — ${r.matchup}</div>
+          <div class="trend-line" style="font-size:12px;">Hit ${r.hitPct.toFixed(0)}% of last ${r.sampleSize}${r.sampleSize < 10 ? ` <span style="color:#C4564B;font-weight:700;">⚠ thin sample</span>` : ""} · ${priceShown || "no price"}${r.edgePct != null ? ` · <span style="color:${r.edgePct > 0 ? "#4C8B5A" : "#C4564B"};font-weight:700;">edge ${r.edgePct > 0 ? "+" : ""}${r.edgePct.toFixed(1)}%</span>` : ""}</div>
+          ${r.teammateInjuryNote ? `<div class="trend-note" style="color:#B4463A; font-size:11px;">⚠ Usage may shift: ${r.teammateInjuryNote.players.join(", ")} out — history is from a different depth chart.</div>` : ""}`;
+        }).join("") +
+        `<div class="trend-note" style="margin-top:6px;">Full context — weather, opponent defense, splits, game-by-game history — is on the Props tab, same ranking.</div>`
+      : `<div class="trend-note" style="margin-top:14px;">Props scan came back empty — books may not have posted player props yet for this slate.</div>`;
+  } else {
+    propSection = `<div class="trend-note" style="margin-top:14px;">Props skipped this run (edges-only mode).</div>`;
+  }
+
+  out.innerHTML = `
+    <div class="card" style="margin-top:8px; border:2px solid #1A4A8A;">
+      <div class="trend-title">🏈 Sunday Briefing — ${meta.league === "cfb" ? "CFB" : "NFL"} Week ${meta.week}, ${meta.year} · ${now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</div>
+      ${fitNote}
+      ${edgeSection}
+      ${otherSection}
+      ${propSection}
+      <div class="trend-note" style="margin-top:12px; border-top:1px solid #E3E8ED; padding-top:8px;">Still manual: <b>Pick 6</b> (paste your pool's lines on its tab) and <b>Survivor</b> (run the plan on its tab). This run's picks were snapshotted for the Track Record card as usual.</div>
+    </div>`;
+}
+
+document.getElementById("runSundayBtn").addEventListener("click", runMySunday);
 document.getElementById("runCacheAllBtn").addEventListener("click", estimateCacheAllCost);
 document.getElementById("atsBacktestEstimateBtn").addEventListener("click", estimateATSBacktestCost);
 document.getElementById("runEdgeScanBtn").addEventListener("click", runEdgeScan);
