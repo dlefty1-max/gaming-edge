@@ -3163,7 +3163,9 @@ async function loadTrends(game, containerId) {
       rawRh = rh; rawRa = ra;
       const diff = (rh + 55) - ra;
       const winProbHome = 1 / (1 + Math.pow(10, -diff / getEloConstants(state.league).probDivisor));
-      const impliedLine = Math.abs(diff / getSpreadDivisor(state.league)).toFixed(1);
+      // scaled to the slate so this reads on the same scale as a real betting line
+      const trendFit = await getSlateScale(state.league, state.year, state.week);
+      const impliedLine = Math.abs((diff / getSpreadDivisor(state.league)) * (trendFit ? trendFit.k : 1)).toFixed(1);
       const favorite = diff >= 0 ? homeName : awayName;
       const seedNote = state.week <= 1
         ? `<div class="trend-note">Week 1 rating is seeded from each team's final 6 weeks of last season, regressed toward neutral for offseason turnover — not from this season's results yet.</div>`
@@ -3739,10 +3741,40 @@ async function loadOddsForSchedule() {
     const res = await fetch(`https://api.the-odds-api.com/v4/sports/${sportKey}/odds/?apiKey=${apiKey}&regions=us&markets=spreads,h2h,totals&oddsFormat=american`);
     if (!res.ok) { state.oddsData = null; return; }
     state.oddsData = await res.json();
+    invalidateSlateScale(); // odds just changed, so any cached scale fit is stale
   } catch (e) {
     state.oddsData = null;
   }
   renderGames();
+}
+
+// Fits the model's spread scale across whatever games+odds are currently loaded, so any
+// single-game "model implies" display is on the same scale as the market. Cached per
+// league/year/week since it's the same answer for every row on a slate.
+function invalidateSlateScale() { try { window.__slateScaleCache = { key: null, fit: null }; } catch (e) {} }
+async function getSlateScale(league, year, week) {
+  // cache hangs off window so there's no declaration-order dependency — this gets called
+  // from several places that live above this definition in the file
+  if (!window.__slateScaleCache) window.__slateScaleCache = { key: null, fit: null };
+  const cache = window.__slateScaleCache;
+  const key = `${league}-${year}-${week}`;
+  if (cache.key === key) return cache.fit;
+  let fit = null;
+  try {
+    const elo = await buildEloRatings(league, year, week);
+    const pairs = [];
+    state.games.forEach(g => {
+      if (!g.homeId || !g.awayId) return;
+      if (!Object.prototype.hasOwnProperty.call(elo, g.homeId) || !Object.prototype.hasOwnProperty.call(elo, g.awayId)) return;
+      const odds = getOddsForGame(g, null);
+      if (!odds || odds.medianSpread == null) return;
+      const diff = (elo[g.homeId] + 55) - elo[g.awayId];
+      pairs.push({ model: -(diff / getSpreadDivisor(league)), market: odds.medianSpread });
+    });
+    fit = fitModelScale(pairs);
+  } catch (e) {}
+  cache.key = key; cache.fit = fit;
+  return fit;
 }
 
 function getOddsForGame(game, bookKeyOverride) {
@@ -4484,6 +4516,24 @@ async function runEdgeScan() {
     const gamesPlayed = await getGamesPlayedCount(state.league, state.year - 1);
     const MIN_GAMES_TO_TRUST = 3; // fewer real games than this (e.g. a lone FCS buy-game appearance) isn't enough to trust a rating
 
+    // Fit the model's spread scale to this slate BEFORE judging any game. The Elo model runs
+    // systematically compressed vs the market, and an uncorrected gap then lands on the
+    // underdog in literally every game — not a signal, just arithmetic. See fitModelScale.
+    const scalePairs = [];
+    for (const g of state.games) {
+      if (!g.homeId) continue;
+      if (!Object.prototype.hasOwnProperty.call(elo, g.homeId) || !Object.prototype.hasOwnProperty.call(elo, g.awayId)) continue;
+      const match0 = oddsData.find(o => nameMatchesEvent(o, { home: g.home, away: g.away }));
+      if (!match0) continue;
+      const mkt0 = (match0.bookmakers || []).map(b => b.markets && b.markets.find(m => m.key === "spreads")).find(m => m);
+      const homeOut0 = mkt0 && mkt0.outcomes.find(o => o.name === match0.home_team);
+      if (!homeOut0 || homeOut0.point == null) continue;
+      const rh0 = elo[g.homeId], ra0 = elo[g.awayId];
+      scalePairs.push({ model: -(((rh0 + 55) - ra0) / getSpreadDivisor(state.league)), market: homeOut0.point });
+    }
+    const edgeScaleFit = fitModelScale(scalePairs);
+    const edgeK = edgeScaleFit ? edgeScaleFit.k : 1;
+
     // map team names in odds feed to our schedule games — compare BOTH spread and moneyline
     const rows = [];
     const skipped = [];
@@ -4588,7 +4638,7 @@ async function runEdgeScan() {
 
       const diff = (rh + 55) - ra;
       const modelHomeWinProb = 1 / (1 + Math.pow(10, -diff / getEloConstants(state.league).probDivisor));
-      const modelHomeSpread = -(diff / getSpreadDivisor(state.league)); // negative = model favors home by this many points
+      const modelHomeSpread = -(diff / getSpreadDivisor(state.league)) * edgeK; // scaled to slate; see fitModelScale
 
       const row = { game: `${g.away} @ ${g.home}`, bookCount: books.length, injuryNote: injuryNote + effNote, homeId: g.homeId, awayId: g.awayId, homeName: g.home, awayName: g.away };
 
@@ -4805,7 +4855,7 @@ async function runEdgeScan() {
         line += `<div class="trend-line" style="${r.total.meaningful ? "font-weight:700;" : ""}">Total — consensus ${r.total.marketTotal}, model implies ${r.total.modelTotal}${r.total.usingLastSeason ? " (last season's scoring)" : ""}${r.total.weatherNote || ""} — ${r.total.meaningful ? `⚑ ${r.total.gapPts}-pt gap, leans <b>${r.total.side}</b> (${r.total.odds})` : `${r.total.gapPts}-pt gap, below threshold`}${moveBadge(r.total.movement, " pts")}</div>`;
       }
       return `<div class="${isValidatedEdge ? "edge-highlight-card" : ""}">${line}</div>`;
-    }).join("") + `<div class="trend-note" style="margin-top:10px;">🔥 = a 2+ point spread gap specifically — the threshold a real backtest (ATS Backtest, Backtest tab) confirmed hits ~58% ATS, above the ~52.4% break-even line. ⚑ = model and book disagree meaningfully (2+ pts on spread, 5%+ on moneyline, 3+ pts on total) but not all of these thresholds have been backtested individually. "Best line/price" shows the most favorable number found across all books returned for that game — worth grabbing regardless of the model's opinion. The total's model number is the same scoring-average blend shown in each game's trends panel, not the Elo model.${mismatchGames.length > 0 ? ` ${mismatchGames.length} lopsided game${mismatchGames.length > 1 ? "s" : ""} (likely FCS opponents) couldn't get a model comparison — real team info shown below instead.` : ""}</div>` + (mismatchGames.length > 0 ? `
+    }).join("") + `<div class="trend-note" style="margin-top:10px;">${edgeScaleFit ? `Model spreads scaled ×${edgeScaleFit.k.toFixed(2)} to match this slate's market scale (${edgeScaleFit.n} games, R²=${edgeScaleFit.r2.toFixed(2)}) — without it the model's compressed numbers make every flag an underdog by arithmetic alone.${edgeScaleFit.r2 < 0.3 ? ` <b style="color:#B4463A;">Low R²: the model's ordering disagrees with the market's, not just its scale — treat flags cautiously.</b>` : ""} ` : ""}🔥 = a 2+ point spread gap specifically — the threshold a real backtest (ATS Backtest, Backtest tab) confirmed hits ~58% ATS, above the ~52.4% break-even line. ⚑ = model and book disagree meaningfully (2+ pts on spread, 5%+ on moneyline, 3+ pts on total) but not all of these thresholds have been backtested individually. "Best line/price" shows the most favorable number found across all books returned for that game — worth grabbing regardless of the model's opinion. The total's model number is the same scoring-average blend shown in each game's trends panel, not the Elo model.${mismatchGames.length > 0 ? ` ${mismatchGames.length} lopsided game${mismatchGames.length > 1 ? "s" : ""} (likely FCS opponents) couldn't get a model comparison — real team info shown below instead.` : ""}</div>` + (mismatchGames.length > 0 ? `
       <div class="trend-title" style="margin-top:14px;">Lopsided/FCS Games — No Model Number, Real Info Instead</div>
       <div class="trend-note">Our data can't build a rating for ${mismatchGames.length > 1 ? "these teams" : "this team"} (usually an FCS opponent whose real games we never see), so there's no honest model comparison to show. Here's what's actually verifiable instead: each team's real record/scoring, and the book's own posted line, so you can judge it yourself rather than trust a made-up model number.</div>
       ${mismatchGames.map(m => `
@@ -5102,13 +5152,19 @@ function renderP6Rows() {
       if (!match || !match.homeId) { modelEl.textContent = "(model line unavailable — no matching scheduled game found)"; return; }
       let modelLine = "(couldn't load model line)";
       try {
-        const elo = await buildEloRatings(state.league, parseInt(document.getElementById("p6Year").value, 10), parseInt(document.getElementById("p6Week").value, 10));
+        const p6y = parseInt(document.getElementById("p6Year").value, 10);
+        const p6w = parseInt(document.getElementById("p6Week").value, 10);
+        const elo = await buildEloRatings(state.league, p6y, p6w);
         const rh = elo[match.homeId] != null ? elo[match.homeId] : 1500;
         const ra = elo[match.awayId] != null ? elo[match.awayId] : 1500;
         const diff = (rh + 55) - ra;
-        const impliedLine = Math.abs(diff / getSpreadDivisor(state.league)).toFixed(1);
+        // scale to the slate, or this shows a compressed number that looks nothing like
+        // the real line (model -0.7 against a market -7) and makes every gap point at the dog
+        const fit = await getSlateScale(state.league, p6y, p6w);
+        const kk = fit ? fit.k : 1;
+        const impliedLine = Math.abs((diff / getSpreadDivisor(state.league)) * kk).toFixed(1);
         const favorite = diff >= 0 ? match.home : match.away;
-        modelLine = `Model implies: ${favorite} -${impliedLine}`;
+        modelLine = `Model implies: ${favorite} -${impliedLine}${fit ? "" : " (uncalibrated)"}`;
       } catch (e) { /* leave default message */ }
 
       let marketLine = "";
@@ -5189,6 +5245,35 @@ function extractCleanPoolLines(raw) {
 // tab last loaded. If those weeks disagree, lines silently match the WRONG games — the old
 // guard only caught zero games loaded, not the wrong week loaded, which is the real failure.
 // This syncs the schedule to the Pick 6 selection before matching.
+// The Elo model's spreads are systematically COMPRESSED relative to the market — it might say
+// -3 where the book says -7. That's not a disagreement about who's better, it's a difference of
+// scale. And it has a nasty consequence: if |model| < |market| and both point the same way, then
+// "model vs market gap" ALWAYS lands on the underdog. Every game. The picker wasn't choosing
+// dogs, the arithmetic couldn't produce anything else.
+//
+// This fits a single scale factor k so that k × model ≈ market across the slate (least squares
+// through the origin). Comparing k × model against the market leaves residuals that are roughly
+// symmetric — some games favor the dog, some the favorite — which is what a real disagreement
+// signal looks like. Relative opinion is preserved; only the systematic scale bias is removed.
+function fitModelScale(pairs) {
+  const usable = pairs.filter(p => isFinite(p.model) && isFinite(p.market) && Math.abs(p.model) > 0.01);
+  if (usable.length < 5) return null; // too few games to fit anything trustworthy
+  let num = 0, den = 0;
+  usable.forEach(p => { num += p.model * p.market; den += p.model * p.model; });
+  if (den === 0) return null;
+  const k = num / den;
+  if (!isFinite(k) || k <= 0) return null;
+  // guard against absurd fits from a weird slate
+  const clamped = Math.max(0.5, Math.min(6, k));
+  // how much of the market's variation the scaled model explains — low means the model's
+  // ordering disagrees with the market's, not just its scale
+  const meanMkt = usable.reduce((a, p) => a + p.market, 0) / usable.length;
+  let ssRes = 0, ssTot = 0;
+  usable.forEach(p => { ssRes += Math.pow(p.market - clamped * p.model, 2); ssTot += Math.pow(p.market - meanMkt, 2); });
+  const r2 = ssTot > 0 ? 1 - ssRes / ssTot : 0;
+  return { k: clamped, n: usable.length, r2 };
+}
+
 async function ensureScheduleWeek(year, week) {
   if (state.year === year && state.week === week && state.seasonType === 2 && state.games.length > 0) return true;
   state.year = year;
@@ -5667,18 +5752,27 @@ async function findBestSix() {
     const diff = (rh + 55) - ra;
     const modelHomeLine = -(diff / getSpreadDivisor(state.league));
 
-    const gap = modelHomeLine - poolHomeLine; // negative = model likes home more than pool credits it; positive = model likes away more
-    const pickSide = gap < 0 ? "home" : "away";
-    const pickTeam = pickSide === "home" ? game.home : game.away;
-
+    // gap is computed in a second pass, once the scale factor is fit across the whole slate
     candidates.push({
       matchup: `${game.away} @ ${game.home}`,
       poolLineText: line,
-      pickTeam,
-      gapAbs: Math.abs(gap),
-      modelHomeLine,
+      game,
+      rawModelHomeLine: modelHomeLine,
       poolHomeLine,
     });
+  });
+
+  // Fit the model's scale to this slate's market lines, then judge each game against the
+  // SCALED model. Without this, every pick is mechanically the underdog (see fitModelScale).
+  const scaleFit = fitModelScale(candidates.map(c => ({ model: c.rawModelHomeLine, market: c.poolHomeLine })));
+  const k = scaleFit ? scaleFit.k : 1;
+  candidates.forEach(c => {
+    const modelHomeLine = c.rawModelHomeLine * k;
+    const gap = modelHomeLine - c.poolHomeLine; // negative = model likes home more than the pool credits it
+    c.modelHomeLine = modelHomeLine;
+    c.gapAbs = Math.abs(gap);
+    c.pickTeam = gap < 0 ? c.game.home : c.game.away;
+    c.pickIsDog = (gap < 0 ? c.poolHomeLine > 0 : c.poolHomeLine < 0); // is the pick the market underdog?
   });
 
   if (candidates.length === 0) {
@@ -5723,6 +5817,8 @@ async function findBestSix() {
 
   out.innerHTML = `
     <div class="trend-title">Best 6 (by model/pool gap)</div>
+    ${scaleFit ? `<div class="trend-note">Model spreads scaled ×${scaleFit.k.toFixed(2)} to match this slate's market scale (fit across ${scaleFit.n} games, R²=${scaleFit.r2.toFixed(2)}). Without this the model's compressed numbers make every pick the underdog by arithmetic alone. ${scaleFit.r2 < 0.3 ? `<b style="color:#B4463A;">Low R² — the model's ordering disagrees with the market's, not just its scale. Treat these picks with real caution.</b>` : ""}</div>` : `<div class="trend-note" style="color:#B4463A;">Not enough games to fit a scale correction (need 5+). Picks may skew to underdogs.</div>`}
+    <div class="trend-note">Picks: ${(() => { const d = best6.filter(c => c.pickIsDog).length; return `${d} underdog${d === 1 ? "" : "s"}, ${best6.length - d} favorite${best6.length - d === 1 ? "" : "s"}`; })()}</div>
     ${best6.map(c => {
       const bucket = c.gapAbs >= 20 ? `<span style="color:#C4564B;">20+ pt gap — no proven edge, included only to fill 6</span>` : c.gapAbs >= 10 ? `<span style="color:#8A96A1;">10-20 pt gap — no proven edge</span>` : `<span style="color:#4C8B5A;">2-10 pt gap — the validated range</span>`;
       return `<div class="trend-line"><b>${c.pickTeam}</b> — ${c.matchup} · pool: ${c.poolLineText} · model home line: ${c.modelHomeLine.toFixed(1)} · gap: ${c.gapAbs.toFixed(1)} pts (${bucket})</div>`;
