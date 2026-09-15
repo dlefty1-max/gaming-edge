@@ -5096,6 +5096,8 @@ function renderP6Rows() {
       const val = input.value.trim();
       const modelEl = document.getElementById(`p6Model-${i}`);
       if (!val) { modelEl.textContent = ""; return; }
+      // sync to the Pick 6 week before matching, or this looks up the wrong week's game
+      await ensureScheduleWeek(parseInt(document.getElementById("p6Year").value, 10), parseInt(document.getElementById("p6Week").value, 10));
       const match = state.games.find(g => `${g.away} @ ${g.home}`.toLowerCase() === val.toLowerCase() || val.toLowerCase().includes(g.home.toLowerCase()));
       if (!match || !match.homeId) { modelEl.textContent = "(model line unavailable — no matching scheduled game found)"; return; }
       let modelLine = "(couldn't load model line)";
@@ -5127,9 +5129,14 @@ function renderP6Rows() {
 }
 
 // ---------- bulk-fill the 6 manual pick rows from pasted pool lines ----------
-function fillP6PicksFromBulk() {
+async function fillP6PicksFromBulk() {
   const noteEl = document.getElementById("p6BulkFillNote");
   const raw = document.getElementById("p6BulkFill").value;
+  // same week-sync issue as the auto-picker — match against the right week's games
+  const fillYear = parseInt(document.getElementById("p6Year").value, 10);
+  const fillWeek = parseInt(document.getElementById("p6Week").value, 10);
+  noteEl.textContent = `Loading week ${fillWeek} games…`;
+  await ensureScheduleWeek(fillYear, fillWeek);
   const allLines = extractCleanPoolLines(raw);
   if (allLines.length === 0) { noteEl.textContent = "Couldn't find any lines that look like \"Team +/-X.X\" — paste your picks, or the whole RunYourPool page, and try again."; return; }
   const lines = allLines.slice(0, 6);
@@ -5176,6 +5183,27 @@ function extractCleanPoolLines(raw) {
     .map(l => l.trim())
     .filter(Boolean)
     .filter(l => /^.+\s+[+-]\d+\.\d+$/.test(l));
+}
+
+// The Pick 6 tools match pasted lines against `state.games`, which is whatever the Schedule
+// tab last loaded. If those weeks disagree, lines silently match the WRONG games — the old
+// guard only caught zero games loaded, not the wrong week loaded, which is the real failure.
+// This syncs the schedule to the Pick 6 selection before matching.
+async function ensureScheduleWeek(year, week) {
+  if (state.year === year && state.week === week && state.seasonType === 2 && state.games.length > 0) return true;
+  state.year = year;
+  state.week = week;
+  state.seasonType = 2;
+  try {
+    const yearSel = document.getElementById("yearSelect");
+    const weekSel = document.getElementById("weekSelect");
+    const stSel = document.getElementById("seasonTypeSelect");
+    if (yearSel) yearSel.value = String(year);
+    if (stSel) stSel.value = "2";
+    if (weekSel) weekSel.value = String(week);
+  } catch (e) {}
+  await loadSchedule();
+  return state.games.length > 0;
 }
 
 function parsePoolLineEntry(line) {
@@ -5607,12 +5635,14 @@ async function findBestSix() {
   const raw = document.getElementById("p6BulkLines").value;
   const lines = extractCleanPoolLines(raw);
   if (lines.length === 0) { showToast("Couldn't find any lines that look like \"Team +/-X.X\" — paste your pool's lines, or the whole RunYourPool page, and try again."); return; }
-  if (state.games.length === 0) { out.innerHTML = `<div class="error">No games loaded — open the Schedule tab on this same week first.</div>`; return; }
-
-  out.innerHTML = `<div class="refresh-note">Matching games and computing model lines…</div>`;
-
   const year = parseInt(document.getElementById("p6Year").value, 10);
   const week = parseInt(document.getElementById("p6Week").value, 10);
+
+  out.innerHTML = `<div class="refresh-note">Loading week ${week} games…</div>`;
+  const ok = await ensureScheduleWeek(year, week);
+  if (!ok) { out.innerHTML = `<div class="error">No games found for ${year} week ${week}.</div>`; return; }
+
+  out.innerHTML = `<div class="refresh-note">Matching games and computing model lines…</div>`;
   let elo;
   try {
     elo = await buildEloRatings(state.league, year, week);
