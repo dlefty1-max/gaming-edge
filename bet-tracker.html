@@ -1,7 +1,7 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_67.html -->
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Bet Tracker</title>
 <meta name="theme-color" content="#1A2530">
@@ -110,7 +110,7 @@
     <h1>🏈 Bet Tracker</h1>
     <div>
       <div class="bankroll-label">Bankroll</div>
-      <div class="bankroll-value" id="bankrollValue">$0.00</div>
+      <div class="bankroll-value" id="bankrollValue" style="color: rgb(111, 207, 142);">$0.00</div>
     </div>
   </div>
   <nav>
@@ -141,23 +141,253 @@
       </div>
       <div>
         <label>Week</label>
-        <select id="weekSelect"></select>
+        <select id="weekSelect"><option value="1">Week 1</option><option value="2">Week 2</option><option value="3">Week 3</option><option value="4">Week 4</option><option value="5">Week 5</option><option value="6">Week 6</option><option value="7">Week 7</option><option value="8">Week 8</option><option value="9">Week 9</option><option value="10">Week 10</option><option value="11">Week 11</option><option value="12">Week 12</option><option value="13">Week 13</option><option value="14">Week 14</option><option value="15">Week 15</option><option value="16">Week 16</option><option value="17">Week 17</option><option value="18">Week 18</option></select>
       </div>
       <div>
         <label>Year</label>
         <select id="yearSelect">
           <option value="2025">2025</option>
-          <option value="2026" selected>2026</option>
+          <option value="2026" selected="">2026</option>
         </select>
       </div>
     </div>
     <div id="scheduleError"></div>
     <div id="preseasonTrendsCard"></div>
-    <div id="regularSeasonTrendsCard"></div>
+    <div id="regularSeasonTrendsCard">
+    <div class="regseason-card">
+      <div class="trend-title">🏈 General NFL Regular Season Betting Trends</div>
+      <div class="trend-note" style="margin-top:4px;">League-wide historical patterns, not this specific matchup — soft leans, not rules.</div>
+
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">Situational</div>
+      <div class="trend-line">Thursday/Sunday/Monday primetime games: Under has hit <b>~56%</b> over the last 6 seasons (spiked closer to 70% in the most recent one) — the most consistently profitable side in primetime</div>
+      <div class="trend-line">Second meeting between division rivals: leans <b>Under</b> and toward the <b>underdog</b> — both coaching staffs now have a full game of current-season film on each other, compressing the scheme gap</div>
+      <div class="trend-line">Heavy public/consensus favorites: worth a second look — when 80%+ of bets load one side, the line often moves an extra half-point or more, and NFL key numbers (3, 7) make that half-point matter more than it looks</div>
+      
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">Week 1 Known Baseline (since 2019)</div>
+      <div class="trend-line">Underdogs of 6+ points: <b>26%</b> win outright, <b>61%</b> cover ATS</div>
+      <div class="trend-line">Underdogs of 3 or fewer points: <b>46%</b> win outright, <b>58%</b> cover ATS</div>
+      <div class="trend-line">Home teams: notably weaker ATS than any other week (45% vs. ~49% league average) — Week 1 home-field edge is smaller than usual</div>
+      <div class="trend-note">This part is free, sourced research (FanDuel), not something you need to compute — shown alongside whatever your own historical data below adds.</div>
+    
+      
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">Week 1 Specific</div>
+      <div class="trend-note">No computed data yet for Week 1.</div>
+      <div class="trend-note"><button type="button" id="fillWeekTrendBtn" style="background:#1A4A8A;color:#fff;border:0;border-radius:6px;padding:9px 14px;font-size:13px;cursor:pointer;margin:2px 0;">Compute it now</button> (checks 2025, 2024, 2023 — costs real API credits, cached permanently afterward).</div>
+      
+    
+
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">By Month — Underdog ATS Rate (last decade)</div>
+      <div class="trend-line">September: <b>~55%</b> · October: <b>~52%</b> · November: <b>~53%</b> · December: <b>~48%</b> · January: <b>~57%</b></div>
+      <div class="trend-note">Reads as: books tend to overprice the unknown early (favoring dogs), sharpen up by December (favorites hold), then overcorrect again in January's small, chaotic late-season sample.</div>
+
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">By Month — Over Rate (last decade)</div>
+      <div class="trend-line">September: <b>~50%</b> · October: <b>~50%</b> · November: <b>~50%</b> · December: <b>~46%</b> · January: <b>~51%</b></div>
+      <div class="trend-note">December is the clearest lean of the bunch — weather and short-week fatigue push totals under more than the market adjusts for.</div>
+
+      <div class="trend-title" style="margin-top:10px; font-size:10px;">Weeks 17-18</div>
+      <div class="trend-line">Watch for teams that have already clinched or been eliminated — rested starters can make a "favorite" number stale fast, same blind spot the Elo model has.</div>
+
+      <div class="trend-note" style="margin-top:8px;">This card disappears automatically once you switch to Preseason. The "Week 1 Specific" section updates automatically as you change weeks.</div>
+      <div class="trend-note" id="weekTrendStatus" style="margin-top:6px;"></div>
+      <div class="trend-note" id="weekTrendDiag" style="margin-top:6px; font-family:monospace; font-size:10px; word-break:break-word;">diag — league:nfl seasonType:2 week:1 · cached years: none · attempted: none · failures: none · apiKey:set</div>
+    </div>
+  </div>
     <div id="cfbTrendsCard"></div>
     <button class="start-parlay-btn" id="startParlayBtn">🎫 Build a Parlay — tap odds across games to add legs</button>
     <div id="parlayModeBar"></div>
-    <div id="gamesList"></div>
+    <div id="gamesList"><div class="card">
+      <div class="game-header" data-id="401872656" style="cursor:default;">
+        <div>
+          <div class="game-title">Patriots @ Seahawks</div>
+          <div class="game-sub">Final</div>
+          <div class="game-sub" style="font-weight:600; color:#1A2530;">Final: Patriots 10 — Seahawks 13</div>
+          
+        </div>
+        
+      </div>
+      <div style="padding: 0 14px 10px;"></div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401872657" style="cursor:default;">
+        <div>
+          <div class="game-title">49ers @ Rams</div>
+          <div class="game-sub">Final</div>
+          <div class="game-sub" style="font-weight:600; color:#1A2530;">Final: 49ers 27 — Rams 7</div>
+          
+        </div>
+        
+      </div>
+      <div style="padding: 0 14px 10px;"></div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401872925" style="cursor:default;">
+        <div>
+          <div class="game-title">Buccaneers @ Bengals</div>
+          <div class="game-sub">Final</div>
+          <div class="game-sub" style="font-weight:600; color:#1A2530;">Final: Buccaneers 27 — Bengals 33</div>
+          
+        </div>
+        
+      </div>
+      <div style="padding: 0 14px 10px;"></div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401872923" style="cursor:default;">
+        <div>
+          <div class="game-title">Saints @ Lions</div>
+          <div class="game-sub">Final/OT</div>
+          <div class="game-sub" style="font-weight:600; color:#1A2530;">Final: Saints 30 — Lions 31</div>
+          
+        </div>
+        
+      </div>
+      <div style="padding: 0 14px 10px;"></div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401872924" style="cursor:default;">
+        <div>
+          <div class="game-title">Jets @ Titans</div>
+          <div class="game-sub">Final</div>
+          <div class="game-sub" style="font-weight:600; color:#1A2530;">Final: Jets 23 — Titans 10</div>
+          
+        </div>
+        
+      </div>
+      <div style="padding: 0 14px 10px;"></div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401872659" style="cursor:default;">
+        <div>
+          <div class="game-title">Ravens @ Colts</div>
+          <div class="game-sub">Final</div>
+          <div class="game-sub" style="font-weight:600; color:#1A2530;">Final: Ravens 41 — Colts 23</div>
+          
+        </div>
+        
+      </div>
+      <div style="padding: 0 14px 10px;"></div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401872658" style="cursor:default;">
+        <div>
+          <div class="game-title">Falcons @ Steelers</div>
+          <div class="game-sub">Final</div>
+          <div class="game-sub" style="font-weight:600; color:#1A2530;">Final: Falcons 13 — Steelers 20</div>
+          
+        </div>
+        
+      </div>
+      <div style="padding: 0 14px 10px;"></div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401872661" style="cursor:default;">
+        <div>
+          <div class="game-title">Bears @ Panthers</div>
+          <div class="game-sub">Final</div>
+          <div class="game-sub" style="font-weight:600; color:#1A2530;">Final: Bears 59 — Panthers 37</div>
+          
+        </div>
+        
+      </div>
+      <div style="padding: 0 14px 10px;"></div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401872922" style="cursor:default;">
+        <div>
+          <div class="game-title">Browns @ Jaguars</div>
+          <div class="game-sub">Final</div>
+          <div class="game-sub" style="font-weight:600; color:#1A2530;">Final: Browns 10 — Jaguars 34</div>
+          
+        </div>
+        
+      </div>
+      <div style="padding: 0 14px 10px;"></div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401872660" style="cursor:default;">
+        <div>
+          <div class="game-title">Bills @ Texans</div>
+          <div class="game-sub">Final</div>
+          <div class="game-sub" style="font-weight:600; color:#1A2530;">Final: Bills 36 — Texans 31</div>
+          
+        </div>
+        
+      </div>
+      <div style="padding: 0 14px 10px;"></div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401872928" style="cursor:default;">
+        <div>
+          <div class="game-title">Dolphins @ Raiders</div>
+          <div class="game-sub">Final</div>
+          <div class="game-sub" style="font-weight:600; color:#1A2530;">Final: Dolphins 13 — Raiders 27</div>
+          
+        </div>
+        
+      </div>
+      <div style="padding: 0 14px 10px;"></div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401872927" style="cursor:default;">
+        <div>
+          <div class="game-title">Packers @ Vikings</div>
+          <div class="game-sub">Final</div>
+          <div class="game-sub" style="font-weight:600; color:#1A2530;">Final: Packers 22 — Vikings 39</div>
+          
+        </div>
+        
+      </div>
+      <div style="padding: 0 14px 10px;"></div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401872929" style="cursor:default;">
+        <div>
+          <div class="game-title">Commanders @ Eagles</div>
+          <div class="game-sub">Final</div>
+          <div class="game-sub" style="font-weight:600; color:#1A2530;">Final: Commanders 22 — Eagles 24</div>
+          
+        </div>
+        
+      </div>
+      <div style="padding: 0 14px 10px;"></div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401872926" style="cursor:default;">
+        <div>
+          <div class="game-title">Cardinals @ Chargers</div>
+          <div class="game-sub">Final</div>
+          <div class="game-sub" style="font-weight:600; color:#1A2530;">Final: Cardinals 26 — Chargers 14</div>
+          
+        </div>
+        
+      </div>
+      <div style="padding: 0 14px 10px;"></div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401872930" style="cursor:default;">
+        <div>
+          <div class="game-title">Cowboys @ Giants</div>
+          <div class="game-sub">Final</div>
+          <div class="game-sub" style="font-weight:600; color:#1A2530;">Final: Cowboys 20 — Giants 28</div>
+          
+        </div>
+        
+      </div>
+      <div style="padding: 0 14px 10px;"></div>
+      
+    </div><div class="card">
+      <div class="game-header" data-id="401872931" style="cursor:default;">
+        <div>
+          <div class="game-title">Broncos @ Chiefs</div>
+          <div class="game-sub">Final</div>
+          <div class="game-sub" style="font-weight:600; color:#1A2530;">Final: Broncos 10 — Chiefs 31</div>
+          
+        </div>
+        
+      </div>
+      <div style="padding: 0 14px 10px;"></div>
+      
+    </div></div>
 
 
     <div class="card" style="margin-top: 20px;">
@@ -239,9 +469,9 @@
       </div>
       <div class="divider">
         <div class="between-sm"><span style="color:#5C6B78;">Open exposure</span><span id="openExposure">$0.00</span></div>
-        <div class="between-sm" style="font-weight:700;"><span style="color:#5C6B78;">Net profit</span><span id="netProfit">$0.00</span></div>
+        <div class="between-sm" style="font-weight:700;"><span style="color:#5C6B78;">Net profit</span><span id="netProfit" style="color: rgb(76, 139, 90);">$0.00</span></div>
       </div>
-      <div class="divider" id="bankrollChartContainer"></div>
+      <div class="divider" id="bankrollChartContainer"><div class="chart-empty">Settle a few bets to see your bankroll trend here.</div></div>
     </div>
     <div class="toolbar">
       <button id="backupAllBtn">💾 Backup Everything</button>
@@ -263,7 +493,7 @@
         <option value="Push">Push</option>
       </select>
     </div>
-    <div id="ledgerList"></div>
+    <div id="ledgerList"><div class="empty">No picks yet. Head to Schedule to add one.</div></div>
   </div>
 
   <div id="backtestTab" style="display:none;">
@@ -274,14 +504,14 @@
         <div>
           <label>League</label>
           <select id="cacheAllLeague">
-            <option value="nfl" selected>NFL</option>
+            <option value="nfl" selected="">NFL</option>
             <option value="cfb">College Football</option>
           </select>
         </div>
         <div>
           <label>Season</label>
           <select id="cacheAllYear">
-            <option value="2025" selected>2025</option>
+            <option value="2025" selected="">2025</option>
             <option value="2024">2024</option>
           </select>
         </div>
@@ -296,7 +526,7 @@
         <div>
           <label>League</label>
           <select id="wtLeague">
-            <option value="nfl" selected>NFL</option>
+            <option value="nfl" selected="">NFL</option>
             <option value="cfb">College Football</option>
           </select>
         </div>
@@ -305,14 +535,14 @@
           <select id="wtYearsBack">
             <option value="1">Just 2025</option>
             <option value="2">2024–2025</option>
-            <option value="3" selected>2023–2025</option>
+            <option value="3" selected="">2023–2025</option>
           </select>
         </div>
         <div>
           <label>Weeks 1 through</label>
           <select id="wtThroughWeek">
             <option value="4">4</option>
-            <option value="8" selected>8</option>
+            <option value="8" selected="">8</option>
             <option value="18">18 (full season)</option>
           </select>
         </div>
@@ -327,14 +557,14 @@
         <div>
           <label>League</label>
           <select id="liveLeague">
-            <option value="nfl" selected>NFL</option>
+            <option value="nfl" selected="">NFL</option>
             <option value="cfb">College Football</option>
           </select>
         </div>
         <div>
           <label>Season</label>
           <select id="liveYear">
-            <option value="2026" selected>2026</option>
+            <option value="2026" selected="">2026</option>
           </select>
         </div>
       </div>
@@ -348,14 +578,14 @@
         <div>
           <label>League</label>
           <select id="btLeague">
-            <option value="nfl" selected>NFL</option>
+            <option value="nfl" selected="">NFL</option>
             <option value="cfb">College Football</option>
           </select>
         </div>
         <div>
           <label>Season Type</label>
           <select id="btSeasonType">
-            <option value="2" selected>Regular Season</option>
+            <option value="2" selected="">Regular Season</option>
             <option value="1">Preseason</option>
           </select>
         </div>
@@ -363,7 +593,7 @@
           <label>Season</label>
           <select id="btYear">
             <option value="2026">2026</option>
-            <option value="2025" selected>2025</option>
+            <option value="2025" selected="">2025</option>
             <option value="2024">2024</option>
           </select>
         </div>
@@ -379,14 +609,14 @@
         <div>
           <label>League</label>
           <select id="probeLeague">
-            <option value="nfl" selected>NFL</option>
+            <option value="nfl" selected="">NFL</option>
             <option value="cfb">College Football</option>
           </select>
         </div>
         <div>
           <label>Season</label>
           <select id="probeYear">
-            <option value="2025" selected>2025</option>
+            <option value="2025" selected="">2025</option>
             <option value="2026">2026</option>
           </select>
         </div>
@@ -402,14 +632,14 @@
         <div>
           <label>League</label>
           <select id="atsBtLeague">
-            <option value="nfl" selected>NFL</option>
+            <option value="nfl" selected="">NFL</option>
             <option value="cfb">College Football</option>
           </select>
         </div>
         <div>
           <label>Season</label>
           <select id="atsBtYear">
-            <option value="2026" selected>2026</option>
+            <option value="2026" selected="">2026</option>
             <option value="2025">2025</option>
             <option value="2024">2024</option>
           </select>
@@ -426,7 +656,7 @@
           <input id="atsBtWeekThrough" value="18" inputmode="numeric">
         </div>
       </div>
-      <button class="save-btn full" id="atsBacktestEstimateBtn">Estimate Cost & Run</button>
+      <button class="save-btn full" id="atsBacktestEstimateBtn">Estimate Cost &amp; Run</button>
       <div id="atsBacktestResults" style="margin-top:12px;"></div>
     </div>
   </div>
@@ -480,14 +710,14 @@
         <div>
           <label>League</label>
           <select id="defStatsLeague">
-            <option value="nfl" selected>NFL</option>
+            <option value="nfl" selected="">NFL</option>
             <option value="cfb">College Football</option>
           </select>
         </div>
         <div>
           <label>Season</label>
           <select id="defStatsYear">
-            <option value="2026" selected>2026</option>
+            <option value="2026" selected="">2026</option>
             <option value="2025">2025</option>
           </select>
         </div>
@@ -509,13 +739,13 @@
         <div>
           <label>Show top</label>
           <select id="propScanCount">
-            <option value="20" selected>20</option>
+            <option value="20" selected="">20</option>
             <option value="50">50</option>
             <option value="100">100</option>
           </select>
         </div>
       </div>
-      <button class="save-btn full" id="propScanEstimateBtn">Estimate Cost & Scan</button>
+      <button class="save-btn full" id="propScanEstimateBtn">Estimate Cost &amp; Scan</button>
       <div id="propScanResults" style="margin-top:12px;"></div>
     </div>
 
@@ -586,7 +816,7 @@
         </div>
         <div>
           <label>Year</label>
-          <select id="p6Year"><option value="2026" selected>2026</option></select>
+          <select id="p6Year"><option value="2026" selected="">2026</option></select>
         </div>
         <div>
           <label>Compare vs.</label>
@@ -604,7 +834,10 @@
       <div class="refresh-note" style="margin-top:-6px;">This book selector is independent from your default sportsbook on the Edge tab — set it to whichever book you want RunYourPool's lines checked against.</div>
       <div class="card" style="padding:10px; margin-bottom:10px; background:#F7F9FA;">
         <label>Paste your 6 picks (e.g. "Chiefs -3.5" per line — team named is assumed to be your pick). You can also paste the whole RunYourPool page as-is; the real pick lines get pulled out automatically.</label>
-        <textarea id="p6BulkFill" rows="6" style="width:100%; font-family:inherit;" placeholder="Chiefs -3.5&#10;Eagles -6.5&#10;Ravens +3.5&#10;..."></textarea>
+        <textarea id="p6BulkFill" rows="6" style="width:100%; font-family:inherit;" placeholder="Chiefs -3.5
+Eagles -6.5
+Ravens +3.5
+..."></textarea>
         <button class="save-btn full" id="p6BulkFillBtn" style="margin-top:6px;">Fill In My 6 Picks</button>
         <div id="p6BulkFillNote" class="trend-note" style="margin-top:6px;"></div>
       </div>
@@ -615,7 +848,10 @@
     <div class="card" style="padding:16px; margin-bottom:16px;">
       <div class="trend-title" style="margin-bottom:6px;">Auto-Pick Best 6 From Pool Lines</div>
       <div class="refresh-note">Paste every game's spread from RunYourPool below, one per line — format like "Chiefs -3.5". The app matches each to the model's implied line, ranks every game by how far the pool's number is from the model's, and fills your 6 picks with the biggest gaps automatically. You still review and can edit before saving.</div>
-      <textarea id="p6BulkLines" placeholder="Chiefs -3.5&#10;Eagles -6&#10;Broncos +2.5&#10;..." style="width:100%; min-height:140px; font-family:inherit; font-size:13px; padding:10px; border-radius:8px; border:1px solid #CBD3DA; resize:vertical;"></textarea>
+      <textarea id="p6BulkLines" placeholder="Chiefs -3.5
+Eagles -6
+Broncos +2.5
+..." style="width:100%; min-height:140px; font-family:inherit; font-size:13px; padding:10px; border-radius:8px; border:1px solid #CBD3DA; resize:vertical;"></textarea>
       <button class="save-btn full" id="p6AutoPickBtn" style="margin-top:10px;">Find Best 6</button>
       <div id="p6AutoPickResults" style="margin-top:12px;"></div>
     </div>
@@ -630,7 +866,7 @@
         <div>
           <label>Season</label>
           <select id="survYear">
-            <option value="2026" selected>2026</option>
+            <option value="2026" selected="">2026</option>
             <option value="2025">2025</option>
           </select>
         </div>
@@ -2936,7 +3172,9 @@ async function fetchWeekGamesWithNames(league, year, week) {
   const params = new URLSearchParams({ week, seasontype: 2, dates: year });
   if (league === "cfb") params.set("groups", "80");
   const res = await fetch(`${base}?${params.toString()}`);
-  if (!res.ok) return [];
+  // Throw on HTTP failure so the caller can record WHY — returning [] here used to look
+  // identical to "that season has no completed games".
+  if (!res.ok) throw new Error(`ESPN schedule request failed (HTTP ${res.status}) for ${year} week ${week}`);
   const json = await res.json();
   return (json.events || []).filter(ev => ev.status && ev.status.type && ev.status.type.completed).map(ev => {
     const comp = ev.competitions[0];
@@ -2953,13 +3191,20 @@ async function fetchWeekGamesWithNames(league, year, week) {
 }
 
 async function computeWeekDogATS(league, year, week, apiKey) {
-  const games = await fetchWeekGamesWithNames(league, year, week);
-  if (games.length === 0) {
-    // record this too — a silent early return here looked identical to "never computed"
-    const none = { week, totalGames: 0, matched: 0, dogWins: 0, dogLosses: 0, dogPushes: 0, error: "no completed games returned by ESPN for that week" };
-    try { localStorage.setItem(`week-dog-result-${league}-${year}-${week}`, JSON.stringify(none)); } catch (e) {}
-    return none;
+  // Every exit path below records something under the cache key, so the card can always say
+  // what happened instead of showing the same "no data yet" for every kind of failure.
+  const persistFailure = (msg, totalGames) => {
+    const failed = { week, totalGames: totalGames || 0, matched: 0, dogWins: 0, dogLosses: 0, dogPushes: 0, error: msg };
+    try { localStorage.setItem(`week-dog-result-${league}-${year}-${week}`, JSON.stringify(failed)); } catch (e2) {}
+    return failed;
+  };
+  let games;
+  try {
+    games = await fetchWeekGamesWithNames(league, year, week);
+  } catch (e) {
+    return persistFailure(`schedule fetch failed — ${e.message}`);
   }
+  if (games.length === 0) return persistFailure(`ESPN returned no completed games for ${year} week ${week}`);
   let dogWins = 0, dogLosses = 0, dogPushes = 0, matched = 0;
   let homeDog = { w: 0, l: 0, p: 0 }, awayDog = { w: 0, l: 0, p: 0 };
   try {
@@ -3011,10 +3256,12 @@ function getCachedWeekAggregate(league, week, years) {
   let homeDog = { w: 0, l: 0, p: 0 }, awayDog = { w: 0, l: 0, p: 0 };
   const yearsFound = [];
   const failures = [];
+  const attempted = []; // years with ANY stored record (success or failure) — separates "never tried" from "tried and failed"
   years.forEach(y => {
     try {
       const raw = localStorage.getItem(`week-dog-result-${league}-${y}-${week}`);
       if (!raw) return;
+      attempted.push(y);
       const r = JSON.parse(raw);
       if (!r.matched) { failures.push(`${y}: ${r.error || "no games matched"}`); return; }
       dogWins += r.dogWins; dogLosses += r.dogLosses; dogPushes += r.dogPushes;
@@ -3023,7 +3270,7 @@ function getCachedWeekAggregate(league, week, years) {
       yearsFound.push(y);
     } catch (e) {}
   });
-  return { found: yearsFound.length > 0, dogWins, dogLosses, dogPushes, homeDog, awayDog, yearsFound, failures };
+  return { found: yearsFound.length > 0, dogWins, dogLosses, dogPushes, homeDog, awayDog, yearsFound, failures, attempted };
 }
 
 async function computeThisWeekTrend(league, week) {
@@ -3033,7 +3280,15 @@ async function computeThisWeekTrend(league, week) {
   const years = [2025, 2024, 2023];
   showToast(`Checking Week ${week} across ${years.length} seasons…`);
   const outcomes = [];
+  const setStatus = (msg) => {
+    window.__weekTrendStatus = msg;
+    const st = document.getElementById("weekTrendStatus");
+    if (st) st.textContent = msg;
+    const b = document.getElementById("fillWeekTrendBtn");
+    if (b) b.disabled = true;
+  };
   for (const y of years) {
+    setStatus(`Week ${week}: checking ${y}… (${outcomes.length + 1} of ${years.length})`);
     try {
       const r = await computeWeekDogATS(league, y, week, apiKey);
       if (!r) outcomes.push(`${y}: no completed games`);
@@ -3045,6 +3300,8 @@ async function computeThisWeekTrend(league, week) {
   // claimed success, so a total failure was indistinguishable from a successful run
   const anyWorked = outcomes.some(o => /\d+ games$/.test(o));
   showToast(anyWorked ? `Week ${week}: ${outcomes.join(" · ")}` : `Week ${week} failed — ${outcomes.join(" · ")}`);
+  // the toast vanishes after ~2s, so keep the result on the card itself
+  window.__weekTrendStatus = anyWorked ? `Last run — Week ${week}: ${outcomes.join(" · ")}` : `Last run failed — Week ${week}: ${outcomes.join(" · ")}`;
   renderRegularSeasonTrendsCard();
 }
 
@@ -3618,15 +3875,23 @@ function renderRegularSeasonTrendsCard() {
       <div class="trend-title" style="margin-top:10px; font-size:10px;">Week ${week} Specific — computed from ${agg.yearsFound.join(", ")}</div>
       <div class="trend-line">Underdogs overall: <b>${agg.dogWins}-${agg.dogLosses}-${agg.dogPushes}</b> ATS (${overallPct}%)</div>
       <div class="trend-line">Home dogs: <b>${pctOf(agg.homeDog)}%</b> · Away dogs: <b>${pctOf(agg.awayDog)}%</b></div>
-      <div class="trend-note">This is real, computed from your historical odds data — not general research. ${years.filter(y => !agg.yearsFound.includes(y)).length > 0 ? `Missing ${years.filter(y => !agg.yearsFound.includes(y)).join(", ")} — <span style="text-decoration:underline;cursor:pointer;" id="fillWeekTrendBtn">click to fill in the rest</span> (uses API credits).` : ""}</div>
+      <div class="trend-note">This is real, computed from your historical odds data — not general research. ${years.filter(y => !agg.yearsFound.includes(y)).length > 0 ? `Missing ${years.filter(y => !agg.yearsFound.includes(y)).join(", ")} — </div><div class="trend-note"><button type="button" id="fillWeekTrendBtn" style="background:#1A4A8A;color:#fff;border:0;border-radius:6px;padding:9px 14px;font-size:13px;cursor:pointer;margin:2px 0;">Fill in the rest</button> (uses API credits).` : ""}</div>
     `;
   } else {
     weekBlock = `
       <div class="trend-title" style="margin-top:10px; font-size:10px;">Week ${week} Specific</div>
-      <div class="trend-note">No computed data yet for Week ${week}. <span style="text-decoration:underline;cursor:pointer;color:#1A4A8A;" id="fillWeekTrendBtn">Compute it now</span> (checks ${years.join(", ")} — costs real API credits, cached permanently afterward).</div>
+      <div class="trend-note">No computed data yet for Week ${week}.</div>
+      <div class="trend-note"><button type="button" id="fillWeekTrendBtn" style="background:#1A4A8A;color:#fff;border:0;border-radius:6px;padding:9px 14px;font-size:13px;cursor:pointer;margin:2px 0;">Compute it now</button> (checks ${years.join(", ")} — costs real API credits, cached permanently afterward).</div>
       ${agg.failures && agg.failures.length ? `<div class="trend-note" style="color:#B4463A;">Previous attempt failed — ${agg.failures.join(" · ")}. Clicking again will retry.</div>` : ""}
     `;
   }
+
+  // One-line diagnostic so a "not loading" report says exactly which cause it is: wrong league/season type,
+  // no API key, never attempted vs. attempted-and-failed, or a specific per-year failure reason.
+  let hasKey = false;
+  try { hasKey = !!localStorage.getItem("odds-api-key"); } catch (e) {}
+  const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const diagLine = `diag — league:${state.league} seasonType:${state.seasonType} week:${week} · cached years: ${agg.yearsFound.length ? agg.yearsFound.join(",") : "none"} · attempted: ${agg.attempted.length ? agg.attempted.join(",") : "none"} · failures: ${agg.failures.length ? esc(agg.failures.join(" | ")) : "none"} · apiKey:${hasKey ? "set" : "MISSING"}`;
 
   const week1Baseline = week === 1 ? `
       <div class="trend-title" style="margin-top:10px; font-size:10px;">Week 1 Known Baseline (since 2019)</div>
@@ -3660,12 +3925,21 @@ function renderRegularSeasonTrendsCard() {
       <div class="trend-line">Watch for teams that have already clinched or been eliminated — rested starters can make a "favorite" number stale fast, same blind spot the Elo model has.</div>
 
       <div class="trend-note" style="margin-top:8px;">This card disappears automatically once you switch to Preseason. The "Week ${week} Specific" section updates automatically as you change weeks.</div>
-      <div class="trend-note" style="font-size:10px; color:#8A96A1;">diag — league:${state.league} seasonType:${state.seasonType} week:${week} · cached years: ${agg.yearsFound.length ? agg.yearsFound.join(", ") : "none"}${agg.failures && agg.failures.length ? ` · failures: ${agg.failures.join(" | ")}` : ""} · apiKey:${(() => { try { return localStorage.getItem("odds-api-key") ? "set" : "MISSING"; } catch (e) { return "?"; } })()}</div>
+      <div class="trend-note" id="weekTrendStatus" style="margin-top:6px;">${window.__weekTrendStatus ? esc(window.__weekTrendStatus) : ""}</div>
+      <div class="trend-note" id="weekTrendDiag" style="margin-top:6px; font-family:monospace; font-size:10px; word-break:break-word;">${diagLine}</div>
     </div>
   `;
 
-  const fillBtn = document.getElementById("fillWeekTrendBtn");
-  if (fillBtn) fillBtn.addEventListener("click", () => computeThisWeekTrend("nfl", week));
+  // Delegated on the card container (assigned once per render, survives the inner HTML being rebuilt) so a
+  // re-render between mousedown and mouseup can't swallow the click. Errors surface in the status line.
+  el.onclick = (ev) => {
+    const b = ev.target && ev.target.closest ? ev.target.closest("#fillWeekTrendBtn") : null;
+    if (!b) return;
+    computeThisWeekTrend("nfl", state.week).catch((e) => {
+      window.__weekTrendStatus = "Compute crashed: " + e.message;
+      renderRegularSeasonTrendsCard();
+    });
+  };
 }
 
 function renderCFBTrendsCard() {
@@ -6782,5 +7056,7 @@ populateWeeks();
 loadSchedule();
 renderLedger();
 </script>
-</body>
-</html>
+
+
+
+</body></html>
