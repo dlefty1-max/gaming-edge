@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_67.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_68.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -189,7 +189,7 @@
 
       <div class="trend-note" style="margin-top:8px;">This card disappears automatically once you switch to Preseason. The "Week 1 Specific" section updates automatically as you change weeks.</div>
       <div class="trend-note" id="weekTrendStatus" style="margin-top:6px;"></div>
-      <div class="trend-note" id="weekTrendDiag" style="margin-top:6px; font-family:monospace; font-size:10px; word-break:break-word;">diag — league:nfl seasonType:2 week:1 · cached years: none · attempted: none · failures: none · apiKey:set</div>
+      <div class="trend-note" id="weekTrendDiag" style="margin-top:6px; font-family:monospace; font-size:10px; word-break:break-word;">diag — league:nfl seasonType:2 week:1 · cached years: none · attempted: none · failures: none · apiKey:set · localStorage: 10.00MB in 66 keys (biggest: hist-odds-americanfootball_n 0.81MB, hist-odds-americanfootball_n 0.76MB, hist-odds-americanfootball_n 0.70MB)</div>
     </div>
   </div>
     <div id="cfbTrendsCard"></div>
@@ -3190,13 +3190,32 @@ async function fetchWeekGamesWithNames(league, year, week) {
   }).filter(g => !isNaN(g.homeScore) && !isNaN(g.awayScore));
 }
 
+// Week-dog results are saved in THREE places: an in-memory map (works this session no matter what),
+// localStorage (legacy), and IndexedDB (big quota). localStorage alone failed silently once the browser's
+// ~5MB allowance filled up — the compute succeeded (and spent API credits) but nothing was kept.
+window.__weekDogMem = window.__weekDogMem || {};
+window.__weekDogStorageErr = window.__weekDogStorageErr || "";
+async function saveWeekDogResult(league, year, week, obj) {
+  const key = `week-dog-result-${league}-${year}-${week}`;
+  window.__weekDogMem[key] = obj;
+  try { localStorage.setItem(key, JSON.stringify(obj)); }
+  catch (e) { window.__weekDogStorageErr = `${e.name || "Error"} writing ${key}`; }
+  try { await histDbSet(key, obj); } catch (e) {}
+}
+async function loadWeekDogFromDb() {
+  try {
+    const all = await histDbGetAll();
+    Object.keys(all).forEach(k => { if (k.startsWith("week-dog-result-")) window.__weekDogMem[k] = all[k]; });
+    renderRegularSeasonTrendsCard();
+  } catch (e) {}
+}
+
 async function computeWeekDogATS(league, year, week, apiKey) {
   // Every exit path below records something under the cache key, so the card can always say
   // what happened instead of showing the same "no data yet" for every kind of failure.
   const persistFailure = (msg, totalGames) => {
     const failed = { week, totalGames: totalGames || 0, matched: 0, dogWins: 0, dogLosses: 0, dogPushes: 0, error: msg };
-    try { localStorage.setItem(`week-dog-result-${league}-${year}-${week}`, JSON.stringify(failed)); } catch (e2) {}
-    return failed;
+    return saveWeekDogResult(league, year, week, failed).then(() => failed);
   };
   let games;
   try {
@@ -3240,14 +3259,12 @@ async function computeWeekDogATS(league, year, week, apiKey) {
   } catch (e) {
     const failed = { week, totalGames: games.length, matched: 0, dogWins: 0, dogLosses: 0, dogPushes: 0, error: e.message };
     // persist the failure — otherwise the card just keeps saying "no data yet" with no reason
-    try { localStorage.setItem(`week-dog-result-${league}-${year}-${week}`, JSON.stringify(failed)); } catch (e2) {}
+    await saveWeekDogResult(league, year, week, failed);
     return failed;
   }
   const result = { week, totalGames: games.length, matched, dogWins, dogLosses, dogPushes, homeDog, awayDog };
   if (matched === 0) result.error = `found ${games.length} completed games but no historical odds matched them`;
-  try {
-    localStorage.setItem(`week-dog-result-${league}-${year}-${week}`, JSON.stringify(result));
-  } catch (e) { /* not fatal — just means the schedule card won't find this cached */ }
+  await saveWeekDogResult(league, year, week, result);
   return result;
 }
 
@@ -3259,10 +3276,11 @@ function getCachedWeekAggregate(league, week, years) {
   const attempted = []; // years with ANY stored record (success or failure) — separates "never tried" from "tried and failed"
   years.forEach(y => {
     try {
-      const raw = localStorage.getItem(`week-dog-result-${league}-${y}-${week}`);
-      if (!raw) return;
+      const key = `week-dog-result-${league}-${y}-${week}`;
+      let r = window.__weekDogMem[key];
+      if (!r) { const raw = localStorage.getItem(key); if (raw) r = JSON.parse(raw); }
+      if (!r) return;
       attempted.push(y);
-      const r = JSON.parse(raw);
       if (!r.matched) { failures.push(`${y}: ${r.error || "no games matched"}`); return; }
       dogWins += r.dogWins; dogLosses += r.dogLosses; dogPushes += r.dogPushes;
       if (r.homeDog) { homeDog.w += r.homeDog.w; homeDog.l += r.homeDog.l; homeDog.p += r.homeDog.p; }
@@ -3891,7 +3909,16 @@ function renderRegularSeasonTrendsCard() {
   let hasKey = false;
   try { hasKey = !!localStorage.getItem("odds-api-key"); } catch (e) {}
   const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
-  const diagLine = `diag — league:${state.league} seasonType:${state.seasonType} week:${week} · cached years: ${agg.yearsFound.length ? agg.yearsFound.join(",") : "none"} · attempted: ${agg.attempted.length ? agg.attempted.join(",") : "none"} · failures: ${agg.failures.length ? esc(agg.failures.join(" | ")) : "none"} · apiKey:${hasKey ? "set" : "MISSING"}`;
+  let lsInfo = "n/a";
+  try {
+    const sizes = [];
+    for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); sizes.push([k, (k.length + (localStorage.getItem(k) || "").length) * 2]); }
+    const total = sizes.reduce((a, x) => a + x[1], 0);
+    sizes.sort((a, b) => b[1] - a[1]);
+    lsInfo = `${(total / 1048576).toFixed(2)}MB in ${sizes.length} keys (biggest: ${sizes.slice(0, 3).map(x => `${x[0].slice(0, 28)} ${(x[1] / 1048576).toFixed(2)}MB`).join(", ")})`;
+  } catch (e) {}
+  const storeErr = window.__weekDogStorageErr ? ` · SAVE ISSUE: ${window.__weekDogStorageErr}` : "";
+  const diagLine = `diag — league:${state.league} seasonType:${state.seasonType} week:${week} · cached years: ${agg.yearsFound.length ? agg.yearsFound.join(",") : "none"} · attempted: ${agg.attempted.length ? agg.attempted.join(",") : "none"} · failures: ${agg.failures.length ? esc(agg.failures.join(" | ")) : "none"} · apiKey:${hasKey ? "set" : "MISSING"} · localStorage: ${esc(lsInfo)}${esc(storeErr)}`;
 
   const week1Baseline = week === 1 ? `
       <div class="trend-title" style="margin-top:10px; font-size:10px;">Week 1 Known Baseline (since 2019)</div>
@@ -7055,8 +7082,8 @@ loadData();
 populateWeeks();
 loadSchedule();
 renderLedger();
+loadWeekDogFromDb();
 </script>
-
 
 
 </body></html>
