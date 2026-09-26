@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_74.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_75.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -113,7 +113,7 @@
       <div class="bankroll-value" id="bankrollValue" style="color: rgb(111, 207, 142);">$0.00</div>
     </div>
   </div>
-  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;">Build 2026-09-26 12:18 UTC · f64dde60</div>
+  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;">Build 2026-09-26 12:26 UTC · 350d25fe</div>
   <nav>
     <button id="tabScheduleBtn" class="active">Schedule</button>
     <button id="tabLedgerBtn">My Bets</button>
@@ -1089,7 +1089,14 @@ function getEffWeight() {
 async function blendedRatings(league, year, homeId, awayId, eloHome, eloAway, asOfWeek) {
   const w = getEffWeight();
   if (w === 0) return { home: eloHome, away: eloAway, usedEff: false };
-  const fetchEff = (id) => asOfWeek
+  // asOfWeek is a WEEK NUMBER, and week 1's correct value is 0 (no prior weeks exist yet) —
+  // so this must check "was a value passed at all" (!== undefined), never truthiness. A plain
+  // `asOfWeek ? … : …` treats 0 as "nothing passed" (0 is falsy in JS) and would silently route
+  // every Week 1 game to fetchTeamEfficiency's CURRENT full-season stats instead of correctly
+  // falling back to pure Elo — exactly the hindsight leak this feature exists to prevent, and
+  // the reason a "no hindsight" backtest could show 100% coverage instead of excluding Week 1.
+  const useAsOf = asOfWeek !== undefined;
+  const fetchEff = (id) => useAsOf
     ? fetchTeamEfficiencyAsOfWeek(league, id, year, asOfWeek)
     : fetchTeamEfficiency(league, id, year);
   const [effH, effA] = await Promise.all([
