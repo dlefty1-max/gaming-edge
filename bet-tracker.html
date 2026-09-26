@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_71.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_72.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -623,6 +623,9 @@
       </div>
       <button class="save-btn full" id="runStatsProbeBtn">Run Probe</button>
       <div id="statsProbeResults" style="margin-top:12px;"></div>
+      <div class="refresh-note" style="margin-top:12px;">Second question, for the as-of-that-week efficiency idea: does the <b>team-level</b> box score (separate from the player stuff above) include third-down and red-zone numbers per game? If it does, we can build a rolling per-week efficiency profile from real game-by-game data instead of ESPN's season-total endpoint, which can't be limited to "as of week N." Uses the same League/Season picked above.</div>
+      <button class="save-btn full" id="runTeamStatsProbeBtn" style="margin-top:8px;">Run Team Box Score Probe</button>
+      <div id="teamStatsProbeResults" style="margin-top:12px;"></div>
     </div>
 
     <div class="card" style="padding:16px; margin-bottom:16px;">
@@ -6434,6 +6437,75 @@ async function runStatsProbe() {
   btn.disabled = false;
 }
 
+// Second probe, same "verify before building" approach: checks the TEAM-level box score stats
+// (separate array from the player categories above) for one completed game, specifically looking
+// for third-down / red-zone / possession-time fields. Those aren't exposed by ESPN's per-game
+// player stats, and the season-totals endpoint the live efficiency model uses can't be limited to
+// "as of week N" — it only ever returns the current cumulative total. If the per-game team stats
+// have these fields, a real as-of-week efficiency profile can be built by summing them game by
+// game; if not, that build has to drop or approximate those specific inputs.
+async function runTeamStatsProbe() {
+  const league = document.getElementById("probeLeague").value;
+  const year = parseInt(document.getElementById("probeYear").value, 10);
+  const out = document.getElementById("teamStatsProbeResults");
+  const btn = document.getElementById("runTeamStatsProbeBtn");
+  btn.disabled = true;
+  out.innerHTML = `<div class="refresh-note">Finding a completed game to inspect…</div>`;
+
+  const watchFor = ["thirddown", "redzone", "possession", "fourthdown", "sacks", "penalt"];
+
+  try {
+    const base = league === "nfl" ? NFL_BASE : CFB_BASE;
+    const params = new URLSearchParams({ week: 1, seasontype: 2, dates: year });
+    if (league === "cfb") params.set("groups", "80");
+    const sbRes = await fetch(`${base}?${params.toString()}`);
+    const sb = await sbRes.json();
+    const done = (sb.events || []).filter(ev => ev.status && ev.status.type && ev.status.type.completed);
+    if (done.length === 0) {
+      out.innerHTML = `<div class="error">No completed games found for ${year} week 1 — try an earlier season.</div>`;
+      btn.disabled = false;
+      return;
+    }
+    const ev = done[0];
+    out.innerHTML = `<div class="refresh-note">Inspecting ${ev.name || ev.id}…</div>`;
+    const box = await fetchGameBoxscore(league, ev.id);
+    const teams = (box.boxscore && box.boxscore.teams) || [];
+
+    if (teams.length === 0) {
+      out.innerHTML = `<div class="error">No <code>boxscore.teams</code> array in this response — top-level boxscore keys: ${Object.keys(box.boxscore || {}).join(", ")}</div>`;
+      btn.disabled = false;
+      return;
+    }
+
+    const teamBlocks = teams.map(t => {
+      const stats = t.statistics || [];
+      const hits = stats.filter(s => watchFor.some(w => (s.name || "").toLowerCase().includes(w)));
+      return {
+        team: (t.team && (t.team.displayName || t.team.abbreviation)) || "(unknown)",
+        allFields: stats.map(s => `${s.name || "(unnamed)"} = ${s.displayValue}`),
+        hits: hits.map(s => `${s.name} = ${s.displayValue}`),
+      };
+    });
+
+    const anyHits = teamBlocks.some(tb => tb.hits.length > 0);
+
+    out.innerHTML = `
+      <div class="trend-line">Game: <b>${ev.name || ev.id}</b> (${year} wk 1)</div>
+      <div class="trend-line" style="margin-top:6px; font-weight:700; color:${anyHits ? '#4C8B5A' : '#C4564B'};">
+        ${anyHits ? "Found candidate third-down / red-zone / possession-type fields — paste this whole result back into chat." : "No third-down / red-zone / possession-type fields found in the per-game team stats — paste this whole result back into chat so we know for sure and can decide what the as-of-week build can and can't include."}
+      </div>
+      ${teamBlocks.map(tb => `
+        <div class="trend-line" style="margin-top:10px;"><b>${tb.team}</b> — ${tb.allFields.length} fields</div>
+        ${tb.hits.length > 0 ? `<div class="trend-line" style="font-size:11px; color:#4C8B5A;">Matches: ${tb.hits.join(" · ")}</div>` : ""}
+        <div class="trend-line" style="font-size:11px; color:#8A96A1;">All fields: ${tb.allFields.join(" · ") || "(none)"}</div>
+      `).join("")}
+    `;
+  } catch (e) {
+    out.innerHTML = `<div class="error">${e.message}</div>`;
+  }
+  btn.disabled = false;
+}
+
 async function runBacktest() {
   const league = document.getElementById("btLeague").value;
   const year = parseInt(document.getElementById("btYear").value, 10);
@@ -7000,6 +7072,7 @@ document.getElementById("p6Book").addEventListener("change", (e) => {
 });
 document.getElementById("runBacktestBtn").addEventListener("click", runBacktest);
 document.getElementById("runStatsProbeBtn").addEventListener("click", runStatsProbe);
+document.getElementById("runTeamStatsProbeBtn").addEventListener("click", runTeamStatsProbe);
 document.getElementById("runLiveAccuracyBtn").addEventListener("click", runLiveAccuracy);
 document.getElementById("runWeekTrendsBtn").addEventListener("click", runWeekTrends);
 document.getElementById("runCacheAllBtn").addEventListener("click", estimateCacheAllCost);
