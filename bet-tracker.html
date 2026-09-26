@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_75.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_76.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -113,7 +113,7 @@
       <div class="bankroll-value" id="bankrollValue" style="color: rgb(111, 207, 142);">$0.00</div>
     </div>
   </div>
-  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;">Build 2026-09-26 12:26 UTC · 350d25fe</div>
+  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;">Build 2026-09-26 12:58 UTC · f2977b45</div>
   <nav>
     <button id="tabScheduleBtn" class="active">Schedule</button>
     <button id="tabLedgerBtn">My Bets</button>
@@ -5516,7 +5516,7 @@ async function runEdgeScan() {
       return bv - av;
     });
     out.innerHTML = rows.map(r => {
-      const isValidatedEdge = r.spread && r.spread.meaningful; // 2+ pt spread gap — the specific threshold the ATS backtest confirmed actually beats break-even
+      const isValidatedEdge = r.spread && r.spread.meaningful; // 2+ pt spread gap — the zone the ATS backtest has checked, NOT a threshold confirmed to beat break-even (latest no-hindsight run: 50.9% ATS, under the 52.4% break-even line — variable name kept for now, meaning is "tested range" not "validated edge")
       let line = `<div class="trend-line" style="margin-top:6px;"><b>${r.game}</b> <span style="color:#5C6B78;font-weight:400;">(${r.bookCount} book${r.bookCount > 1 ? "s" : ""})</span>${isValidatedEdge ? ` <span class="edge-badge">🔥 2+ PT EDGE</span>` : ""}</div>`;
       if (r.injuryNote) line += `<div class="trend-note" style="color:#B4463A;">${r.injuryNote.replace(" · ", "")}</div>`;
       const moveBadge = (m, unit) => {
@@ -5538,7 +5538,7 @@ async function runEdgeScan() {
         line += `<div class="trend-line" style="${r.total.meaningful ? "font-weight:700;" : ""}">Total — consensus ${r.total.marketTotal}, model implies ${r.total.modelTotal}${r.total.usingLastSeason ? " (last season's scoring)" : ""}${r.total.weatherNote || ""} — ${r.total.meaningful ? `⚑ ${r.total.gapPts}-pt gap, leans <b>${r.total.side}</b> (${r.total.odds})` : `${r.total.gapPts}-pt gap, below threshold`}${moveBadge(r.total.movement, " pts")}</div>`;
       }
       return `<div class="${isValidatedEdge ? "edge-highlight-card" : ""}">${line}</div>`;
-    }).join("") + `<div class="trend-note" style="margin-top:10px;">${edgeScaleFit ? `Model spreads scaled ×${edgeScaleFit.k.toFixed(2)} to match this slate's market scale (${edgeScaleFit.n} games, R²=${edgeScaleFit.r2.toFixed(2)}) — without it the model's compressed numbers make every flag an underdog by arithmetic alone.${edgeScaleFit.r2 < 0.3 ? ` <b style="color:#B4463A;">Low R²: the model's ordering disagrees with the market's, not just its scale — treat flags cautiously.</b>` : ""} ` : ""}🔥 = a 2+ point spread gap specifically — the threshold a real backtest (ATS Backtest, Backtest tab) confirmed hits ~58% ATS, above the ~52.4% break-even line. ⚑ = model and book disagree meaningfully (2+ pts on spread, 5%+ on moneyline, 3+ pts on total) but not all of these thresholds have been backtested individually. "Best line/price" shows the most favorable number found across all books returned for that game — worth grabbing regardless of the model's opinion. The total's model number is the same scoring-average blend shown in each game's trends panel, not the Elo model.${mismatchGames.length > 0 ? ` ${mismatchGames.length} lopsided game${mismatchGames.length > 1 ? "s" : ""} (likely FCS opponents) couldn't get a model comparison — real team info shown below instead.` : ""}</div>` + (mismatchGames.length > 0 ? `
+    }).join("") + `<div class="trend-note" style="margin-top:10px;">${edgeScaleFit ? `Model spreads scaled ×${edgeScaleFit.k.toFixed(2)} to match this slate's market scale (${edgeScaleFit.n} games, R²=${edgeScaleFit.r2.toFixed(2)}) — without it the model's compressed numbers make every flag an underdog by arithmetic alone.${edgeScaleFit.r2 < 0.3 ? ` <b style="color:#B4463A;">Low R²: the model's ordering disagrees with the market's, not just its scale — treat flags cautiously.</b>` : ""} ` : ""}🔥 = a 2+ point spread gap specifically — the zone the ATS Backtest (Backtest tab) has actually checked, not a proven winner: the latest no-hindsight run (50% efficiency weight, full 2025 season) put this zone at 50.9% ATS on 163 games, under the ~52.4% break-even line. Treat 🔥 as "in the tested range," a reference point, not a confirmed edge — re-run the ATS Backtest any time for the current number. ⚑ = model and book disagree meaningfully (2+ pts on spread, 5%+ on moneyline, 3+ pts on total) but not all of these thresholds have been backtested individually. "Best line/price" shows the most favorable number found across all books returned for that game — worth grabbing regardless of the model's opinion. The total's model number is the same scoring-average blend shown in each game's trends panel, not the Elo model.${mismatchGames.length > 0 ? ` ${mismatchGames.length} lopsided game${mismatchGames.length > 1 ? "s" : ""} (likely FCS opponents) couldn't get a model comparison — real team info shown below instead.` : ""}</div>` + (mismatchGames.length > 0 ? `
       <div class="trend-title" style="margin-top:14px;">Lopsided/FCS Games — No Model Number, Real Info Instead</div>
       <div class="trend-note">Our data can't build a rating for ${mismatchGames.length > 1 ? "these teams" : "this team"} (usually an FCS opponent whose real games we never see), so there's no honest model comparison to show. Here's what's actually verifiable instead: each team's real record/scoring, and the book's own posted line, so you can judge it yourself rather than trust a made-up model number.</div>
       ${mismatchGames.map(m => `
