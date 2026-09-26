@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_70.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_71.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -656,6 +656,19 @@
           <input id="atsBtWeekThrough" value="18" inputmode="numeric">
         </div>
       </div>
+      <div class="row">
+        <div>
+          <label>Efficiency Model Weight</label>
+          <select id="atsBtEffWeight">
+            <option value="0">Off — pure Elo (default)</option>
+            <option value="0.25">25% efficiency / 75% Elo</option>
+            <option value="0.5">50 / 50</option>
+            <option value="0.75">75% efficiency / 25% Elo</option>
+            <option value="1">100% efficiency (no Elo)</option>
+          </select>
+        </div>
+      </div>
+      <div class="refresh-note" style="margin-top:-6px;">Same setting as the Edge tab's Efficiency Model Weight — changing it here changes it there too, so whichever you set last is what any scan or backtest uses.</div>
       <button class="save-btn full" id="atsBacktestEstimateBtn">Estimate Cost &amp; Run</button>
       <div id="atsBacktestResults" style="margin-top:12px;"></div>
     </div>
@@ -3025,6 +3038,7 @@ async function runATSBacktest(league, year, allGames, apiKey) {
     const mlPct = mlGraded > 0 ? ((mlWins / mlGraded) * 100).toFixed(1) : null;
 
     out.innerHTML = `
+      <div class="trend-note"><b>Efficiency weight used: ${Math.round(getEffWeight() * 100)}%</b> (set on the Edge or ATS Backtest tab — same setting either place)</div>
       <div class="trend-score">Spread (Elo's SU favorite): ${atsWins}-${atsLosses}-${atsPushes} ATS (${atsPct}%)</div>
       ${mlGraded > 0 ? `<div class="trend-line">Moneyline (same favorite, real price): ${mlWins}-${mlLosses} (${mlPct}%)${mlNoLine > 0 ? ` · ${mlNoLine} games had no ML line found` : ""}</div>` : ""}
       <div class="trend-note">Break-even at standard -110 odds is 52.4%. ${noLineFound > 0 ? `${noLineFound} games had no matched spread line and were skipped.` : ""}</div>
@@ -6939,13 +6953,22 @@ document.getElementById("preferredBook").addEventListener("change", (e) => {
   try { localStorage.setItem("preferred-book", e.target.value); } catch (e2) {}
   renderGames();
 });
-document.getElementById("effWeight").addEventListener("change", (e) => {
-  try { localStorage.setItem("eff-weight", e.target.value); } catch (e2) {}
-  showToast(parseFloat(e.target.value) === 0 ? "Efficiency model off — pure Elo." : `Efficiency weight set to ${Math.round(parseFloat(e.target.value) * 100)}%. Re-run the scan to see it applied.`);
-});
+// One shared setting (localStorage "eff-weight"), two selectors (Edge tab + ATS Backtest tab) —
+// each change syncs the OTHER selector's displayed value too, so they can never silently disagree
+// and show two different numbers for what is actually one setting.
+function setEffWeightEverywhere(val, announce) {
+  try { localStorage.setItem("eff-weight", val); } catch (e2) {}
+  const edgeSel = document.getElementById("effWeight");
+  const btSel = document.getElementById("atsBtEffWeight");
+  if (edgeSel && edgeSel.value !== val) edgeSel.value = val;
+  if (btSel && btSel.value !== val) btSel.value = val;
+  if (announce) showToast(parseFloat(val) === 0 ? "Efficiency model off — pure Elo." : `Efficiency weight set to ${Math.round(parseFloat(val) * 100)}%.`);
+}
+document.getElementById("effWeight").addEventListener("change", (e) => setEffWeightEverywhere(e.target.value, true));
+document.getElementById("atsBtEffWeight").addEventListener("change", (e) => setEffWeightEverywhere(e.target.value, true));
 try {
   const savedEffW = localStorage.getItem("eff-weight");
-  if (savedEffW != null) document.getElementById("effWeight").value = savedEffW;
+  if (savedEffW != null) setEffWeightEverywhere(savedEffW, false);
 } catch (e) {}
 document.getElementById("tabPropsBtn").addEventListener("click", () => {
   state.tab = "props";
