@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_68.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_70.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -4966,8 +4966,15 @@ async function runEdgeScan() {
       } catch (e) { /* falls back to pure Elo */ }
 
       const diff = (rh + 55) - ra;
-      const modelHomeWinProb = 1 / (1 + Math.pow(10, -diff / getEloConstants(state.league).probDivisor));
-      const modelHomeSpread = -(diff / getSpreadDivisor(state.league)) * edgeK; // scaled to slate; see fitModelScale
+      // Apply the same slate-fit scale (edgeK) to the raw Elo diff before turning it into EITHER
+      // a spread or a win probability. Both are derived from this one number, so scaling it once
+      // here keeps them consistent — previously only the spread got scaled, so the win-probability
+      // side of the moneyline edge stayed compressed toward 50%, which (mechanically, same as the
+      // spread bug fixed 2025-09-15) makes the gap vs. the market's real probability land on the
+      // underdog almost every time. Doesn't change which side the model favors, only the confidence.
+      const scaledDiff = diff * edgeK;
+      const modelHomeWinProb = 1 / (1 + Math.pow(10, -scaledDiff / getEloConstants(state.league).probDivisor));
+      const modelHomeSpread = -(scaledDiff / getSpreadDivisor(state.league)); // scaled to slate; see fitModelScale
 
       const row = { game: `${g.away} @ ${g.home}`, bookCount: books.length, injuryNote: injuryNote + effNote, homeId: g.homeId, awayId: g.awayId, homeName: g.home, awayName: g.away };
 
