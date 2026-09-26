@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_72.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_73.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -672,8 +672,38 @@
         </div>
       </div>
       <div class="refresh-note" style="margin-top:-6px;">Same setting as the Edge tab's Efficiency Model Weight — changing it here changes it there too, so whichever you set last is what any scan or backtest uses.</div>
+      <label style="display:block; margin:6px 0; font-size:12px;"><input type="checkbox" id="atsBtAsOfWeek"> Use as-of-week efficiency stats (no hindsight) — requires building the ledger below first for this league/season</label>
       <button class="save-btn full" id="atsBacktestEstimateBtn">Estimate Cost &amp; Run</button>
       <div id="atsBacktestResults" style="margin-top:12px;"></div>
+    </div>
+
+    <div class="card" style="padding:16px; margin-bottom:16px; border:2px dashed #E08A2E;">
+      <div class="trend-title" style="margin-bottom:8px;">As-Of-Week Efficiency Ledger (removes hindsight)</div>
+      <div class="refresh-note">The efficiency weight above normally uses ESPN's <b>current, full-season</b> stats no matter what week you're grading — so a backtest of Week 3 secretly gets to see Weeks 4-18 too. This walks every completed game and snapshots each team's real cumulative stats after every week, so Week 3 can only ever use Weeks 1-2. Same cost as the defensive stats build — one fetch per game, a few minutes, cached after that. Build once per league/season, covering the full season (Through Week 18), then tick the checkbox above and re-run the ATS Backtest.</div>
+      <div class="row">
+        <div>
+          <label>League</label>
+          <select id="asofLeague">
+            <option value="nfl" selected="">NFL</option>
+            <option value="cfb">College Football</option>
+          </select>
+        </div>
+        <div>
+          <label>Season</label>
+          <select id="asofYear">
+            <option value="2026" selected="">2026</option>
+            <option value="2025">2025</option>
+            <option value="2024">2024</option>
+          </select>
+        </div>
+        <div>
+          <label>Through Week</label>
+          <input id="asofWeek" value="18" inputmode="numeric">
+        </div>
+      </div>
+      <label style="display:block; margin:6px 0; font-size:12px;"><input type="checkbox" id="asofForce"> Force full rebuild (ignore cache)</label>
+      <button class="save-btn full" id="buildAsofBtn">Build As-Of-Week Ledger</button>
+      <div id="asofResults" style="margin-top:12px;"></div>
     </div>
   </div>
 
@@ -1051,12 +1081,19 @@ function getEffWeight() {
 // Produces the effective home/away ratings for one matchup, blending Elo with efficiency.
 // Falls back cleanly to pure Elo whenever efficiency data isn't available for either team,
 // so a missing stat line degrades to the old behavior instead of producing a broken number.
-async function blendedRatings(league, year, homeId, awayId, eloHome, eloAway) {
+// asOfWeek is optional: omitted (live scans), this reads ESPN's current season-to-date stats,
+// same as always. Passed (backtests that opted into the as-of-week ledger), it reads each
+// team's stats as they stood through that week only, so grading week W can't see week W's or
+// later games' stats — see fetchTeamEfficiencyAsOfWeek in 02-efficiency-defense.js.
+async function blendedRatings(league, year, homeId, awayId, eloHome, eloAway, asOfWeek) {
   const w = getEffWeight();
   if (w === 0) return { home: eloHome, away: eloAway, usedEff: false };
+  const fetchEff = (id) => asOfWeek
+    ? fetchTeamEfficiencyAsOfWeek(league, id, year, asOfWeek)
+    : fetchTeamEfficiency(league, id, year);
   const [effH, effA] = await Promise.all([
-    fetchTeamEfficiency(league, homeId, year),
-    fetchTeamEfficiency(league, awayId, year),
+    fetchEff(homeId),
+    fetchEff(awayId),
   ]);
   const rH = efficiencyToRatings(effH, league);
   const rA = efficiencyToRatings(effA, league);
@@ -1528,6 +1565,208 @@ async function fetchTeamEfficiency(league, teamId, year) {
     effCache[key] = null; // cache the miss too, so a bad team id doesn't re-fetch every time
     return null;
   }
+}
+
+// ---------- as-of-week efficiency (no hindsight) ----------
+// fetchTeamEfficiency() above always reads ESPN's CURRENT season-to-date totals, no matter what
+// week is being graded — so backtesting Week 3 with it quietly also uses Weeks 4-18. This
+// reconstructs the same inputs from individual box scores instead, snapshotting every team's
+// cumulative stats after each week, so grading Week 3 can only ever use Weeks 1-2. Every field
+// below was confirmed present in a real response via the Team Box Score Probe before writing
+// this — see that probe's output. SLOW BY DESIGN, a separate pass from the defensive-stats
+// build above: one fetch per game (~270 for an NFL season). Built once, cached, on demand.
+const ASOFWEEK_CACHE_VERSION = "v1";
+
+// Extra per-game team fields readTeamOffenseFromBoxscore doesn't already cover.
+// ASSUMPTION, stated plainly and not independently confirmed beyond the probe: ESPN's
+// "redZoneAttempts" field is formatted "scores-trips" (e.g. "2-3" = scored on 2 of 3 red zone
+// trips), matching the site's usual box score convention. ESPN doesn't label which number is
+// which, so if a later check against a team's known red-zone rate disagrees, revisit this first.
+function readTeamAdvancedFromBoxscore(boxTeam) {
+  const stats = (boxTeam && boxTeam.statistics) || [];
+  const findPair = (name) => {
+    const s = stats.find(x => (x.name || "").toLowerCase() === name.toLowerCase());
+    if (s && typeof s.displayValue === "string" && s.displayValue.includes("-")) {
+      const parts = s.displayValue.split("-").map(p => parseFloat(p.replace(/,/g, "")));
+      if (parts.length >= 2 && !parts.some(isNaN)) return parts;
+    }
+    return null;
+  };
+  const thirdDown = findPair("thirdDownEff");
+  const redZone = findPair("redZoneAttempts");
+  const posStat = stats.find(x => (x.name || "").toLowerCase() === "possessiontime");
+  let possessionSeconds = null;
+  if (posStat && typeof posStat.displayValue === "string" && posStat.displayValue.includes(":")) {
+    const [m, s] = posStat.displayValue.split(":").map(Number);
+    if (!isNaN(m) && !isNaN(s)) possessionSeconds = m * 60 + s;
+  }
+  return {
+    thirdDownMade: thirdDown ? thirdDown[0] : null,
+    thirdDownAtt: thirdDown ? thirdDown[1] : null,
+    redZoneMade: redZone ? redZone[0] : null,
+    redZoneAtt: redZone ? redZone[1] : null,
+    possessionSeconds,
+  };
+}
+
+// Sums one team's OWN defensive disruption out of their player box score block — the same
+// "defensive" category (sacks, tacklesForLoss, passesDefended) already verified via the
+// (player-level) Box Score Probe used for the position-split defensive work.
+function readTeamDefenseDisruptionFromBoxscore(playerBlock) {
+  const cats = (playerBlock && playerBlock.statistics) || [];
+  const sumCol = (catName, keyName) => {
+    const c = cats.find(x => x.name === catName);
+    if (!c) return 0;
+    const i = (c.keys || []).indexOf(keyName);
+    if (i < 0) return 0;
+    return (c.athletes || []).reduce((sum, a) => {
+      const v = parseFloat(String((a.stats || [])[i]).replace(/,/g, ""));
+      return sum + (isNaN(v) ? 0 : v);
+    }, 0);
+  };
+  return {
+    sacks: sumCol("defensive", "sacks"),
+    tacklesForLoss: sumCol("defensive", "tacklesForLoss"),
+    passesDefended: sumCol("defensive", "passesDefended"),
+  };
+}
+
+async function buildAsOfWeekEfficiency(league, year, maxWeek, progressCb, force) {
+  const cacheKey = `asofweek-${ASOFWEEK_CACHE_VERSION}-${league}-${year}-w${maxWeek}`;
+  if (!force) {
+    const cached = await histDbGet(cacheKey);
+    if (cached) return { ...cached, fromCache: true };
+  }
+
+  // running[teamId] = cumulative totals so far; a shallow-copied snapshot is stashed after
+  // every week, so any earlier week's cutoff can be read back without re-walking anything.
+  const running = {};
+  const ensure = (id) => {
+    if (!running[id]) running[id] = {
+      games: 0, totalYards: 0, totalPlays: 0, passYards: 0, passAttempts: 0,
+      rushYards: 0, rushAttempts: 0, firstDowns: 0, giveaways: 0,
+      thirdDownMade: 0, thirdDownAtt: 0, redZoneMade: 0, redZoneAtt: 0,
+      possessionSeconds: 0, points: 0,
+      sacks: 0, tacklesForLoss: 0, passesDefended: 0, takeaways: 0,
+    };
+    return running[id];
+  };
+  const snapshot = () => {
+    const s = {};
+    Object.keys(running).forEach(id => { s[id] = { ...running[id] }; });
+    return s;
+  };
+
+  const byWeek = {};
+  let processed = 0, failed = 0;
+  for (let w = 1; w <= maxWeek; w++) {
+    let events = [];
+    try {
+      const base = league === "nfl" ? NFL_BASE : CFB_BASE;
+      const params = new URLSearchParams({ week: w, seasontype: 2, dates: year });
+      if (league === "cfb") params.set("groups", "80");
+      const res = await fetch(`${base}?${params.toString()}`);
+      const json = await res.json();
+      events = (json.events || []).filter(ev => ev.status && ev.status.type && ev.status.type.completed);
+    } catch (e) { /* this week's games just stay out of the ledger — treated as not yet played */ }
+
+    for (const ev of events) {
+      try {
+        const box = await fetchGameBoxscore(league, ev.id);
+        const boxTeams = (box.boxscore && box.boxscore.teams) || [];
+        const playerBlocks = (box.boxscore && box.boxscore.players) || [];
+        if (boxTeams.length < 2) { failed++; continue; }
+
+        const comp = (box.header && box.header.competitions && box.header.competitions[0]) || null;
+        const scoreById = {};
+        if (comp) (comp.competitors || []).forEach(c => { scoreById[c.team && c.team.id] = parseFloat(c.score); });
+
+        const sides = boxTeams.map(bt => {
+          const id = bt.team && bt.team.id;
+          const pb = playerBlocks.find(p => p.team && p.team.id === id);
+          return { id, off: readTeamOffenseFromBoxscore(bt), adv: readTeamAdvancedFromBoxscore(bt), def: readTeamDefenseDisruptionFromBoxscore(pb) };
+        });
+
+        for (let i = 0; i < 2; i++) {
+          const me = sides[i], opp = sides[1 - i];
+          if (!me.id) continue;
+          const r = ensure(me.id);
+          r.games++;
+          if (me.off.totalYards != null) r.totalYards += me.off.totalYards;
+          if (me.off.totalPlays != null) r.totalPlays += me.off.totalPlays;
+          if (me.off.passYards != null) r.passYards += me.off.passYards;
+          if (me.off.passAttempts != null) r.passAttempts += me.off.passAttempts;
+          if (me.off.rushYards != null) r.rushYards += me.off.rushYards;
+          if (me.off.rushAttempts != null) r.rushAttempts += me.off.rushAttempts;
+          if (me.off.firstDowns != null) r.firstDowns += me.off.firstDowns;
+          if (me.off.turnovers != null) r.giveaways += me.off.turnovers;
+          if (me.adv.thirdDownMade != null) r.thirdDownMade += me.adv.thirdDownMade;
+          if (me.adv.thirdDownAtt != null) r.thirdDownAtt += me.adv.thirdDownAtt;
+          if (me.adv.redZoneMade != null) r.redZoneMade += me.adv.redZoneMade;
+          if (me.adv.redZoneAtt != null) r.redZoneAtt += me.adv.redZoneAtt;
+          if (me.adv.possessionSeconds != null) r.possessionSeconds += me.adv.possessionSeconds;
+          const myScore = scoreById[me.id];
+          if (myScore != null && !isNaN(myScore)) r.points += myScore;
+          r.sacks += me.def.sacks;
+          r.tacklesForLoss += me.def.tacklesForLoss;
+          r.passesDefended += me.def.passesDefended;
+          if (opp.off.turnovers != null) r.takeaways += opp.off.turnovers; // opponent's giveaways = my takeaways
+        }
+        processed++;
+      } catch (e) { failed++; }
+      if (progressCb) progressCb(processed, failed, w);
+      await new Promise(r => setTimeout(r, 60));
+    }
+    byWeek[w] = snapshot();
+  }
+
+  const out = { league, year, maxWeek, builtAt: new Date().toISOString(), gamesProcessed: processed, gamesFailed: failed, byWeek };
+  await histDbSet(cacheKey, out);
+  return out;
+}
+
+// Converts one team's cumulative-through-week-N raw totals into the SAME shape
+// efficiencyToRatings() already expects, so the rating math itself doesn't need touching —
+// only which numbers feed it.
+function asOfWeekRawToEff(r) {
+  if (!r || !r.games) return null;
+  return {
+    gamesPlayed: r.games,
+    yardsPerPlay: r.totalPlays ? r.totalYards / r.totalPlays : null,
+    yardsPerPassAtt: r.passAttempts ? r.passYards / r.passAttempts : null,
+    yardsPerRushAtt: r.rushAttempts ? r.rushYards / r.rushAttempts : null,
+    thirdDownPct: r.thirdDownAtt ? (r.thirdDownMade / r.thirdDownAtt) * 100 : null,
+    redzoneScorePct: r.redZoneAtt ? (r.redZoneMade / r.redZoneAtt) * 100 : null,
+    pointsPerGame: r.points / r.games,
+    giveaways: r.giveaways,
+    takeaways: r.takeaways,
+    sacks: r.sacks,
+    tacklesForLoss: r.tacklesForLoss,
+    passesDefended: r.passesDefended,
+  };
+}
+
+const asOfWeekLedgerMemCache = {};
+// Reader used by the backtest — looks up one team's stats as they stood through week N, from
+// whatever ledger is already cached. Does NOT trigger a build on its own (a build is a real,
+// several-minute cost that should only happen when explicitly requested) — returns null if
+// nothing's been built yet, which blendedRatings treats the same as any other missing stat:
+// a clean fallback to pure Elo for that game, not a broken number.
+async function fetchTeamEfficiencyAsOfWeek(league, teamId, year, throughWeek) {
+  if (!throughWeek || throughWeek < 1) return null;
+  const memKey = `${league}-${year}`;
+  let ledger = asOfWeekLedgerMemCache[memKey];
+  if (!ledger) {
+    for (let mw = 18; mw >= throughWeek; mw--) {
+      const cached = await histDbGet(`asofweek-${ASOFWEEK_CACHE_VERSION}-${league}-${year}-w${mw}`);
+      if (cached) { ledger = cached; break; }
+    }
+    if (!ledger) return null;
+    asOfWeekLedgerMemCache[memKey] = ledger;
+  }
+  if (ledger.maxWeek < throughWeek) return null; // cached ledger doesn't reach this far — be honest, don't reuse a shorter one
+  const wk = ledger.byWeek[throughWeek];
+  return wk ? asOfWeekRawToEff(wk[teamId]) : null;
 }
 
 // Converts raw efficiency numbers into offense/defense ratings on the same ~1500 scale Elo uses,
@@ -2897,10 +3136,12 @@ function nameMatchesHistorical(histTeamName, espnTeamName) {
 async function runATSBacktest(league, year, allGames, apiKey) {
   const out = document.getElementById("atsBacktestResults");
   const { K, HOME_ADV, movCap, probDivisor } = getEloConstants(league);
+  const useAsOfWeek = document.getElementById("atsBtAsOfWeek").checked;
 
   try {
     let elo = await buildCarryoverElo(league, year - 1);
     let atsWins = 0, atsLosses = 0, atsPushes = 0, noLineFound = 0;
+    let effAppliedCount = 0; // how many graded games actually got a real efficiency number, vs. fell back to pure Elo
     let mlWins = 0, mlLosses = 0, mlNoLine = 0;
     let ouNoLine = 0;
     const buckets = {
@@ -2933,13 +3174,21 @@ async function runATSBacktest(league, year, allGames, apiKey) {
 
         const rh = elo[g.homeId] != null ? elo[g.homeId] : 1500;
         const ra = elo[g.awayId] != null ? elo[g.awayId] : 1500;
-        // Blend efficiency in (no-op at weight 0). NOTE: efficiency stats here are FULL-SEASON
-        // totals, not as-of-that-week — so a backtest with weight > 0 has some hindsight baked
-        // in and will look better than live performance. Flagged in the results, not hidden.
+        // Blend efficiency in (no-op at weight 0). Without the as-of-week checkbox, efficiency
+        // stats here are FULL-SEASON totals, not as-of-that-week — so a run with weight > 0 has
+        // some hindsight baked in and will look better than live performance (flagged in the
+        // results, not hidden). With the checkbox on, this passes the week being graded so only
+        // games from EARLIER weeks feed the efficiency numbers — see fetchTeamEfficiencyAsOfWeek.
         let bRh = rh, bRa = ra;
         try {
-          const blended = await blendedRatings(league, year, g.homeId, g.awayId, rh, ra);
+          // w-1, not w: the ledger's byWeek[N] is cumulative THROUGH week N inclusive, so grading
+          // week w with byWeek[w] would leak week w's own result into its own prediction — the
+          // exact leak this feature exists to remove. byWeek[0] doesn't exist (week 1 has no
+          // priors at all), and fetchTeamEfficiencyAsOfWeek already returns null for throughWeek
+          // < 1, which correctly falls back to pure Elo for week 1 — there's nothing to leak from.
+          const blended = await blendedRatings(league, year, g.homeId, g.awayId, rh, ra, useAsOfWeek ? w - 1 : undefined);
           bRh = blended.home; bRa = blended.away;
+          if (blended.usedEff) effAppliedCount++;
         } catch (e) { /* falls back to pure Elo */ }
         const diff = (bRh + HOME_ADV) - bRa;
         const modelHomeSpread = -(diff / getSpreadDivisor(league));
@@ -3040,12 +3289,17 @@ async function runATSBacktest(league, year, allGames, apiKey) {
     const mlGraded = mlWins + mlLosses;
     const mlPct = mlGraded > 0 ? ((mlWins / mlGraded) * 100).toFixed(1) : null;
 
+    const effW = getEffWeight();
     out.innerHTML = `
-      <div class="trend-note"><b>Efficiency weight used: ${Math.round(getEffWeight() * 100)}%</b> (set on the Edge or ATS Backtest tab — same setting either place)</div>
+      <div class="trend-note"><b>Efficiency weight used: ${Math.round(effW * 100)}%</b> (set on the Edge or ATS Backtest tab — same setting either place)${effW > 0 ? ` · <b>${useAsOfWeek ? "As-of-week stats (no hindsight)" : "Full-season stats (hindsight)"}</b>` : ""}</div>
       <div class="trend-score">Spread (Elo's SU favorite): ${atsWins}-${atsLosses}-${atsPushes} ATS (${atsPct}%)</div>
       ${mlGraded > 0 ? `<div class="trend-line">Moneyline (same favorite, real price): ${mlWins}-${mlLosses} (${mlPct}%)${mlNoLine > 0 ? ` · ${mlNoLine} games had no ML line found` : ""}</div>` : ""}
       <div class="trend-note">Break-even at standard -110 odds is 52.4%. ${noLineFound > 0 ? `${noLineFound} games had no matched spread line and were skipped.` : ""}</div>
-      ${getEffWeight() > 0 ? `<div class="trend-note" style="color:#B4463A;"><b>⚠ Hindsight warning:</b> this ran with efficiency weight at ${Math.round(getEffWeight() * 100)}%. Those efficiency stats are FULL-SEASON totals, which include games played after the ones being graded — so this result is optimistic and will overstate live performance. Compare it against a 0% (pure Elo) run to see the difference, but treat any improvement as an upper bound, not a real expectation.</div>` : ""}
+      ${effW > 0 && !useAsOfWeek ? `<div class="trend-note" style="color:#B4463A;"><b>⚠ Hindsight warning:</b> this ran with efficiency weight at ${Math.round(effW * 100)}%. Those efficiency stats are FULL-SEASON totals, which include games played after the ones being graded — so this result is optimistic and will overstate live performance. Compare it against a 0% (pure Elo) run to see the difference, but treat any improvement as an upper bound, not a real expectation.</div>` : ""}
+      ${effW > 0 && useAsOfWeek ? (effAppliedCount > 0
+          ? `<div class="trend-note" style="color:#4C8B5A;"><b>✓ No hindsight:</b> efficiency actually applied to ${effAppliedCount} of ${graded} graded games, using only stats from weeks before the one being graded each time. This number is a fair estimate of live performance, not an upper bound.</div>`
+          : `<div class="trend-note" style="color:#B4463A;"><b>⚠ As-of-week ledger not found:</b> efficiency was applied to 0 of ${graded} games — this ran as pure Elo even though weight is ${Math.round(effW * 100)}%. Build the As-Of-Week Ledger below for ${league.toUpperCase()} ${year} first, covering these weeks, then re-run.</div>`
+        ) : ""}
       <div class="trend-title" style="margin-top:12px;">By Gap Size — where does the real edge actually live?</div>
       ${["moderate", "large", "extreme"].map(key => {
         const b = buckets[key];
@@ -3073,6 +3327,42 @@ async function runATSBacktest(league, year, allGames, apiKey) {
   } catch (e) {
     out.innerHTML = `<div class="error">${e.message}</div>`;
   }
+}
+
+// Triggers the box-score walk that builds the as-of-week efficiency ledger (see
+// buildAsOfWeekEfficiency in 02-efficiency-defense.js) — same cost/pattern as the defensive
+// stats build: one fetch per game, free, a few minutes, cached after that.
+async function runBuildAsofStats() {
+  const league = document.getElementById("asofLeague").value;
+  const year = parseInt(document.getElementById("asofYear").value, 10);
+  const maxWeek = Math.max(1, Math.min(18, parseInt(document.getElementById("asofWeek").value, 10) || 18));
+  const out = document.getElementById("asofResults");
+  const btn = document.getElementById("buildAsofBtn");
+  btn.disabled = true;
+  const started = Date.now();
+  out.innerHTML = `<div class="refresh-note">Starting… one fetch per game, paced to be a good citizen with ESPN. Leave this tab open.</div>`;
+
+  try {
+    const force = document.getElementById("asofForce").checked;
+    const data = await buildAsOfWeekEfficiency(league, year, maxWeek, (done, failed, week) => {
+      const secs = Math.round((Date.now() - started) / 1000);
+      out.innerHTML = `<div class="refresh-note">Week ${week} · ${done} games processed${failed ? ` · ${failed} skipped` : ""} · ${secs}s elapsed…</div>`;
+    }, force);
+
+    const teamCount = Object.keys(data.byWeek[maxWeek] || {}).length;
+    if (teamCount === 0) {
+      out.innerHTML = `<div class="error">No teams ended up with any data — ${data.gamesFailed} games failed to parse. Try a season/week range with completed games.</div>`;
+      btn.disabled = false;
+      return;
+    }
+    out.innerHTML = `
+      <div class="trend-score">Built the as-of-week ledger for ${league.toUpperCase()} ${year}, Weeks 1-${maxWeek} (${teamCount} teams, ${data.gamesProcessed} games${data.gamesFailed ? `, ${data.gamesFailed} skipped` : ""}).</div>
+      <div class="trend-note">${data.fromCache ? `<b style="color:#B4463A;">Loaded from cache — nothing was rebuilt.</b> Tick "Force full rebuild" above to actually re-run it.` : `Took ${Math.round((Date.now() - started) / 1000)}s.`} Tick "Use as-of-week efficiency stats" on the ATS Backtest above and re-run it — it'll use this automatically for any week from 1 through ${maxWeek}.</div>
+    `;
+  } catch (e) {
+    out.innerHTML = `<div class="error">${e.message}</div>`;
+  }
+  btn.disabled = false;
 }
 
 async function estimateCacheAllCost() {
@@ -7077,6 +7367,7 @@ document.getElementById("runLiveAccuracyBtn").addEventListener("click", runLiveA
 document.getElementById("runWeekTrendsBtn").addEventListener("click", runWeekTrends);
 document.getElementById("runCacheAllBtn").addEventListener("click", estimateCacheAllCost);
 document.getElementById("atsBacktestEstimateBtn").addEventListener("click", estimateATSBacktestCost);
+document.getElementById("buildAsofBtn").addEventListener("click", runBuildAsofStats);
 document.getElementById("runEdgeScanBtn").addEventListener("click", runEdgeScan);
 document.getElementById("calcPropEdgeBtn").addEventListener("click", calcPropEdge);
 document.getElementById("propFindTeamBtn").addEventListener("click", findPropTeam);
