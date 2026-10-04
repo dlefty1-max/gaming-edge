@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_78.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_79.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -113,7 +113,7 @@
       <div class="bankroll-value" id="bankrollValue" style="color: rgb(111, 207, 142);">$0.00</div>
     </div>
   </div>
-  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;">Build 2026-10-04 11:34 UTC · 11b8466c</div>
+  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;">Build 2026-10-04 11:39 UTC · b160148c</div>
   <nav>
     <button id="tabScheduleBtn" class="active">Schedule</button>
     <button id="tabLedgerBtn">My Bets</button>
@@ -595,7 +595,14 @@
     <div class="trend-note" style="margin-top:6px;">Tap a column to sort; tap again to flip (for Over/Under, flipping shows the best "under" teams). ML profit = units won betting that team to win straight up every game at the first book's closing price. ATS/over-under are graded against the closing line at kickoff. Records describe the past — early in the season they're a handful of games, mostly noise, and team ATS records tend to drift back toward 50%.</div>
     <div id="tallyUpdateArea" style="margin-top:8px;">
       <button class="save-btn full" id="tallyUpdateBtn">Update ATS / O-U / ML lines (see cost first)</button>
-    </div></div></div>
+    </div></div>
+        <div style="margin-top:12px; border-top:1px solid #E4E8EC; padding-top:10px;">
+          <div class="trend-title">Do hot teams keep covering?</div>
+          <div class="trend-note">Set Year above to a season whose lines are cached (e.g. 2025), then run. Uses cached lines only — no credits.</div>
+          <button class="save-btn full" id="hotTestBtn" style="margin-top:6px;">Test the hot-team trend</button>
+          <div id="hotTestOut" style="margin-top:8px;"></div>
+        </div>
+      </div>
     </div>
 
     <div class="card" style="margin-top: 20px;">
@@ -8039,6 +8046,100 @@ async function tallyRunUpdate(apiKey) {
   }
 }
 
+// ---------- Hot-team trend test ----------
+// Does a team that has been covering keep covering? Walks the season week by week and, BEFORE each
+// week, looks only at ATS records from earlier weeks. A team's own game never counts toward the
+// record that decides whether to bet it. Reads cached lines only — costs no credits.
+const HOT_RULES = [
+  { label: "Back teams covering 60%+", hot: true, min: 0.6 },
+  { label: "Back teams covering 70%+", hot: true, min: 0.7 },
+  { label: "Back teams covering 80%+", hot: true, min: 0.8 },
+  { label: "Fade teams covering 40% or less", hot: false, max: 0.4 },
+  { label: "Fade teams covering 30% or less", hot: false, max: 0.3 },
+  { label: "Fade teams covering 20% or less", hot: false, max: 0.2 },
+];
+const HOT_MIN_GAMES = 4; // need at least this many graded games before a record counts as a "trend"
+
+function hotTestRun(graded) {
+  const rec = {};
+  const get = (id) => (rec[id] = rec[id] || { w: 0, l: 0 });
+  const tally = HOT_RULES.map(() => ({ w: 0, l: 0, p: 0 }));
+  const weeks = [...new Set(graded.map(g => g.week))].sort((a, b) => a - b);
+  for (const wk of weeks) {
+    const wg = graded.filter(g => g.week === wk);
+    for (const g of wg) {
+      const h = get(g.homeId), a = get(g.awayId);
+      HOT_RULES.forEach((rule, i) => {
+        const qualifies = (r) => {
+          const n = r.w + r.l;
+          if (n < HOT_MIN_GAMES) return false;
+          const pct = r.w / n;
+          return rule.hot ? pct >= rule.min : pct <= rule.max;
+        };
+        const hq = qualifies(h), aq = qualifies(a);
+        if (hq === aq) return; // neither qualifies, or both do (they'd cancel) — no bet
+        const signalSide = hq ? "home" : "away";
+        const betSide = rule.hot ? signalSide : (signalSide === "home" ? "away" : "home");
+        const res = g.ats[betSide];
+        tally[i][res === "W" ? "w" : res === "L" ? "l" : "p"]++;
+      });
+    }
+    // update records only AFTER the whole week is graded, so nothing in week N informs week N
+    for (const g of wg) {
+      [["home", g.homeId], ["away", g.awayId]].forEach(([side, id]) => {
+        const r = g.ats[side];
+        if (r === "W") get(id).w++; else if (r === "L") get(id).l++;
+      });
+    }
+  }
+  return tally;
+}
+
+async function runHotTeamTrendTest() {
+  const out = document.getElementById("hotTestOut");
+  out.innerHTML = `<div class="refresh-note">Loading ${state.year} results and cached lines…</div>`;
+  try {
+    const league = state.league, year = state.year, sportKey = tallySportKey(league);
+    const games = await tallyLoadGames(league, year);
+    const graded = [];
+    for (const g of games) {
+      if (!g.date) continue;
+      const spreadData = await histDbGet(`hist-odds-${sportKey}-${tallyNormDate(g.date)}`);
+      if (!spreadData) continue;
+      const r = tallyGradeGame(g, spreadData, null);
+      if (r.ats) graded.push({ ...g, ats: r.ats });
+    }
+    if (graded.length < games.length * 0.8 || graded.length < 30) {
+      out.innerHTML = `<div class="trend-note" style="color:#B4463A;"><b>Not enough cached lines to test this fairly:</b> ${graded.length} of ${games.length} ${year} games have a cached spread. Run the ATS Backtest (or the Update button above) for the full season first — a test on a partial season would mislead.</div>`;
+      return;
+    }
+    const tally = hotTestRun(graded);
+    const rows = HOT_RULES.map((rule, i) => {
+      const t = tally[i], n = t.w + t.l;
+      const pct = n ? t.w / n : null;
+      const profit = t.w * (100 / 110) - t.l; // units at -110
+      const moe = n ? 1.96 * Math.sqrt(0.25 / n) * 100 : null;
+      const color = pct == null ? "inherit" : pct >= 0.524 ? "#4C8B5A" : "#B4463A";
+      return `<tr style="border-top:1px solid #E4E8EC;">
+        <td style="padding:6px 4px; font-size:12px;">${rule.label}</td>
+        <td style="text-align:center; font-size:12px;">${n}</td>
+        <td style="text-align:center; font-size:12px;">${t.w}-${t.l}${t.p ? "-" + t.p : ""}</td>
+        <td style="text-align:center; font-size:12px; font-weight:700; color:${color};">${pct == null ? "–" : (pct * 100).toFixed(1) + "%"}${moe != null ? ` <span style="font-weight:400; color:#8A96A1; font-size:10px;">±${moe.toFixed(0)}</span>` : ""}</td>
+        <td style="text-align:center; font-size:12px; color:${profit >= 0 ? "#4C8B5A" : "#B4463A"};">${n ? (profit >= 0 ? "+" : "") + profit.toFixed(1) + "u" : "–"}</td>
+      </tr>`;
+    }).join("");
+    out.innerHTML = `
+      <div class="trend-line"><b>${year} ${league.toUpperCase()} — ${graded.length} graded games</b>, teams need ${HOT_MIN_GAMES}+ prior graded games before their record counts.</div>
+      <table style="width:100%; border-collapse:collapse; margin-top:6px;">
+        <thead><tr><th style="text-align:left; font-size:11px; padding:4px;">Rule (bet each qualifying team's next game)</th><th style="font-size:11px;">Bets</th><th style="font-size:11px;">Record</th><th style="font-size:11px;">Cover % (±95% range)</th><th style="font-size:11px;">Profit @ -110</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="trend-note" style="margin-top:6px;">Break-even at -110 is 52.4%. Each team's record only counts games from earlier weeks, so nothing in a week informs that same week's bet. If both teams in a game qualify, the game is skipped. The ± column is how far the true rate could plausibly sit from the number shown given that many bets — if 52.4% is inside that range, the result can't be told apart from luck. One season only.</div>`;
+  } catch (e) {
+    out.innerHTML = `<div class="error">Couldn't run the test: ${e.message}</div>`;
+  }
+}
+
 // ---------- wiring ----------
 (function wireSeasonTally() {
   const toggle = document.getElementById("tallyToggleBtn");
@@ -8060,6 +8161,8 @@ async function tallyRunUpdate(apiKey) {
   // league / year changes — these listeners are registered after the app's own, so state is already updated
   ["leagueNflBtn", "leagueCfbBtn"].forEach(id => document.getElementById(id).addEventListener("click", () => { tallyState.rows = null; if (open) refreshSeasonTally(); }));
   document.getElementById("yearSelect").addEventListener("change", () => { tallyState.rows = null; if (open) refreshSeasonTally(); });
+  const hb = document.getElementById("hotTestBtn");
+  if (hb) hb.addEventListener("click", runHotTeamTrendTest);
   if (open) refreshSeasonTally();
 })();
 </script>
