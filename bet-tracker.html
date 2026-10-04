@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_84.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_85.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -113,7 +113,7 @@
       <div class="bankroll-value" id="bankrollValue" style="color: rgb(111, 207, 142);">$0.00</div>
     </div>
   </div>
-  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;">Build 2026-10-04 12:52 UTC · 907f2bc1</div>
+  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;">Build 2026-10-04 13:06 UTC · 567f359d</div>
   <nav>
     <button id="tabScheduleBtn" class="active">Schedule</button>
     <button id="tabLedgerBtn">My Bets</button>
@@ -1015,6 +1015,18 @@
       </div>
       <button class="save-btn full" id="propScanEstimateBtn">Estimate Cost &amp; Scan</button>
       <div id="propScanResults" style="margin-top:12px;"></div>
+    </div>
+
+    <div class="card" style="padding:16px; margin-bottom:16px;">
+      <div class="trend-title" style="margin-bottom:6px;">Props Track Record</div>
+      <div class="refresh-note">Every Weekly Props Scan is saved here automatically (the full list it showed, at the lines and prices it showed). After the games finish, tap Update results and each prop is graded against the real box score. A new scan in the same week replaces that week's saved list.</div>
+      <details style="margin-top:8px;"><summary class="refresh-note" style="cursor:pointer;">Already ran a scan? Paste its list here to save it</summary>
+        <textarea id="propsLogPaste" rows="5" style="width:100%; margin-top:6px;" placeholder="Paste the scanner's list exactly as it printed (open the Schedule tab on that week first)"></textarea>
+        <button class="save-btn full" id="propsLogImportBtn" style="margin-top:6px;">Save pasted scan</button>
+      </details>
+      <button class="save-btn full" id="propsLogUpdateBtn" style="margin-top:8px;">Update results</button>
+      <div class="trend-note" id="propsLogNote" style="margin-top:6px;"></div>
+      <div id="propsLogBody" style="margin-top:8px;"><div class="trend-note">Nothing saved yet. Run a Weekly Props Scan and its list is saved here automatically.</div></div>
     </div>
 
     <div class="card" style="padding:16px; margin-bottom:16px;">
@@ -3050,6 +3062,7 @@ async function runPropScan(matchedEvents, apiKey) {
 
           results.push({
             player: rosterMatch.name,
+            athleteId: rosterMatch.id, marketKey, gameDate: game.date, // kept so the Props Track Record can grade this prop later
             pos: rosterMatch.pos,
             desc: mapInfo.desc,
             matchup: `${game.away} @ ${game.home}`,
@@ -3140,6 +3153,7 @@ async function runPropScan(matchedEvents, apiKey) {
             teammateInjuryNote,
             weatherNote,
             player: rosterMatch.name,
+            athleteId: rosterMatch.id, marketKey, gameDate: game.date, // kept so the Props Track Record can grade this prop later
             pos: rosterMatch.pos,
             desc: mapInfo.desc,
             matchup: `${game.away} @ ${game.home}`,
@@ -3214,6 +3228,7 @@ async function runPropScan(matchedEvents, apiKey) {
   const count = parseInt(document.getElementById("propScanCount").value, 10);
   const top = rankedResults.slice(0, count);
   lastPropScanResults = top; // module-level, so the Add-to-Bets buttons below can reference results by index
+  try { if (typeof logPropScan === "function") logPropScan(top); } catch (e) {} // saves this scan's list to the Props Track Record
 
   out.innerHTML = `
     <div class="trend-title">Top ${top.length} Props This Week — by historical hit rate</div>
@@ -8675,6 +8690,235 @@ async function runSeedCompare() {
 }
 
 document.getElementById("seedCompareBtn").addEventListener("click", runSeedCompare);
+</script>
+<script>
+// ---------- Props Track Record ----------
+// Every Weekly Props Scan saves the list it showed (one record per year+week+league; a later scan in
+// the same week replaces the earlier one). After the games are final, "Update results" looks up each
+// player's real stat from the game log and grades the prop at the line it was shown at. Tracks the
+// scanner's own claim (historical hit rate) against what actually happened, and flat 1-unit profit at
+// the posted price. A player who didn't play is marked "void" (books refund those) and not counted.
+
+const PROPS_LOG_KEY = "props-scan-log";
+
+function loadPropsLog() {
+  try { return JSON.parse(localStorage.getItem(PROPS_LOG_KEY) || "[]"); } catch (e) { return []; }
+}
+function savePropsLog(log) {
+  try { localStorage.setItem(PROPS_LOG_KEY, JSON.stringify(log)); } catch (e) {}
+}
+
+function logPropScan(top) {
+  const props = top.map(r => ({
+    player: r.player, athleteId: r.athleteId, pos: r.pos, marketKey: r.marketKey, desc: r.desc,
+    side: r.side, line: r.isBoolean ? null : r.line, isBoolean: !!r.isBoolean,
+    price: r.isBoolean ? r.overPrice : (r.side === "Over" ? r.overPrice : r.underPrice),
+    hitPct: r.hitPct, sample: r.sampleSize, edge: r.edgePct, matchup: r.matchup, gameDate: r.gameDate,
+    result: null, actual: null,
+  }));
+  const log = loadPropsLog().filter(e => !(e.year === state.year && e.week === state.week && e.league === state.league));
+  log.push({ year: state.year, week: state.week, league: state.league, seasonType: state.seasonType, savedAt: new Date().toISOString(), props });
+  log.sort((a, b) => (a.year - b.year) || (a.week - b.week));
+  savePropsLog(log);
+  renderPropsLog();
+}
+
+// Pure: grade one prop given the player's actual stat value. "W" | "L" | "P"
+function gradePropValue(prop, value) {
+  if (prop.isBoolean) return value > 0 ? "W" : "L";
+  if (value === prop.line) return "P";
+  const over = value > prop.line;
+  return (prop.side === "Over") === over ? "W" : "L";
+}
+
+// Pure: profit in units for a flat 1-unit stake at an American price. Push = 0.
+function propUnits(price, result) {
+  if (result === "P") return 0;
+  if (result === "L") return -1;
+  const p = parseFloat(price);
+  if (isNaN(p) || p === 0) return 0;
+  return p > 0 ? p / 100 : 100 / -p;
+}
+
+// Pure: find the player's actual stat for this market in one game-log row. Mirrors the scanner's
+// column lookup. A market that needs an anchor column (rushing/receiving yards) is skipped on rows
+// that lack it, so a rushing row can never be read as receiving yards.
+function propStatFromRow(marketKey, row) {
+  const info = PROP_MARKET_MAP[marketKey];
+  if (!info || !row) return null;
+  const labels = row.labels || [];
+  let start = 0;
+  if (info.anchorAfter) {
+    const a = labels.findIndex(l => l.toUpperCase().includes(info.anchorAfter));
+    if (a === -1) return null;
+    start = a;
+  }
+  const off = labels.slice(start).findIndex(l => l.toUpperCase().includes(info.labelMatch));
+  if (off === -1) return null;
+  const v = parseFloat((row.stats || [])[off + start]);
+  return isNaN(v) ? null : v;
+}
+
+function propTotals(log, filter) {
+  const t = { w: 0, l: 0, p: 0, v: 0, pending: 0, units: 0, claimed: 0, n: 0 };
+  log.forEach(e => e.props.forEach(p => {
+    if (filter && !filter(p)) return;
+    if (!p.result) { t.pending++; return; }
+    if (p.result === "V") { t.v++; return; }
+    t[p.result.toLowerCase()]++;
+    t.units += propUnits(p.price, p.result);
+    if (p.hitPct != null) { t.claimed += p.hitPct; t.n++; }
+  }));
+  return t;
+}
+
+async function updatePropResults() {
+  const note = document.getElementById("propsLogNote");
+  if (note) note.textContent = "Checking final scores and box scores…";
+  const log = loadPropsLog();
+  const logCache = {}; // athleteId|year -> game rows, so a player with several props is fetched once
+  let graded = 0, voided = 0;
+  for (const entry of log) {
+    if (entry.props.every(p => p.result)) continue;
+    let results;
+    try { results = await fetchWeekResults(entry.league, entry.year, entry.week, entry.seasonType || 2); } catch (e) { continue; }
+    for (const p of entry.props) {
+      if (p.result) continue;
+      const [away, home] = (p.matchup || "").split(" @ ");
+      const final = results.some(r => autoPickNameMatch(r.homeName, home) && autoPickNameMatch(r.awayName, away));
+      if (!final) continue;
+      if (!p.athleteId) {
+        // imported from pasted text, so no player id yet — find him on the two teams' rosters
+        const gm = results.find(r => autoPickNameMatch(r.homeName, home) && autoPickNameMatch(r.awayName, away));
+        const want = (p.player || "").toLowerCase();
+        for (const tid of gm ? [gm.homeId, gm.awayId] : []) {
+          const rk = "roster|" + tid;
+          if (!logCache[rk]) { try { logCache[rk] = await fetchRoster(entry.league, tid); } catch (e) { logCache[rk] = []; } }
+          const hit = logCache[rk].find(pl => { const n = (pl.name || "").toLowerCase(); return n === want || n.includes(want) || want.includes(n); });
+          if (hit) { p.athleteId = hit.id; break; }
+        }
+        if (!p.athleteId) continue; // couldn't identify the player — leave pending
+      }
+      const key = p.athleteId + "|" + entry.year;
+      if (!logCache[key]) {
+        try { logCache[key] = await fetchPlayerGameLog(entry.league, p.athleteId, entry.year); } catch (e) { logCache[key] = null; }
+      }
+      const rows = logCache[key];
+      if (!rows) continue; // lookup failed — try again next time rather than guessing
+      const t0 = new Date(p.gameDate).getTime();
+      let value = null;
+      for (const row of rows) {
+        if (Math.abs(new Date(row.date).getTime() - t0) > 36 * 3600 * 1000) continue;
+        value = propStatFromRow(p.marketKey, row);
+        if (value != null) break;
+      }
+      if (value != null) { p.actual = value; p.result = gradePropValue(p, value); graded++; }
+      else if (Date.now() - t0 > 2 * 24 * 3600 * 1000) { p.result = "V"; voided++; } // no stat row days after the game = didn't play
+    }
+  }
+  savePropsLog(log);
+  renderPropsLog();
+  const n2 = document.getElementById("propsLogNote");
+  if (n2) n2.textContent = (graded || voided) ? `Graded ${graded} new prop${graded === 1 ? "" : "s"}${voided ? `, ${voided} marked void (no stats found — player likely didn't play)` : ""}.` : "Nothing new to grade yet.";
+}
+
+function renderPropsLog() {
+  const box = document.getElementById("propsLogBody");
+  if (!box) return;
+  const log = loadPropsLog();
+  if (log.length === 0) {
+    box.innerHTML = `<div class="trend-note">Nothing saved yet. Run a Weekly Props Scan and its list is saved here automatically.</div>`;
+    return;
+  }
+  const fmt = (t) => `${t.w}-${t.l}${t.p ? "-" + t.p : ""}`;
+  const pct = (t) => t.w + t.l ? ` (${(t.w / (t.w + t.l) * 100).toFixed(1)}%)` : "";
+  const units = (t) => { const v = Math.round(t.units * 10) / 10 + 0; return `${v >= 0 ? "+" : ""}${v.toFixed(1)}u`; };
+  const all = propTotals(log);
+  const graded = all.w + all.l;
+  const bySide = ["Over", "Under", "Yes"].map(sd => [sd, propTotals(log, p => p.side === sd)]).filter(([, t]) => t.w + t.l > 0)
+    .map(([sd, t]) => `${sd} ${fmt(t)}${pct(t)} ${units(t)}`).join(" · ");
+  const thin = propTotals(log, p => p.sample < 10), solid = propTotals(log, p => p.sample >= 10);
+  const claimedTxt = all.n ? `The scanner's own claimed hit rate averaged <b>${(all.claimed / all.n).toFixed(0)}%</b> on these props; they actually hit <b>${graded ? (all.w / graded * 100).toFixed(0) : 0}%</b>.` : "";
+  const scans = log.slice().reverse().map(e => {
+    const t = propTotals([e]);
+    const rows = e.props.map(p => {
+      const color = p.result === "W" ? "#4C8B5A" : p.result === "L" ? "#B4463A" : "#8A96A1";
+      const tag = p.result === "V" ? "void" : (p.result || "…");
+      const what = p.isBoolean ? `${p.desc}` : `${p.desc} ${p.side} ${p.line}`;
+      return `<div style="font-size:12px; padding:2px 0;"><b style="color:${color};">${tag}</b> ${p.player} ${what} <span style="color:#8A96A1;">@ ${p.price != null && p.price > 0 ? "+" : ""}${p.price}${p.actual != null ? ` · actual ${p.actual}` : p.result ? "" : " · not graded yet"}</span></div>`;
+    }).join("");
+    return `<details style="margin-top:8px;"><summary class="trend-line" style="cursor:pointer;"><b>${e.year} Week ${e.week}</b> — ${fmt(t)}${t.w + t.l ? ` ${units(t)}` : ""}${t.pending ? `, ${t.pending} pending` : ""}${t.v ? `, ${t.v} void` : ""}</summary>${rows}</details>`;
+  }).join("");
+  box.innerHTML = `
+    <div class="trend-score">${fmt(all)}${pct(all)} · ${units(all)} at flat 1 unit${all.pending ? ` · ${all.pending} pending` : ""}${all.v ? ` · ${all.v} void` : ""}</div>
+    <div class="trend-note">${bySide}</div>
+    <div class="trend-note">Samples under 10 games: ${fmt(thin)}${pct(thin)} · 10 or more: ${fmt(solid)}${pct(solid)}. ${claimedTxt}</div>
+    ${graded < 100 ? `<div class="trend-note">Only ${graded} graded props so far — far too few to judge. Most props pay about -110, so you need roughly 52-53% to break even, and a few weeks of results can swing well above or below that on luck alone.</div>` : ""}
+    ${scans}`;
+}
+
+
+// ---- Import a scan you already have as text (the list the scanner printed) ----
+// Pure: pull props out of pasted scanner output. Lines that aren't a prop are ignored.
+function parsePastedProps(text) {
+  const descToKey = {};
+  Object.keys(PROP_MARKET_MAP).forEach(k => { descToKey[PROP_MARKET_MAP[k].desc.toLowerCase()] = k; });
+  const descs = Object.keys(descToKey).sort((a, b) => b.length - a.length).map(d => d.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  const re = new RegExp("^\\s*(.+?)\\s*\\((\\w+)\\)\\s+(" + descs + ")\\s*(Over|Under|Yes)?\\s*(-?\\d+(?:\\.\\d+)?)?\\s*—\\s*hit\\s+(\\d+(?:\\.\\d+)?)%\\s+of last\\s+(\\d+)(.*)$", "i");
+  const out = [];
+  String(text || "").split(/\r?\n/).forEach(line => {
+    const m = line.match(re);
+    if (!m) return;
+    const rest = m[8];
+    const tail = rest.match(/·\s*([^·]+?)\s+@\s+([^·]+?)\s*·\s*([+-]?\d+)\s*(?:·\s*edge\s*([+-]?\d+(?:\.\d+)?)%)?/);
+    if (!tail) return;
+    const desc = m[3].toLowerCase(), key = descToKey[desc], isBoolean = PROP_MARKET_MAP[key].type === "boolean";
+    out.push({
+      player: m[1].trim(), pos: m[2].toUpperCase(), marketKey: key, desc: PROP_MARKET_MAP[key].desc,
+      side: isBoolean ? "Yes" : (m[4] ? m[4][0].toUpperCase() + m[4].slice(1).toLowerCase() : null),
+      line: isBoolean ? null : (m[5] != null ? parseFloat(m[5]) : null), isBoolean,
+      price: parseFloat(tail[3]), hitPct: parseFloat(m[6]), sample: parseInt(m[7], 10),
+      edge: tail[4] != null ? parseFloat(tail[4]) : null,
+      matchup: `${tail[1].trim()} @ ${tail[2].trim()}`,
+    });
+  });
+  return out.filter(p => p.isBoolean || (p.side && p.line != null));
+}
+
+function importPastedProps() {
+  const note = document.getElementById("propsLogNote");
+  const box = document.getElementById("propsLogPaste");
+  const parsed = parsePastedProps(box.value);
+  if (parsed.length === 0) { note.textContent = "Couldn't find any props in that text. Paste the scanner's list exactly as it printed."; return; }
+  if (!state.games || state.games.length === 0) { note.textContent = "Open the Schedule tab on the week these props are for first, so I can look up the game times."; return; }
+  let skipped = 0;
+  const props = [];
+  parsed.forEach(p => {
+    const [away, home] = p.matchup.split(" @ ");
+    const g = state.games.find(x => x.away === away && x.home === home);
+    if (!g) { skipped++; return; }
+    props.push(Object.assign({}, p, { gameDate: g.date, result: null, actual: null }));
+  });
+  if (props.length === 0) { note.textContent = "None of those games are on the week currently loaded in the Schedule tab — switch it to the right week and try again."; return; }
+  const log = loadPropsLog();
+  let entry = log.find(e => e.year === state.year && e.week === state.week && e.league === state.league);
+  if (!entry) { entry = { year: state.year, week: state.week, league: state.league, seasonType: state.seasonType, savedAt: new Date().toISOString(), props: [] }; log.push(entry); }
+  let added = 0;
+  props.forEach(p => {
+    if (entry.props.some(q => q.player === p.player && q.marketKey === p.marketKey && q.side === p.side && q.line === p.line)) return;
+    entry.props.push(p); added++;
+  });
+  log.sort((a, b) => (a.year - b.year) || (a.week - b.week));
+  savePropsLog(log);
+  renderPropsLog();
+  box.value = "";
+  note.textContent = `Saved ${added} prop${added === 1 ? "" : "s"} to ${state.year} Week ${state.week}${skipped ? ` (${skipped} skipped — game not on the loaded week)` : ""}${added < props.length ? ` (${props.length - added} were already saved)` : ""}.`;
+}
+
+document.getElementById("propsLogImportBtn").addEventListener("click", importPastedProps);
+document.getElementById("propsLogUpdateBtn").addEventListener("click", updatePropResults);
+document.getElementById("tabPropsBtn").addEventListener("click", () => { renderPropsLog(); });
+renderPropsLog();
 </script>
 
 
