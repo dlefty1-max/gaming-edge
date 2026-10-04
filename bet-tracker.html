@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_81.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_82.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -113,7 +113,7 @@
       <div class="bankroll-value" id="bankrollValue" style="color: rgb(111, 207, 142);">$0.00</div>
     </div>
   </div>
-  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;">Build 2026-10-04 11:59 UTC · 85e5edfe</div>
+  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;">Build 2026-10-04 12:07 UTC · f73d9db6</div>
   <nav>
     <button id="tabScheduleBtn" class="active">Schedule</button>
     <button id="tabLedgerBtn">My Bets</button>
@@ -603,6 +603,10 @@
           <div class="trend-note">Set Year above to a season whose lines are cached (e.g. 2025), then run. Uses cached lines only — no credits.</div>
           <button class="save-btn full" id="hotTestBtn" style="margin-top:6px;">Test the hot-team trend</button>
           <div id="hotTestOut" style="margin-top:8px;"></div>
+          <div class="trend-title" style="margin-top:14px;">Do the same teams repeat year to year?</div>
+          <div class="trend-note">Compares each team's full-season cover rate across 2023, 2024 and 2025 (NFL). Uses cached lines only — no credits.</div>
+          <button class="save-btn full" id="persistBtn" style="margin-top:6px;">Test year-to-year persistence</button>
+          <div id="persistOut" style="margin-top:8px;"></div>
         </div>
       </div>
     </div>
@@ -8143,6 +8147,115 @@ async function runHotTeamTrendTest() {
   }
 }
 
+// ---------- Do the same teams repeat year to year? ----------
+// Full-season ATS record per team for each cached season, then: how well does one year's cover rate
+// predict the next year's (correlation), and what did last year's best / worst teams do the following
+// season? Reads cached lines only — no credits. A season is only used if most of its games have lines.
+async function tallySeasonAts(league, year) {
+  const games = await tallyLoadGames(league, year);
+  const sportKey = tallySportKey(league);
+  const teams = {};
+  let graded = 0;
+  for (const g of games) {
+    if (!g.date) continue;
+    const sd = await histDbGet(`hist-odds-${sportKey}-${tallyNormDate(g.date)}`);
+    if (!sd) continue;
+    const r = tallyGradeGame(g, sd, null);
+    if (!r.ats) continue;
+    graded++;
+    [["home", g.homeId, g.homeName], ["away", g.awayId, g.awayName]].forEach(([side, id, name]) => {
+      const t = (teams[id] = teams[id] || { name, w: 0, l: 0, p: 0 });
+      t[r.ats[side].toLowerCase()]++;
+    });
+  }
+  return { year, games: games.length, graded, teams, ok: games.length >= 200 && graded >= games.length * 0.8 };
+}
+
+function pearson(xs, ys) {
+  const n = xs.length;
+  if (n < 3) return null;
+  const mx = xs.reduce((a, b) => a + b, 0) / n, my = ys.reduce((a, b) => a + b, 0) / n;
+  let sxy = 0, sxx = 0, syy = 0;
+  for (let i = 0; i < n; i++) { sxy += (xs[i] - mx) * (ys[i] - my); sxx += (xs[i] - mx) ** 2; syy += (ys[i] - my) ** 2; }
+  return sxx > 0 && syy > 0 ? sxy / Math.sqrt(sxx * syy) : null;
+}
+
+// byYear: { 2023: {ok, teams:{id:{name,w,l,p}}}, ... } — pure, so it can be checked by hand
+function persistenceCompute(byYear, hotMin, coldMax, minGames) {
+  const years = Object.keys(byYear).map(Number).sort((a, b) => a - b);
+  const pairs = [];
+  for (let i = 0; i + 1 < years.length; i++) {
+    const a = byYear[years[i]], b = byYear[years[i + 1]];
+    if (years[i + 1] !== years[i] + 1 || !a.ok || !b.ok) continue;
+    const xs = [], ys = [], hot = [], cold = [];
+    const hotNext = { w: 0, l: 0, p: 0 }, coldNext = { w: 0, l: 0, p: 0 };
+    Object.keys(a.teams).forEach(id => {
+      const ta = a.teams[id], tb = b.teams[id];
+      if (!tb) return;
+      const na = ta.w + ta.l, nb = tb.w + tb.l;
+      if (na < minGames || nb < minGames) return;
+      const pa = ta.w / na, pb = tb.w / nb;
+      xs.push(pa); ys.push(pb);
+      if (pa >= hotMin) { hot.push({ name: ta.name, from: pa, to: pb }); hotNext.w += tb.w; hotNext.l += tb.l; hotNext.p += tb.p; }
+      if (pa <= coldMax) { cold.push({ name: ta.name, from: pa, to: pb }); coldNext.w += tb.w; coldNext.l += tb.l; coldNext.p += tb.p; }
+    });
+    pairs.push({ from: years[i], to: years[i + 1], n: xs.length, xs, ys, r: pearson(xs, ys), hot, cold, hotNext, coldNext });
+  }
+  const pooledXs = [].concat(...pairs.map(p => p.xs)), pooledYs = [].concat(...pairs.map(p => p.ys));
+  const sum = (k) => pairs.reduce((acc, p) => ({ w: acc.w + p[k].w, l: acc.l + p[k].l, p: acc.p + p[k].p }), { w: 0, l: 0, p: 0 });
+  return { pairs, pooled: { n: pooledXs.length, r: pearson(pooledXs, pooledYs), hotNext: sum("hotNext"), coldNext: sum("coldNext") } };
+}
+
+async function runTeamPersistenceTest() {
+  const out = document.getElementById("persistOut");
+  out.innerHTML = `<div class="refresh-note">Loading every cached season…</div>`;
+  try {
+    const league = state.league;
+    const byYear = {};
+    const cov = [];
+    for (const y of [2023, 2024, 2025]) {
+      out.innerHTML = `<div class="refresh-note">Loading ${y}…</div>`;
+      const d = await tallySeasonAts(league, y);
+      byYear[y] = d;
+      cov.push(`${y}: ${d.graded} of ${d.games} games have cached lines${d.ok ? "" : " — skipped"}`);
+    }
+    const res = persistenceCompute(byYear, 0.6, 0.4, 10);
+    if (res.pairs.length === 0) {
+      out.innerHTML = `<div class="trend-note" style="color:#B4463A;"><b>Need two back-to-back seasons with lines cached.</b> ${cov.join(" · ")}.</div>`;
+      return;
+    }
+    const fmtRec = (r) => `${r.w}-${r.l}${r.p ? "-" + r.p : ""}`;
+    const pctOf = (w, l) => w + l ? (w / (w + l) * 100).toFixed(1) + "%" : "–";
+    const moe = (w, l) => w + l ? ` ±${(1.96 * Math.sqrt(0.25 / (w + l)) * 100).toFixed(0)}` : "";
+    const rNoise = (n) => n > 3 ? (1.96 / Math.sqrt(n - 3)).toFixed(2) : "–";
+    const hotProfit = (r) => r.w * (100 / 110) - r.l;
+    const coldProfit = (r) => r.l * (100 / 110) - r.w; // betting AGAINST the cold teams: their ATS losses are wins for the fade
+    const sgn = (v) => (v >= 0 ? "+" : "") + v.toFixed(1) + "u";
+    const row = (label, n, r, hotR, coldR) => `<tr style="border-top:1px solid #E4E8EC;">
+      <td style="padding:6px 4px; font-size:12px; font-weight:700;">${label}</td>
+      <td style="text-align:center; font-size:12px;">${r == null ? "–" : r.toFixed(2)} <span style="color:#8A96A1; font-size:10px;">(±${rNoise(n)})</span></td>
+      <td style="text-align:center; font-size:12px;">${fmtRec(hotR)}<br><b>${pctOf(hotR.w, hotR.l)}</b><span style="color:#8A96A1; font-size:10px;">${moe(hotR.w, hotR.l)}</span><br><span style="font-size:10px; color:${hotProfit(hotR) >= 0 ? "#4C8B5A" : "#B4463A"};">${sgn(hotProfit(hotR))}</span></td>
+      <td style="text-align:center; font-size:12px;">${fmtRec(coldR)}<br><b>${pctOf(coldR.w, coldR.l)}</b><span style="color:#8A96A1; font-size:10px;">${moe(coldR.w, coldR.l)}</span><br><span style="font-size:10px; color:${coldProfit(coldR) >= 0 ? "#4C8B5A" : "#B4463A"};">fade ${sgn(coldProfit(coldR))}</span></td>
+    </tr>`;
+    const rows = res.pairs.map(p => row(`${p.from} → ${p.to}`, p.n, p.r, p.hotNext, p.coldNext)).join("")
+      + (res.pairs.length > 1 ? row("All pairs combined", res.pooled.n, res.pooled.r, res.pooled.hotNext, res.pooled.coldNext) : "");
+    const lists = res.pairs.map(p => `
+      <div class="trend-line" style="margin-top:8px;"><b>${p.from} → ${p.to}</b></div>
+      <div style="font-size:11px;"><b>Covered 60%+ in ${p.from}:</b> ${p.hot.length ? p.hot.sort((a, b) => b.from - a.from).map(t => `${t.name} ${Math.round(t.from * 100)}%→${Math.round(t.to * 100)}%`).join(" · ") : "none"}</div>
+      <div style="font-size:11px; margin-top:2px;"><b>Covered 40% or less in ${p.from}:</b> ${p.cold.length ? p.cold.sort((a, b) => a.from - b.from).map(t => `${t.name} ${Math.round(t.from * 100)}%→${Math.round(t.to * 100)}%`).join(" · ") : "none"}</div>`).join("");
+    out.innerHTML = `
+      <div class="trend-line"><b>${league.toUpperCase()}</b> — ${cov.join(" · ")}</div>
+      <table style="width:100%; border-collapse:collapse; margin-top:6px;">
+        <thead><tr><th style="text-align:left; font-size:11px; padding:4px;">Seasons</th><th style="font-size:11px;">Correlation (±noise)</th><th style="font-size:11px;">Next season, last year's 60%+ teams</th><th style="font-size:11px;">Next season, last year's 40%- teams</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="trend-note" style="margin-top:6px;">Correlation: 0 means a team's cover rate one year says nothing about the next; 1 means it repeats perfectly. The ± is how much a correlation can wander from 0 by luck alone with this few teams — a value inside that range is not evidence of anything. The records are every game the group played the following season (teams need ${10}+ graded games both years); "fade" profit bets against the cold teams in every one of those games. Break-even at -110 is 52.4%.</div>
+      <div style="max-height:260px; overflow-y:auto; margin-top:6px;">${lists}</div>`;
+  } catch (e) {
+    out.innerHTML = `<div class="error">Couldn't run the test: ${e.message}</div>`;
+  }
+}
+
 // ---------- wiring ----------
 (function wireSeasonTally() {
   const toggle = document.getElementById("tallyToggleBtn");
@@ -8166,6 +8279,8 @@ async function runHotTeamTrendTest() {
   document.getElementById("yearSelect").addEventListener("change", () => { tallyState.rows = null; if (open) refreshSeasonTally(); });
   const hb = document.getElementById("hotTestBtn");
   if (hb) hb.addEventListener("click", runHotTeamTrendTest);
+  const pb = document.getElementById("persistBtn");
+  if (pb) pb.addEventListener("click", runTeamPersistenceTest);
   if (open) refreshSeasonTally();
 })();
 </script>
