@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_76.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_77.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -113,7 +113,7 @@
       <div class="bankroll-value" id="bankrollValue" style="color: rgb(111, 207, 142);">$0.00</div>
     </div>
   </div>
-  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;">Build 2026-09-26 12:58 UTC · f2977b45</div>
+  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;">Build 2026-10-04 11:07 UTC · da72c4da</div>
   <nav>
     <button id="tabScheduleBtn" class="active">Schedule</button>
     <button id="tabLedgerBtn">My Bets</button>
@@ -2137,21 +2137,62 @@ async function computeTravel(awayHomeCity, venueCity) {
 }
 
 // ---------- injuries, manual flags, news links ----------
+// Every caller swallows errors into [], so a failed request used to look identical to "no injuries."
+// window.__injDiag records what actually happened so the Schedule panel can say so instead.
+window.__injDiag = window.__injDiag || { errors: [], lastOk: null };
+function parseInjuryEntries(list) {
+  const items = [];
+  (list || []).forEach(i => {
+    const name = (i.athlete && (i.athlete.displayName || i.athlete.fullName)) || (i.longComment && i.longComment.split(" ")[0]);
+    const status = i.status || (i.type && i.type.description) || "Unknown";
+    const pos = (i.athlete && i.athlete.position && (i.athlete.position.abbreviation || i.athlete.position.name)) || null;
+    if (name) items.push({ name, status, pos });
+  });
+  return items;
+}
+function injurySeverity(status) {
+  const s = (status || "").toLowerCase();
+  return s.includes("out") || s.includes("reserve") ? 0 : s.includes("doubtful") ? 1 : s.includes("question") ? 2 : 3;
+}
+let injuriesLeagueCache = {}; // league -> { at, byTeam } — one league-wide request serves every game on the slate
+async function fetchInjuriesLeague(league) {
+  const c = injuriesLeagueCache[league];
+  if (c && Date.now() - c.at < 5 * 60 * 1000) return c.byTeam;
+  const sport = league === "nfl" ? "nfl" : "college-football";
+  const res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/${sport}/injuries`);
+  if (!res.ok) throw new Error(`league injuries status ${res.status}`);
+  const json = await res.json();
+  const byTeam = {};
+  (json.injuries || []).forEach(group => {
+    const id = String(group.id != null ? group.id : (group.team && group.team.id));
+    byTeam[id] = parseInjuryEntries(group.injuries);
+  });
+  injuriesLeagueCache[league] = { at: Date.now(), byTeam };
+  return byTeam;
+}
 async function fetchInjuries(league, teamId) {
   const sport = league === "nfl" ? "nfl" : "college-football";
-  const res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/${sport}/teams/${teamId}/injuries`);
-  if (!res.ok) throw new Error(`status ${res.status}`);
-  const json = await res.json();
-  const items = [];
-  (json.injuries || []).forEach(group => {
-    (group.injuries || [group]).forEach(i => {
-      const name = (i.athlete && (i.athlete.displayName || i.athlete.fullName)) || i.longComment && i.longComment.split(" ")[0];
-      const status = i.status || (i.type && i.type.description) || "Unknown";
-      const pos = (i.athlete && i.athlete.position && (i.athlete.position.abbreviation || i.athlete.position.name)) || null;
-      if (name) items.push({ name, status, pos });
-    });
-  });
-  return items.slice(0, 10);
+  const diag = window.__injDiag;
+  let items = null;
+  // 1) league-wide endpoint (one request for all teams)
+  try {
+    const byTeam = await fetchInjuriesLeague(league);
+    if (byTeam[String(teamId)]) items = byTeam[String(teamId)];
+    else diag.errors.push(`league endpoint had no entry for team ${teamId} (${Object.keys(byTeam).length} teams listed)`);
+  } catch (e) { diag.errors.push(String(e.message || e)); }
+  // 2) per-team endpoint as a fallback
+  if (items === null) {
+    try {
+      const res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/${sport}/teams/${teamId}/injuries`);
+      if (!res.ok) throw new Error(`team ${teamId} injuries status ${res.status}`);
+      const json = await res.json();
+      items = [];
+      (json.injuries || []).forEach(group => { items = items.concat(parseInjuryEntries(group.injuries || [group])); });
+    } catch (e) { diag.errors.push(String(e.message || e)); throw e; }
+  }
+  diag.lastOk = new Date().toISOString();
+  // most important first, so the cap never drops an "Out" starter in favor of a "Questionable" backup
+  return items.sort((a, b) => injurySeverity(a.status) - injurySeverity(b.status)).slice(0, 12);
 }
 
 function getTeamFlag(league, teamId) {
@@ -3961,7 +4002,10 @@ async function loadTrends(game, containerId) {
     const injEl = document.getElementById(`injuries-${game.id}`);
     if (injEl) {
       if (awayInj.length === 0 && homeInj.length === 0) {
-        injEl.innerHTML = `<div class="trend-note">No injuries reported, or data not available for these teams.</div>`;
+        const injErrs = (window.__injDiag && window.__injDiag.errors) || [];
+        injEl.innerHTML = injErrs.length > 0 && !(window.__injDiag && window.__injDiag.lastOk)
+          ? `<div class="trend-note" style="color:#B4463A;"><b>Injury data failed to load</b> — this is NOT "no injuries." Last error: ${injErrs[injErrs.length - 1]}. Check the team's injury page directly before trusting this game.</div>`
+          : `<div class="trend-note">No injuries reported, or data not available for these teams.${injErrs.length > 0 ? ` <span style="color:#8A96A1;">(a request failed earlier this session: ${injErrs[injErrs.length - 1]})</span>` : ""}</div>`;
       } else {
         injEl.innerHTML = `
           <div class="trend-line"><b>${game.away}:</b> ${awayInj.length ? awayInj.map(i => `${i.name} (${i.status})`).join(", ") : "none reported"}</div>
