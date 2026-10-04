@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_83.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_84.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -113,7 +113,7 @@
       <div class="bankroll-value" id="bankrollValue" style="color: rgb(111, 207, 142);">$0.00</div>
     </div>
   </div>
-  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;">Build 2026-10-04 12:15 UTC · 4ece5185</div>
+  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;">Build 2026-10-04 12:52 UTC · 907f2bc1</div>
   <nav>
     <button id="tabScheduleBtn" class="active">Schedule</button>
     <button id="tabLedgerBtn">My Bets</button>
@@ -895,6 +895,7 @@
       <div class="refresh-note" style="margin-top:-6px;">Same setting as the Edge tab's Efficiency Model Weight — changing it here changes it there too, so whichever you set last is what any scan or backtest uses.</div>
       <label style="display:block; margin:6px 0; font-size:12px;"><input type="checkbox" id="atsBtAsOfWeek"> Use as-of-week efficiency stats (no hindsight) — requires building the ledger below first for this league/season</label>
       <button class="save-btn full" id="atsBacktestEstimateBtn">Estimate Cost &amp; Run</button>
+      <button class="save-btn full" id="seedCompareBtn" style="margin-top:8px; background:#5B6B7B;">Compare: last-year seed vs. fresh start (uses saved lines only — 0 credits)</button>
       <div id="atsBacktestResults" style="margin-top:12px;"></div>
     </div>
 
@@ -1127,6 +1128,13 @@ Broncos +2.5
         <button class="save-btn full" id="p6MarketBtn" style="margin-top:8px;">Compare to the market</button>
         <div id="p6MarketResults" style="margin-top:12px;"></div>
       </div>
+    </div>
+    <div class="card" style="padding:16px; margin-bottom:16px;">
+      <div class="trend-title" style="margin-bottom:6px;">Auto-Pick Track Record</div>
+      <div class="refresh-note">Every time you tap Find Best 6, the six picks it chose are saved here, then graded against the pool's line once the games are final. This tracks what the button picked, not what you ended up taking.</div>
+      <button class="save-btn full" id="p6AutoLogUpdateBtn" style="margin-top:8px;">Update results</button>
+      <div class="trend-note" id="p6AutoLogNote" style="margin-top:6px;"></div>
+      <div id="p6AutoLogBody" style="margin-top:8px;"><div class="trend-note">Nothing logged yet. The next time you tap Find Best 6, the six picks it chooses are saved here automatically.</div></div>
     </div>
     <div id="p6History"></div>
   </div>
@@ -6765,6 +6773,7 @@ async function findBestSix() {
     return b.gapAbs - a.gapAbs; // within the same bucket, bigger disagreement still ranks higher
   });
   const best6 = uniqueCandidates.slice(0, 6);
+  try { if (typeof logAutoPicks === "function") logAutoPicks(year, week, best6, scaleFit); } catch (e) { /* logging must never break the picker */ }
 
   // fill the 6 pick rows
   best6.forEach((c, i) => {
@@ -8416,6 +8425,256 @@ async function runPoolVsMarket() {
 }
 
 document.getElementById("p6MarketBtn").addEventListener("click", runPoolVsMarket);
+</script>
+<script>
+// ---------- Auto-Pick track record ----------
+// Every time "Find Best 6" runs, the six picks it chose are saved here (one record per year+week;
+// a later run in the same week replaces the earlier one). Once the games finish they're graded
+// against the POOL's line — the number the pick was actually made at — and tallied. This logs what
+// the BUTTON picked, not what you ended up taking, so edits you make before saving don't change it.
+
+const AUTOPICK_LOG_KEY = "p6-autopick-log";
+
+function loadAutoPickLog() {
+  try { return JSON.parse(localStorage.getItem(AUTOPICK_LOG_KEY) || "[]"); } catch (e) { return []; }
+}
+function saveAutoPickLog(log) {
+  try { localStorage.setItem(AUTOPICK_LOG_KEY, JSON.stringify(log)); } catch (e) {}
+}
+
+// Called by Find Best 6 with the six candidate objects it just chose.
+function logAutoPicks(year, week, best6, scaleFit) {
+  const picks = best6.map(c => {
+    const pickIsHome = c.pickTeam === c.game.home;
+    return {
+      matchup: c.matchup, home: c.game.home, away: c.game.away,
+      pick: c.pickTeam, pickIsHome,
+      pickLine: pickIsHome ? c.poolHomeLine : -c.poolHomeLine, // the spread the pick was made at, from the pick's own side
+      poolLine: c.poolLineText, modelHomeLine: c.modelHomeLine, gap: c.gapAbs, isDog: !!c.pickIsDog,
+      result: null, score: null,
+    };
+  });
+  const log = loadAutoPickLog().filter(e => !(e.year === year && e.week === week && e.league === state.league));
+  log.push({ year, week, league: state.league, savedAt: new Date().toISOString(), picks });
+  log.sort((a, b) => (a.year - b.year) || (a.week - b.week));
+  saveAutoPickLog(log);
+  renderAutoPickLog();
+}
+
+function autoPickNameMatch(a, b) {
+  const x = (a || "").toLowerCase(), y = (b || "").toLowerCase();
+  return !!x && !!y && (x.includes(y) || y.includes(x));
+}
+
+// Pure: grade one logged pick against a list of final results. Returns {result, score} or null if not final.
+function gradeAutoPick(pick, results) {
+  const g = results.find(r => autoPickNameMatch(r.homeName, pick.home) && autoPickNameMatch(r.awayName, pick.away));
+  if (!g) return null;
+  const mine = pick.pickIsHome ? g.homeScore : g.awayScore;
+  const theirs = pick.pickIsHome ? g.awayScore : g.homeScore;
+  const adj = mine + pick.pickLine;
+  return {
+    result: adj > theirs ? "W" : adj < theirs ? "L" : "P",
+    score: `${g.awayName} ${g.awayScore} — ${g.homeName} ${g.homeScore}`,
+  };
+}
+
+async function updateAutoPickResults() {
+  const note = document.getElementById("p6AutoLogNote");
+  if (note) note.textContent = "Checking final scores…";
+  const log = loadAutoPickLog();
+  let graded = 0;
+  for (const entry of log) {
+    if (entry.picks.every(p => p.result)) continue;
+    let results;
+    try { results = await fetchWeekResults(entry.league, entry.year, entry.week, 2); } catch (e) { continue; }
+    entry.picks.forEach(p => {
+      if (p.result) return;
+      const g = gradeAutoPick(p, results);
+      if (g) { p.result = g.result; p.score = g.score; graded++; }
+    });
+  }
+  saveAutoPickLog(log);
+  renderAutoPickLog();
+  const n2 = document.getElementById("p6AutoLogNote");
+  if (n2) n2.textContent = graded ? `Graded ${graded} new pick${graded > 1 ? "s" : ""}.` : "No new final scores yet.";
+}
+
+function autoPickTotals(log, filter) {
+  const t = { w: 0, l: 0, p: 0, pending: 0 };
+  log.forEach(e => e.picks.forEach(p => {
+    if (filter && !filter(p)) return;
+    if (!p.result) t.pending++;
+    else t[p.result.toLowerCase()]++;
+  }));
+  return t;
+}
+
+function renderAutoPickLog() {
+  const box = document.getElementById("p6AutoLogBody");
+  if (!box) return;
+  const log = loadAutoPickLog();
+  if (log.length === 0) {
+    box.innerHTML = `<div class="trend-note">Nothing logged yet. The next time you tap Find Best 6, the six picks it chooses are saved here automatically.</div>`;
+    return;
+  }
+  const fmt = (t) => `${t.w}-${t.l}${t.p ? "-" + t.p : ""}`;
+  const pct = (t) => t.w + t.l ? ` (${(t.w / (t.w + t.l) * 100).toFixed(1)}%)` : "";
+  const all = autoPickTotals(log), dogs = autoPickTotals(log, p => p.isDog), favs = autoPickTotals(log, p => !p.isDog);
+  const weeks = log.slice().reverse().map(e => {
+    const t = autoPickTotals([e]);
+    const rows = e.picks.map(p => {
+      const color = p.result === "W" ? "#4C8B5A" : p.result === "L" ? "#B4463A" : "#8A96A1";
+      const line = `${p.pickLine > 0 ? "+" : ""}${p.pickLine}`;
+      return `<div style="font-size:12px; padding:2px 0;"><b style="color:${color};">${p.result || "…"}</b> ${p.pick} ${line} <span style="color:#8A96A1;">— ${p.matchup}${p.score ? ` · ${p.score}` : " · not final"}</span></div>`;
+    }).join("");
+    return `<div style="margin-top:8px;"><div class="trend-line"><b>${e.year} Week ${e.week}</b> — ${fmt(t)}${t.pending ? `, ${t.pending} pending` : ""}</div>${rows}</div>`;
+  }).join("");
+  box.innerHTML = `
+    <div class="trend-score">${fmt(all)}${pct(all)}${all.pending ? ` · ${all.pending} pending` : ""}</div>
+    <div class="trend-note">Underdog picks: ${fmt(dogs)}${pct(dogs)} · Favorite picks: ${fmt(favs)}${pct(favs)}. Graded against the pool's line, which is the number each pick was made at.</div>
+    ${all.w + all.l < 30 ? `<div class="trend-note">Only ${all.w + all.l} graded picks so far — far too few to say whether the button is good or bad. A 50% record over a few weeks is what luck looks like.</div>` : ""}
+    ${weeks}`;
+}
+
+document.getElementById("p6AutoLogUpdateBtn").addEventListener("click", updateAutoPickResults);
+document.getElementById("tabPickSixBtn").addEventListener("click", () => { renderAutoPickLog(); });
+renderAutoPickLog();
+</script>
+<script>
+// ---------- Seed comparison: last-year carryover vs. fresh start ----------
+// Runs the same pure-Elo, walk-forward ATS grading twice over lines you've ALREADY saved
+// (0 credits, no odds requests): once with Elo seeded from last season's final weeks (the app's
+// normal behavior) and once with every team starting at 1500 and learning only from this season's
+// games. Nothing else in the app changes. Week 1 in fresh mode has no information at all (every
+// team is 1500, so it just picks the home team), so results are split into Weeks 1-4 and Weeks 5+.
+
+// Pure: grade one pick against a real home spread. Returns "Win" | "Loss" | "Push".
+function seedGradePick(pickHome, homeScore, awayScore, realHomeSpread) {
+  const teamScore = pickHome ? homeScore : awayScore;
+  const oppScore = pickHome ? awayScore : homeScore;
+  const teamSpread = pickHome ? realHomeSpread : -realHomeSpread;
+  const adj = teamScore + teamSpread;
+  return adj > oppScore ? "Win" : adj < oppScore ? "Loss" : "Push";
+}
+
+// Pure: walk games in week order, grading every game that has a saved line, then learning from it.
+// games: [{week, homeId, awayId, homeScore, awayScore, line}] (line = real home spread or null)
+function seedWalk(league, startElo, games) {
+  const { K, HOME_ADV, movCap, probDivisor } = getEloConstants(league);
+  const elo = Object.assign({}, startElo);
+  const sorted = games.slice().sort((a, b) => a.week - b.week);
+  const rows = [];
+  for (const g of sorted) {
+    const rh = elo[g.homeId] != null ? elo[g.homeId] : 1500;
+    const ra = elo[g.awayId] != null ? elo[g.awayId] : 1500;
+    const modelHomeSpread = -(((rh + HOME_ADV) - ra) / getSpreadDivisor(league));
+    const pickHome = modelHomeSpread <= 0;
+    const actualMargin = g.homeScore - g.awayScore; // home margin
+    rows.push({
+      week: g.week, id: g.homeId + "-" + g.awayId, pickHome, modelHomeSpread, actualMargin, line: g.line,
+      result: g.line != null ? seedGradePick(pickHome, g.homeScore, g.awayScore, g.line) : null,
+    });
+    applyGameToElo(elo, g, K, HOME_ADV, movCap, probDivisor);
+  }
+  return rows;
+}
+
+function seedTally(rows, minWeek, maxWeek) {
+  let w = 0, l = 0, p = 0, modelErr = 0, mktErr = 0, n = 0;
+  rows.forEach(r => {
+    if (r.week < minWeek || r.week > maxWeek || r.result == null) return;
+    if (r.result === "Win") w++; else if (r.result === "Loss") l++; else p++;
+    modelErr += Math.abs(-r.modelHomeSpread - r.actualMargin); // model's predicted home margin vs real
+    mktErr += Math.abs(-r.line - r.actualMargin);              // market's predicted home margin vs real
+    n++;
+  });
+  const g = w + l;
+  return { w, l, p, n, pct: g ? w / g * 100 : null, noise: g ? 1.96 * Math.sqrt(0.25 / g) * 100 : null,
+    modelMae: n ? modelErr / n : null, mktMae: n ? mktErr / n : null };
+}
+
+// Pure: for games both modes graded, the record of each mode on the games where they DISAGREED.
+function seedDisagreements(rowsA, rowsB, minWeek, maxWeek) {
+  const byId = {};
+  rowsB.forEach(r => { byId[r.week + "|" + r.id] = r; });
+  const a = { w: 0, l: 0 }, b = { w: 0, l: 0 };
+  let n = 0;
+  rowsA.forEach(r => {
+    const o = byId[r.week + "|" + r.id];
+    if (!o || r.week < minWeek || r.week > maxWeek || r.result == null || o.result == null) return;
+    if (r.pickHome === o.pickHome) return;
+    n++;
+    if (r.result === "Win") a.w++; else if (r.result === "Loss") a.l++;
+    if (o.result === "Win") b.w++; else if (o.result === "Loss") b.l++;
+  });
+  return { n, a, b };
+}
+
+async function runSeedCompare() {
+  const out = document.getElementById("atsBacktestResults");
+  const league = document.getElementById("atsBtLeague").value;
+  const year = parseInt(document.getElementById("atsBtYear").value, 10);
+  const through = Math.min(18, parseInt(document.getElementById("atsBtWeekThrough").value, 10) || 18);
+  const sportKey = league === "nfl" ? "americanfootball_nfl" : "americanfootball_ncaaf";
+  try {
+    const games = [];
+    let missing = 0;
+    for (let w = 1; w <= through; w++) {
+      out.innerHTML = `<div class="refresh-note">Loading Week ${w} results and saved lines…</div>`;
+      let results = [];
+      try { results = await fetchWeekResults(league, year, w, 2); } catch (e) { continue; }
+      for (const g of results) {
+        if (!g.date) continue;
+        const normalized = new Date(g.date).toISOString().replace(/\.\d{3}Z$/, "Z");
+        const hist = await histDbGet(`hist-odds-${sportKey}-${normalized}`); // saved lines only — never calls the API
+        let line = null;
+        if (hist) {
+          const match = hist.find(o => nameMatchesHistorical(o.home_team, g.homeName) && nameMatchesHistorical(o.away_team, g.awayName));
+          const book = match && match.bookmakers && match.bookmakers[0];
+          const mkt = book && book.markets && book.markets.find(m => m.key === "spreads");
+          const oc = mkt && mkt.outcomes.find(o => o.name === match.home_team);
+          if (oc && oc.point != null) line = oc.point;
+        }
+        if (line == null) missing++;
+        games.push({ week: w, homeId: g.homeId, awayId: g.awayId, homeScore: g.homeScore, awayScore: g.awayScore, line });
+      }
+    }
+    const withLine = games.length - missing;
+    if (withLine === 0) {
+      out.innerHTML = `<div class="error">No saved lines found for ${year} Weeks 1-${through}. Run the normal ATS Backtest for this season first (that's what saves the lines), then come back.</div>`;
+      return;
+    }
+    out.innerHTML = `<div class="refresh-note">Grading both versions…</div>`;
+    const carry = await buildCarryoverElo(league, year - 1);
+    const rowsCarry = seedWalk(league, carry, games);
+    const rowsFresh = seedWalk(league, {}, games);
+
+    const fmtT = (t) => t.pct == null ? "no graded games" :
+      `<b>${t.w}-${t.l}${t.p ? `-${t.p}` : ""}</b> · ${t.pct.toFixed(1)}% ATS <span style="color:#8A96A1;">(±${t.noise.toFixed(0)} pts of noise)</span>`;
+    const ranges = [["Weeks 1-4", 1, 4], ["Weeks 5+", 5, 99], ["All weeks", 1, 99]];
+    const rows = ranges.map(([label, a, b]) => {
+      const c = seedTally(rowsCarry, a, b), f = seedTally(rowsFresh, a, b);
+      return `<div class="trend-line" style="padding-bottom:6px;"><b>${label}</b>
+        <div style="font-size:12px;">Last-year seed: ${fmtT(c)}</div>
+        <div style="font-size:12px;">Fresh start: ${fmtT(f)}</div></div>`;
+    }).join("");
+    const c5 = seedTally(rowsCarry, 5, 99), f5 = seedTally(rowsFresh, 5, 99);
+    const dis = seedDisagreements(rowsCarry, rowsFresh, 5, 99);
+    const mae = c5.n ? `Average miss on the final margin, Weeks 5+: last-year seed ${c5.modelMae.toFixed(1)} pts · fresh start ${f5.modelMae.toFixed(1)} pts · the real market line ${c5.mktMae.toFixed(1)} pts (lower is better — the market is the benchmark to beat).` : "";
+    out.innerHTML = `
+      <div class="trend-title">${year} ${league.toUpperCase()} — pure Elo, no efficiency blend, no hindsight, Weeks 1-${through}</div>
+      ${rows}
+      <div class="trend-line" style="padding-bottom:6px;"><b>Where the two versions picked opposite sides (Weeks 5+)</b>
+        <div style="font-size:12px;">${dis.n} games · last-year seed went ${dis.a.w}-${dis.a.l} · fresh start went ${dis.b.w}-${dis.b.l}</div></div>
+      <div class="trend-note">${mae}</div>
+      <div class="trend-note">${withLine} of ${games.length} games had a saved line${missing ? ` (${missing} skipped — no saved line for them)` : ""}. Break-even at -110 is 52.4%. Fresh start has no information in Week 1 (every team is 1500, so it just picks the home team) and very little in Weeks 2-4, which is why Weeks 5+ is the fair comparison. A gap of a few percentage points between the two is inside the noise range shown, so only a large, consistent difference is worth acting on.</div>`;
+  } catch (e) {
+    out.innerHTML = `<div class="error">${e.message}</div>`;
+  }
+}
+
+document.getElementById("seedCompareBtn").addEventListener("click", runSeedCompare);
 </script>
 
 
