@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_79.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_80.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -113,7 +113,7 @@
       <div class="bankroll-value" id="bankrollValue" style="color: rgb(111, 207, 142);">$0.00</div>
     </div>
   </div>
-  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;">Build 2026-10-04 11:39 UTC · b160148c</div>
+  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;">Build 2026-10-04 11:49 UTC · dcc118a6</div>
   <nav>
     <button id="tabScheduleBtn" class="active">Schedule</button>
     <button id="tabLedgerBtn">My Bets</button>
@@ -147,6 +147,7 @@
       <div>
         <label>Year</label>
         <select id="yearSelect">
+          <option value="2024">2024</option>
           <option value="2025">2025</option>
           <option value="2026" selected="">2026</option>
         </select>
@@ -8010,20 +8011,21 @@ function tallyEstimateUpdate() {
   try { apiKey = localStorage.getItem("odds-api-key") || ""; } catch (e) {}
   if (!apiKey) { area.innerHTML = `<div class="trend-note">Add your Odds API key on the Edge tab first.</div>`; return; }
   const m = tallyState.missing;
-  const cost = m.spread.length * 20 + m.ml.length * 10;
+  const spreadCost = m.spread.length * 20, mlCost = m.ml.length * 10;
   area.innerHTML = `
-    <div class="trend-line">${m.spread.length} spread/total lookups (~20 credits each) + ${m.ml.length} moneyline lookups (~10 each).</div>
-    <div class="trend-score">Estimated cost: ~${cost.toLocaleString()} credits</div>
-    <div class="trend-note">Games that kick off at the same time share one lookup, and every result is cached permanently — you only ever pay for a game once.</div>
-    <button class="save-btn full" id="tallyConfirmBtn" style="margin-top:6px;">Proceed — pull these lines</button>`;
-  document.getElementById("tallyConfirmBtn").addEventListener("click", () => tallyRunUpdate(apiKey));
+    <div class="trend-line">${m.spread.length} spread/total lookups (~20 credits each) and ${m.ml.length} moneyline lookups (~10 each) are missing.</div>
+    <div class="trend-note">Games that kick off at the same time share one lookup, and every result is cached permanently — you only ever pay for a game once. Spreads/totals alone are enough for ATS, over/under and the hot-team test; moneylines only add the ML profit column.</div>
+    <button class="save-btn full" id="tallyConfirmSpreadBtn" style="margin-top:6px;">Pull spreads &amp; totals only — ~${spreadCost.toLocaleString()} credits</button>
+    <button class="save-btn full" id="tallyConfirmAllBtn" style="margin-top:6px;">Pull spreads, totals &amp; moneylines — ~${(spreadCost + mlCost).toLocaleString()} credits</button>`;
+  document.getElementById("tallyConfirmSpreadBtn").addEventListener("click", () => tallyRunUpdate(apiKey, false));
+  document.getElementById("tallyConfirmAllBtn").addEventListener("click", () => tallyRunUpdate(apiKey, true));
 }
 
-async function tallyRunUpdate(apiKey) {
+async function tallyRunUpdate(apiKey, includeMl) {
   const area = document.getElementById("tallyUpdateArea");
   const league = state.league;
   const m = tallyState.missing;
-  const jobs = [...m.spread.map(d => ({ kind: "spread", d })), ...m.ml.map(d => ({ kind: "ml", d }))];
+  const jobs = [...m.spread.map(d => ({ kind: "spread", d })), ...(includeMl ? m.ml.map(d => ({ kind: "ml", d })) : [])];
   let done = 0, failed = 0, lastErr = "";
   tallyState.busy = true;
   for (const j of jobs) {
