@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_82.html -->
+<!-- saved from url=(0052)file:///C:/Users/dleft/Downloads/bet-tracker_83.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -113,7 +113,7 @@
       <div class="bankroll-value" id="bankrollValue" style="color: rgb(111, 207, 142);">$0.00</div>
     </div>
   </div>
-  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;">Build 2026-10-04 12:07 UTC · f73d9db6</div>
+  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;">Build 2026-10-04 12:15 UTC · 4ece5185</div>
   <nav>
     <button id="tabScheduleBtn" class="active">Schedule</button>
     <button id="tabLedgerBtn">My Bets</button>
@@ -1121,6 +1121,12 @@ Broncos +2.5
 ..." style="width:100%; min-height:140px; font-family:inherit; font-size:13px; padding:10px; border-radius:8px; border:1px solid #CBD3DA; resize:vertical;"></textarea>
       <button class="save-btn full" id="p6AutoPickBtn" style="margin-top:10px;">Find Best 6</button>
       <div id="p6AutoPickResults" style="margin-top:12px;"></div>
+      <div style="margin-top:14px; border-top:1px solid #E4E8EC; padding-top:12px;">
+        <div class="trend-title" style="margin-bottom:6px;">Compare Pool Lines to the Live Market</div>
+        <div class="refresh-note">Uses the same pasted lines. The pool's numbers are set early in the week, so this shows which side the pool's number favors compared with where sportsbooks are right now. Costs about 1 Odds API credit.</div>
+        <button class="save-btn full" id="p6MarketBtn" style="margin-top:8px;">Compare to the market</button>
+        <div id="p6MarketResults" style="margin-top:12px;"></div>
+      </div>
     </div>
     <div id="p6History"></div>
   </div>
@@ -6775,7 +6781,7 @@ async function findBestSix() {
     ${scaleFit ? `<div class="trend-note">Model spreads scaled ×${scaleFit.k.toFixed(2)} to match this slate's market scale (fit across ${scaleFit.n} games, R²=${scaleFit.r2.toFixed(2)}). Without this the model's compressed numbers make every pick the underdog by arithmetic alone. ${scaleFit.r2 < 0.3 ? `<b style="color:#B4463A;">Low R² — the model's ordering disagrees with the market's, not just its scale. Treat these picks with real caution.</b>` : ""}</div>` : `<div class="trend-note" style="color:#B4463A;">Not enough games to fit a scale correction (need 5+). Picks may skew to underdogs.</div>`}
     <div class="trend-note">Picks: ${(() => { const d = best6.filter(c => c.pickIsDog).length; return `${d} underdog${d === 1 ? "" : "s"}, ${best6.length - d} favorite${best6.length - d === 1 ? "" : "s"}`; })()}</div>
     ${best6.map(c => {
-      const bucket = c.gapAbs >= 20 ? `<span style="color:#C4564B;">20+ pt gap — no proven edge, included only to fill 6</span>` : c.gapAbs >= 10 ? `<span style="color:#8A96A1;">10-20 pt gap — no proven edge</span>` : `<span style="color:#4C8B5A;">2-10 pt gap — the validated range</span>`;
+      const bucket = c.gapAbs >= 20 ? `<span style="color:#C4564B;">20+ pt gap — untested range, included only to fill 6</span>` : c.gapAbs >= 10 ? `<span style="color:#8A96A1;">10-20 pt gap — has tested worse than smaller gaps</span>` : `<span style="color:#3B7DD8;">2-10 pt gap — the range tested most (not a proven edge: latest no-hindsight run was 50.9% ATS)</span>`;
       return `<div class="trend-line"><b>${c.pickTeam}</b> — ${c.matchup} · pool: ${c.poolLineText} · model home line: ${c.modelHomeLine.toFixed(1)} · gap: ${c.gapAbs.toFixed(1)} pts (${bucket})</div>`;
     }).join("")}
     ${uniqueCandidates.length > 6 ? `<div class="trend-note" style="margin-top:6px;">${uniqueCandidates.length - 6} other game${uniqueCandidates.length - 6 > 1 ? "s" : ""} matched but had a smaller gap, not included.</div>` : ""}
@@ -8283,6 +8289,133 @@ async function runTeamPersistenceTest() {
   if (pb) pb.addEventListener("click", runTeamPersistenceTest);
   if (open) refreshSeasonTally();
 })();
+</script>
+<script>
+// ---------- Pool line vs. live market ----------
+// A pool's lines are fixed when the pool opens, while the real market keeps moving all week
+// (injuries, money). The market's number is generally the better predictor, so a pool line that is
+// MORE favorable to you than today's market number is a price advantage — no model needed. This
+// compares each pasted pool line to the current consensus across sportsbooks and says which side the
+// pool's number favors. It is a price comparison, not a prediction: it can't tell you who wins.
+
+function poolMedian(nums) {
+  const a = nums.slice().sort((x, y) => x - y);
+  const n = a.length;
+  if (n === 0) return null;
+  return n % 2 ? a[(n - 1) / 2] : (a[n / 2 - 1] + a[n / 2]) / 2;
+}
+
+// Which key numbers (3 and 7 are the most common NFL margins) sit between the two lines. A point of
+// line value is worth the most when it moves a number across one of these.
+function poolKeyNumbersCrossed(poolLine, marketLine) {
+  if (poolLine == null || marketLine == null) return [];
+  if (Math.sign(poolLine) !== Math.sign(marketLine)) return []; // spans pick'em — handled as a plain difference
+  const lo = Math.min(Math.abs(poolLine), Math.abs(marketLine));
+  const hi = Math.max(Math.abs(poolLine), Math.abs(marketLine));
+  return [3, 7].filter(k => lo < k && k < hi);
+}
+
+// Pure: turn one pasted line plus the market's per-book numbers for THAT team into a comparison.
+// teamPoints = each book's spread for the pasted team (e.g. -3.5, -3, -3.5 ...).
+function poolCompareLine(poolLine, teamPoints, teamBooks) {
+  const consensus = poolMedian(teamPoints);
+  if (consensus == null) return null;
+  const value = poolLine - consensus; // points in your favor taking this team at the pool's number
+  let bestIdx = 0, worstIdx = 0;
+  teamPoints.forEach((p, i) => {
+    if (p > teamPoints[bestIdx]) bestIdx = i;   // higher number is always better for the bettor
+    if (p < teamPoints[worstIdx]) worstIdx = i; // the lowest number for this team is the best number for the OTHER side
+  });
+  return {
+    consensus, value,
+    bestPoint: teamPoints[bestIdx], bestBook: teamBooks[bestIdx],
+    otherBestPoint: -teamPoints[worstIdx], otherBestBook: teamBooks[worstIdx], books: teamPoints.length,
+    keys: poolKeyNumbersCrossed(poolLine, consensus),
+  };
+}
+
+const poolFmt = (n) => (n > 0 ? "+" : "") + n;
+
+async function runPoolVsMarket() {
+  const out = document.getElementById("p6MarketResults");
+  const raw = document.getElementById("p6BulkLines").value;
+  const lines = extractCleanPoolLines(raw);
+  if (lines.length === 0) { out.innerHTML = `<div class="trend-note">Paste the pool's lines in the box above first, one per line, like "Chiefs -3.5".</div>`; return; }
+  let apiKey = "";
+  try { apiKey = localStorage.getItem("odds-api-key") || ""; } catch (e) {}
+  if (!apiKey) { out.innerHTML = `<div class="trend-note">Add your Odds API key on the Edge tab first.</div>`; return; }
+
+  const year = parseInt(document.getElementById("p6Year").value, 10);
+  const week = parseInt(document.getElementById("p6Week").value, 10);
+  out.innerHTML = `<div class="refresh-note">Loading week ${week} games and the live market…</div>`;
+  try {
+    const ok = await ensureScheduleWeek(year, week);
+    if (!ok) { out.innerHTML = `<div class="error">No games found for ${year} week ${week}.</div>`; return; }
+    const sportKey = state.league === "nfl" ? "americanfootball_nfl" : "americanfootball_ncaaf";
+    // spreads only — about 1 credit
+    const res = await fetch(`https://api.the-odds-api.com/v4/sports/${sportKey}/odds/?apiKey=${apiKey}&regions=us&markets=spreads&oddsFormat=american`);
+    if (!res.ok) throw new Error(`odds request failed: ${res.status}`);
+    const odds = await res.json();
+
+    const seen = new Set(), rows = [], unmatched = [];
+    for (const line of lines) {
+      const parsed = parsePoolLineEntry(line);
+      const match = parsed && matchGameForTeamText(parsed.teamText);
+      if (!match) { unmatched.push(line); continue; }
+      const g = match.game;
+      const matchup = `${g.away} @ ${g.home}`;
+      if (seen.has(matchup)) continue; // pool pages list both sides of a game — compare each game once
+      const ev = odds.find(o => nameMatchesEvent(o, { home: g.home, away: g.away }));
+      if (!ev) { unmatched.push(`${line} (no live market found)`); continue; }
+      const teamFull = match.side === "home" ? ev.home_team : ev.away_team;
+      const pts = [], books = [];
+      (ev.bookmakers || []).forEach(b => {
+        const m = (b.markets || []).find(x => x.key === "spreads");
+        const o = m && m.outcomes.find(x => x.name === teamFull);
+        if (o && o.point != null) { pts.push(o.point); books.push(b.title || b.key); }
+      });
+      const cmp = poolCompareLine(parsed.lineNum, pts, books);
+      if (!cmp) { unmatched.push(`${line} (no spread posted yet)`); continue; }
+      seen.add(matchup);
+      const pastedTeam = match.side === "home" ? g.home : g.away;
+      const oppTeam = match.side === "home" ? g.away : g.home;
+      // value > 0: the pasted team is the better side at the pool's number; < 0: take the other side
+      const pickPasted = cmp.value >= 0;
+      rows.push({
+        matchup, line, cmp, absValue: Math.abs(cmp.value),
+        pickTeam: pickPasted ? pastedTeam : oppTeam,
+        pickPoolLine: pickPasted ? parsed.lineNum : -parsed.lineNum,
+        pickMarket: pickPasted ? cmp.consensus : -cmp.consensus,
+        bestPoint: pickPasted ? cmp.bestPoint : cmp.otherBestPoint,
+        bestBook: pickPasted ? cmp.bestBook : cmp.otherBestBook,
+      });
+    }
+    rows.sort((a, b) => (b.absValue - a.absValue) || (b.cmp.keys.length - a.cmp.keys.length));
+    if (rows.length === 0) {
+      out.innerHTML = `<div class="error">Couldn't compare any lines.</div>${unmatched.length ? `<div class="trend-note">${unmatched.join(" · ")}</div>` : ""}`;
+      return;
+    }
+    const body = rows.map(r => {
+      const same = r.absValue < 0.01;
+      const color = same ? "#8A96A1" : r.absValue >= 1 ? "#4C8B5A" : "#3B7DD8";
+      const keyTxt = r.cmp.keys.length ? ` <span style="color:#B07A1E; font-weight:700;">crosses the ${r.cmp.keys.join(" and ")}</span>` : "";
+      return `<div class="trend-line" style="padding-bottom:6px;">
+        <b>${same ? r.matchup : r.pickTeam}</b>${same ? "" : ` at the pool's <b>${poolFmt(r.pickPoolLine)}</b>`} —
+        <span style="color:${color}; font-weight:700;">${same ? "pool matches the market" : `${r.absValue.toFixed(1)} pt better than the market`}</span>${keyTxt}
+        <div style="font-size:11px; color:#8A96A1;">${r.matchup} · market consensus for ${same ? "this side" : r.pickTeam}: ${poolFmt(r.pickMarket)} (${r.cmp.books} books) · best sportsbook number for ${same ? "this side" : r.pickTeam}: ${poolFmt(r.bestPoint)} at ${r.bestBook}</div>
+      </div>`;
+    }).join("");
+    out.innerHTML = `
+      <div class="trend-title">Pool line vs. market, by size of the difference</div>
+      ${body}
+      ${unmatched.length ? `<div class="trend-note">Couldn't compare: ${unmatched.join(" · ")}</div>` : ""}
+      <div class="trend-note" style="margin-top:6px;">This compares prices, not teams: it says which side the pool's number favors compared with where sportsbooks are right now, and it can't say who wins. It only pays off if the market's number is the better one, which is generally true but not guaranteed. A difference that comes from news (an injury, a QB change) is real; one you can't explain deserves a second look. The market keeps moving until kickoff, so check again right before you lock your picks.</div>`;
+  } catch (e) {
+    out.innerHTML = `<div class="error">Couldn't load the market: ${e.message}</div>`;
+  }
+}
+
+document.getElementById("p6MarketBtn").addEventListener("click", runPoolVsMarket);
 </script>
 
 
