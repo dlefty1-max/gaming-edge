@@ -2377,14 +2377,25 @@ async function fetchTeamScoringFromWeekScan(league, teamId, year) {
     return null;
   }
   let pf = 0, pa = 0, n = 0;
-  games.forEach(g => {
+  let w = 0, l = 0, t = 0;
+  const hr = { w: 0, l: 0, t: 0 }, ar = { w: 0, l: 0, t: 0 };
+  // Chronological, so the streak reads from the most recent games backwards. ESPN's event order
+  // isn't guaranteed, so sort by week and then kickoff rather than trusting the array order.
+  const mineGames = games
+    .filter(g => String(g.homeId) === String(teamId) || String(g.awayId) === String(teamId))
+    .slice()
+    .sort((a, b) => (a.week - b.week) || String(a.date || "").localeCompare(String(b.date || "")));
+  const results = [];
+  mineGames.forEach(g => {
     const isHome = String(g.homeId) === String(teamId);
-    const isAway = String(g.awayId) === String(teamId);
-    if (!isHome && !isAway) return;
     const mine = isHome ? g.homeScore : g.awayScore;
     const theirs = isHome ? g.awayScore : g.homeScore;
     if (!isFinite(mine) || !isFinite(theirs)) return;
     pf += mine; pa += theirs; n++;
+    const split = isHome ? hr : ar;
+    if (mine > theirs) { w++; split.w++; results.push("W"); }
+    else if (mine < theirs) { l++; split.l++; results.push("L"); }
+    else { t++; split.t++; results.push("T"); }
   });
   // Keep a sample of the IDs actually present, so an ID-space mismatch is visible rather than
   // looking identical to "no games played".
@@ -2399,7 +2410,28 @@ async function fetchTeamScoringFromWeekScan(league, teamId, year) {
     error: null,
   };
   if (n === 0) return null;
-  return { avgPF: pf / n, avgPA: pa / n, gamesPlayed: n, derivedFromSchedule: true };
+  const summary = (r) => `${r.w}-${r.l}${r.t ? `-${r.t}` : ""}`;
+  // Current streak: walk backwards from the latest result while it stays the same. A tie ends a
+  // streak rather than extending it, which matches how records are normally read.
+  let streak = null;
+  if (results.length) {
+    const last = results[results.length - 1];
+    if (last !== "T") {
+      let run = 0;
+      for (let i = results.length - 1; i >= 0 && results[i] === last; i--) run++;
+      streak = `${last}${run}`;
+    }
+  }
+  return {
+    avgPF: pf / n,
+    avgPA: pa / n,
+    gamesPlayed: n,
+    overallSummary: summary({ w, l, t }),
+    homeSummary: summary(hr),
+    awaySummary: summary(ar),
+    streak,
+    derivedFromSchedule: true,
+  };
 }
 
 // Fills in avgPF/avgPA on a record object when the team endpoint didn't supply them.
@@ -2418,6 +2450,13 @@ async function ensureScoringAverages(rec, league, teamId, year) {
     rec.avgPA = derived.avgPA;
     rec.derivedFromSchedule = true;
     if (!rec.gamesPlayed) rec.gamesPlayed = derived.gamesPlayed;
+    // When the record endpoint didn't answer, these were all rendering as "—" even though the
+    // same game results that produced PF/PA also contain the W-L, the home/away split and the
+    // streak. Fill only what's genuinely missing, so ESPN's own values always win when present.
+    if (!rec.overallSummary && derived.overallSummary) rec.overallSummary = derived.overallSummary;
+    if (!rec.homeSummary && derived.homeSummary) rec.homeSummary = derived.homeSummary;
+    if (!rec.awaySummary && derived.awaySummary) rec.awaySummary = derived.awaySummary;
+    if (!rec.streak && derived.streak) rec.streak = derived.streak;
   }
   return rec;
 }
@@ -4340,14 +4379,14 @@ async function loadTrends(game, containerId) {
         <div class="trend-cols">
           <div>
             <div class="trend-team-name">${rankBadge(game.awayId)}${awayName} (away)</div>
-            <div class="trend-line">Record: ${away.overallSummary || "—"}</div>
+            <div class="trend-line">Record: ${away.overallSummary || "—"}${away.derivedFromSchedule && away.recordUnavailable ? ` <span style="color:#8A96A1; font-size:10px;">(from game results)</span>` : ""}</div>
             <div class="trend-line">Away record: ${away.awaySummary || "—"}</div>
             <div class="trend-line">Streak: ${away.streak || "—"}</div>
             <div class="trend-line">${away.avgPF.toFixed(1)} PF/g · ${away.avgPA.toFixed(1)} PA/g${away.derivedFromSchedule ? ` <span style="color:#8A96A1; font-size:10px;">(from ${away.gamesPlayed} game${away.gamesPlayed === 1 ? "" : "s"})</span>` : ""}</div>
           </div>
           <div>
             <div class="trend-team-name">${rankBadge(game.homeId)}${homeName} (home)</div>
-            <div class="trend-line">Record: ${home.overallSummary || "—"}</div>
+            <div class="trend-line">Record: ${home.overallSummary || "—"}${home.derivedFromSchedule && home.recordUnavailable ? ` <span style="color:#8A96A1; font-size:10px;">(from game results)</span>` : ""}</div>
             <div class="trend-line">Home record: ${home.homeSummary || "—"}</div>
             <div class="trend-line">Streak: ${home.streak || "—"}</div>
             <div class="trend-line">${home.avgPF.toFixed(1)} PF/g · ${home.avgPA.toFixed(1)} PA/g${home.derivedFromSchedule ? ` <span style="color:#8A96A1; font-size:10px;">(from ${home.gamesPlayed} game${home.gamesPlayed === 1 ? "" : "s"})</span>` : ""}</div>
