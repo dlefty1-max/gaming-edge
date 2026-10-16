@@ -8306,6 +8306,19 @@ function tallySortValue(t, key) {
 
 function tallyFmtPct(p) { return p == null ? "–" : Math.round(p * 100) + "%"; }
 
+// Kickoff, short and in the viewer's own timezone — e.g. "Sat 10/18 7:00 PM". Shown beside the
+// opponent in the tally so a game can be located by date without scrolling up to hunt for it.
+function tallyFmtKickoff(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  let day = "", time = "";
+  try { day = d.toLocaleDateString(undefined, { weekday: "short" }); } catch (e) { day = ""; }
+  try { time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }); } catch (e) { time = ""; }
+  const md = `${d.getMonth() + 1}/${d.getDate()}`;
+  return [day, md, time].filter(Boolean).join(" ");
+}
+
 function renderSeasonTally() {
   const body = document.getElementById("tallyBody");
   if (!body) return;
@@ -8346,8 +8359,9 @@ function renderSeasonTally() {
   // and gives the click target something to jump to.
   const slate = {};
   (state.games || []).forEach(g => {
-    if (g.homeId != null) slate[String(g.homeId)] = { oppName: g.away, oppId: g.awayId, atHome: true, gameId: g.id };
-    if (g.awayId != null) slate[String(g.awayId)] = { oppName: g.home, oppId: g.homeId, atHome: false, gameId: g.id };
+    const common = { gameId: g.id, date: g.date, status: g.status };
+    if (g.homeId != null) slate[String(g.homeId)] = { ...common, oppName: g.away, oppId: g.awayId, atHome: true };
+    if (g.awayId != null) slate[String(g.awayId)] = { ...common, oppName: g.home, oppId: g.homeId, atHome: false };
   });
   const teamCell = (t) => {
     const m = slate[String(t.id)];
@@ -8357,10 +8371,14 @@ function renderSeasonTally() {
         <div style="font-size:10px; color:#A8B2BB; font-weight:400;">not on week ${state.week}</div></td>`;
     }
     const opp = `${m.atHome ? "vs" : "@"} ${rankBadge(m.oppId)}${m.oppName}`;
+    // Kickoff when the game is still ahead; for one already played, its own status ("Final") is
+    // more useful than a date.
+    const kick = tallyFmtKickoff(m.date);
+    const when = /final/i.test(m.status || "") ? (m.status || "") : kick;
     return `<td class="tally-jump" data-jump="${m.gameId}" title="Jump to this game above"
       style="padding:6px 4px; font-weight:700; font-size:12px; white-space:nowrap; cursor:pointer;">
       <span style="text-decoration:underline; text-decoration-color:#CBD3DA; text-underline-offset:2px;">${name}</span>
-      <div style="font-size:10px; color:#5C6B78; font-weight:400;">${opp} <span style="color:#3B7DD8;">↑</span></div></td>`;
+      <div style="font-size:10px; color:#5C6B78; font-weight:400;">${opp}${when ? ` <span style="color:#8A96A1;">· ${when}</span>` : ""} <span style="color:#3B7DD8;">↑</span></div></td>`;
   };
   // A role split is only worth reading once there are a few games in it, so anything under 4
   // is shown but greyed — a 1-0 "100%" next to a 9-4 shouldn't look like the stronger number.
@@ -8397,7 +8415,7 @@ function renderSeasonTally() {
         <tbody>${tr}</tbody>
       </table>
     </div>
-    <div class="trend-note" style="margin-top:6px;">Tap a column to sort; tap again to flip (for Over/Under, flipping shows the best "under" teams). Under each team is its week ${state.week} matchup — tap the team to jump up to that game and open it. Sorting is weighted by how many games a record covers, so a 5-0 outranks a 1-0 and a 9-3 outranks a 2-0 — the percentage shown is always the raw one, only the order accounts for sample size. ML profit = units won betting that team to win straight up every game at the first book's closing price. ATS/over-under are graded against the closing line at kickoff. The last four columns split that same ATS record by the role the team held: laying points at home, getting them at home, laying them on the road, getting them on the road. Pick'em games (line exactly 0) count in ATS but in none of the four. Any faded cell has fewer than 4 decided games — shown, but too thin to read anything into. Records describe the past — early in the season they're a handful of games, mostly noise, and team ATS records tend to drift back toward 50%. Expect these splits to stay noisy longest, since each carries roughly a quarter of the games.</div>
+    <div class="trend-note" style="margin-top:6px;">Tap a column to sort; tap again to flip (for Over/Under, flipping shows the best "under" teams). Under each team is its week ${state.week} matchup and kickoff in your local time — tap the team to jump up to that game and open it. Sorting is weighted by how many games a record covers, so a 5-0 outranks a 1-0 and a 9-3 outranks a 2-0 — the percentage shown is always the raw one, only the order accounts for sample size. ML profit = units won betting that team to win straight up every game at the first book's closing price. ATS/over-under are graded against the closing line at kickoff. The last four columns split that same ATS record by the role the team held: laying points at home, getting them at home, laying them on the road, getting them on the road. Pick'em games (line exactly 0) count in ATS but in none of the four. Any faded cell has fewer than 4 decided games — shown, but too thin to read anything into. Records describe the past — early in the season they're a handful of games, mostly noise, and team ATS records tend to drift back toward 50%. Expect these splits to stay noisy longest, since each carries roughly a quarter of the games.</div>
     <div id="tallyUpdateArea" style="margin-top:8px;">
       ${missCount > 0 ? `<button class="save-btn full" id="tallyUpdateBtn">Update ATS / O-U / ML lines (see cost first)</button>` : `<div class="trend-note">All lines for completed games are already cached — nothing to update.</div>`}
     </div>`;
