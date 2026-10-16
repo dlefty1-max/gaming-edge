@@ -2337,101 +2337,92 @@ async function fetchLastSeasonRecordFromSchedule(league, teamId, year) {
   };
 }
 
-// Points for / against, derived from the team's own completed games.
+// Team record, scoring averages and streak, computed from a list of completed games.
 //
-// Needed because ESPN's team endpoint does not reliably publish pointsFor/pointsAgainst in its
-// record items for college football the way it does for the NFL. When they're absent, avgPF and
-// avgPA came back null, which tripped the `haveScoring` gate and made the whole Scoring Average
-// Projection section say "no season stats yet" on every college game. The schedule endpoint has
-// the actual scores, so compute the averages from those instead of showing nothing.
-async function fetchTeamScoringFromSchedule(league, teamId, year) {
-  if (!teamId) return null;
-  let games = [];
-  try { games = await fetchTeamCompletedGames(league, teamId, year); } catch (e) { return null; }
-  let pf = 0, pa = 0, n = 0;
-  games.forEach(g => {
-    const isHome = String(g.homeId) === String(teamId);
-    const mine = isHome ? g.homeScore : g.awayScore;
-    const theirs = isHome ? g.awayScore : g.homeScore;
-    if (!isFinite(mine) || !isFinite(theirs)) return;
-    pf += mine; pa += theirs; n++;
-  });
-  if (n === 0) return null;
-  return { avgPF: pf / n, avgPA: pa / n, gamesPlayed: n, derivedFromSchedule: true };
-}
-
-// Second derivation path, and the one that actually works for college.
+// ONE implementation shared by both derivation paths below. It previously lived only in the
+// week-scan path, which meant that when the team-schedule path succeeded (as it does for these
+// college teams) the caller got PF/PA but Record/Streak stayed "—" with a misleading
+// "(from game results)" label next to an em dash.
 //
-// The team-schedule endpoint above turned out to return nothing usable for CFB, so this instead
-// reuses `tallyLoadGames` — the week-by-week scoreboard scan that the Season Tally runs on and
-// that is demonstrably working for college (that's where the college tally's records come from).
-// It shares tallyState.weeksCache, so when the tally has already loaded this costs no new fetches.
-//
-// Records the scan's own numbers in `window.__scoringDiag` so a failure can say what it saw
-// instead of blaming the offseason.
-async function fetchTeamScoringFromWeekScan(league, teamId, year) {
-  if (!teamId) return null;
-  let games = [];
-  try { games = await tallyLoadGames(league, year); } catch (e) {
-    window.__scoringDiag = { scanned: 0, error: e.message || String(e) };
-    return null;
-  }
-  let pf = 0, pa = 0, n = 0;
-  let w = 0, l = 0, t = 0;
+// `games` entries need: homeId, awayId, homeScore, awayScore, and ideally date and/or week
+// so the streak can be read from the most recent game backwards.
+function summarizeTeamGames(games, teamId) {
+  let pf = 0, pa = 0, n = 0, w = 0, l = 0, t = 0;
   const hr = { w: 0, l: 0, t: 0 }, ar = { w: 0, l: 0, t: 0 };
-  // Chronological, so the streak reads from the most recent games backwards. ESPN's event order
-  // isn't guaranteed, so sort by week and then kickoff rather than trusting the array order.
-  const mineGames = games
+  const results = [];
+  (games || [])
     .filter(g => String(g.homeId) === String(teamId) || String(g.awayId) === String(teamId))
     .slice()
-    .sort((a, b) => (a.week - b.week) || String(a.date || "").localeCompare(String(b.date || "")));
-  const results = [];
-  mineGames.forEach(g => {
-    const isHome = String(g.homeId) === String(teamId);
-    const mine = isHome ? g.homeScore : g.awayScore;
-    const theirs = isHome ? g.awayScore : g.homeScore;
-    if (!isFinite(mine) || !isFinite(theirs)) return;
-    pf += mine; pa += theirs; n++;
-    const split = isHome ? hr : ar;
-    if (mine > theirs) { w++; split.w++; results.push("W"); }
-    else if (mine < theirs) { l++; split.l++; results.push("L"); }
-    else { t++; split.t++; results.push("T"); }
-  });
-  // Keep a sample of the IDs actually present, so an ID-space mismatch is visible rather than
-  // looking identical to "no games played".
-  const ids = new Set();
-  games.slice(0, 400).forEach(g => { ids.add(String(g.homeId)); ids.add(String(g.awayId)); });
-  window.__scoringDiag = {
-    scanned: games.length,
-    distinctTeams: ids.size,
-    lookedFor: String(teamId),
-    foundTeam: ids.has(String(teamId)),
-    matchedGames: n,
-    error: null,
-  };
+    // ESPN's event order isn't guaranteed chronological, so sort before reading the streak.
+    .sort((a, b) => ((a.week || 0) - (b.week || 0)) || String(a.date || "").localeCompare(String(b.date || "")))
+    .forEach(g => {
+      const isHome = String(g.homeId) === String(teamId);
+      const mine = isHome ? g.homeScore : g.awayScore;
+      const theirs = isHome ? g.awayScore : g.homeScore;
+      if (!isFinite(mine) || !isFinite(theirs)) return;
+      pf += mine; pa += theirs; n++;
+      const split = isHome ? hr : ar;
+      if (mine > theirs) { w++; split.w++; results.push("W"); }
+      else if (mine < theirs) { l++; split.l++; results.push("L"); }
+      else { t++; split.t++; results.push("T"); }
+    });
   if (n === 0) return null;
   const summary = (r) => `${r.w}-${r.l}${r.t ? `-${r.t}` : ""}`;
-  // Current streak: walk backwards from the latest result while it stays the same. A tie ends a
+  // Current streak: walk back from the latest result while it stays the same. A tie ends a
   // streak rather than extending it, which matches how records are normally read.
   let streak = null;
-  if (results.length) {
-    const last = results[results.length - 1];
-    if (last !== "T") {
-      let run = 0;
-      for (let i = results.length - 1; i >= 0 && results[i] === last; i--) run++;
-      streak = `${last}${run}`;
-    }
+  const last = results[results.length - 1];
+  if (last && last !== "T") {
+    let run = 0;
+    for (let i = results.length - 1; i >= 0 && results[i] === last; i--) run++;
+    streak = `${last}${run}`;
   }
   return {
-    avgPF: pf / n,
-    avgPA: pa / n,
-    gamesPlayed: n,
+    avgPF: pf / n, avgPA: pa / n, gamesPlayed: n,
     overallSummary: summary({ w, l, t }),
     homeSummary: summary(hr),
     awaySummary: summary(ar),
     streak,
     derivedFromSchedule: true,
   };
+}
+
+// Path 1: the team's own schedule endpoint. Cheap (one fetch per team) and the one that actually
+// answers for the college teams seen so far.
+async function fetchTeamScoringFromSchedule(league, teamId, year) {
+  if (!teamId) return null;
+  let games = [];
+  try { games = await fetchTeamCompletedGames(league, teamId, year); } catch (e) { return null; }
+  const out = summarizeTeamGames(games, teamId);
+  window.__scoringDiag = { source: "team schedule", scanned: games.length, matchedGames: out ? out.gamesPlayed : 0, lookedFor: String(teamId), error: null };
+  return out;
+}
+
+// Path 2: the week-by-week scoreboard scan the Season Tally runs on. Used when path 1 comes up
+// empty. Shares tallyState.weeksCache, so when the tally has already loaded this is free.
+// Records what it saw in `window.__scoringDiag` so a failure can say more than "no data".
+async function fetchTeamScoringFromWeekScan(league, teamId, year) {
+  if (!teamId) return null;
+  let games = [];
+  try { games = await tallyLoadGames(league, year); } catch (e) {
+    window.__scoringDiag = { source: "week scan", scanned: 0, error: e.message || String(e) };
+    return null;
+  }
+  const out = summarizeTeamGames(games, teamId);
+  // A sample of the IDs actually present, so an ID-space mismatch is visible rather than looking
+  // identical to "no games played".
+  const ids = new Set();
+  games.slice(0, 400).forEach(g => { ids.add(String(g.homeId)); ids.add(String(g.awayId)); });
+  window.__scoringDiag = {
+    source: "week scan",
+    scanned: games.length,
+    distinctTeams: ids.size,
+    lookedFor: String(teamId),
+    foundTeam: ids.has(String(teamId)),
+    matchedGames: out ? out.gamesPlayed : 0,
+    error: null,
+  };
+  return out;
 }
 
 // Fills in avgPF/avgPA on a record object when the team endpoint didn't supply them.
@@ -4379,14 +4370,14 @@ async function loadTrends(game, containerId) {
         <div class="trend-cols">
           <div>
             <div class="trend-team-name">${rankBadge(game.awayId)}${awayName} (away)</div>
-            <div class="trend-line">Record: ${away.overallSummary || "—"}${away.derivedFromSchedule && away.recordUnavailable ? ` <span style="color:#8A96A1; font-size:10px;">(from game results)</span>` : ""}</div>
+            <div class="trend-line">Record: ${away.overallSummary || "—"}${away.overallSummary && away.derivedFromSchedule && away.recordUnavailable ? ` <span style="color:#8A96A1; font-size:10px;">(from game results)</span>` : ""}</div>
             <div class="trend-line">Away record: ${away.awaySummary || "—"}</div>
             <div class="trend-line">Streak: ${away.streak || "—"}</div>
             <div class="trend-line">${away.avgPF.toFixed(1)} PF/g · ${away.avgPA.toFixed(1)} PA/g${away.derivedFromSchedule ? ` <span style="color:#8A96A1; font-size:10px;">(from ${away.gamesPlayed} game${away.gamesPlayed === 1 ? "" : "s"})</span>` : ""}</div>
           </div>
           <div>
             <div class="trend-team-name">${rankBadge(game.homeId)}${homeName} (home)</div>
-            <div class="trend-line">Record: ${home.overallSummary || "—"}${home.derivedFromSchedule && home.recordUnavailable ? ` <span style="color:#8A96A1; font-size:10px;">(from game results)</span>` : ""}</div>
+            <div class="trend-line">Record: ${home.overallSummary || "—"}${home.overallSummary && home.derivedFromSchedule && home.recordUnavailable ? ` <span style="color:#8A96A1; font-size:10px;">(from game results)</span>` : ""}</div>
             <div class="trend-line">Home record: ${home.homeSummary || "—"}</div>
             <div class="trend-line">Streak: ${home.streak || "—"}</div>
             <div class="trend-line">${home.avgPF.toFixed(1)} PF/g · ${home.avgPA.toFixed(1)} PA/g${home.derivedFromSchedule ? ` <span style="color:#8A96A1; font-size:10px;">(from ${home.gamesPlayed} game${home.gamesPlayed === 1 ? "" : "s"})</span>` : ""}</div>
