@@ -4263,22 +4263,31 @@ async function loadTrends(game, containerId) {
   const el = document.getElementById(containerId);
   el.innerHTML = '<div class="refresh-note">Loading team trends…</div>';
   try {
-    let away = null, home = null;
-    try {
-      [away, home] = await Promise.all([
-        fetchTeamRecord(state.league, game.awayId),
-        fetchTeamRecord(state.league, game.homeId),
-      ]);
-    } catch (e) { /* record fetch failed — continue, Elo doesn't need it */ }
+    // Each record is fetched with its OWN catch. The previous version wrapped a bare Promise.all
+    // in one try/catch, so a single team's endpoint failing left BOTH `away` and `home` null —
+    // and a null record made ensureScoringAverages return on its first line, which is why the
+    // scoring fallbacks never even ran on college games.
+    let recordError = null;
+    let [away, home] = await Promise.all([
+      fetchTeamRecord(state.league, game.awayId).catch(e => { recordError = recordError || `away(${game.awayId}): ${e.message || e}`; return null; }),
+      fetchTeamRecord(state.league, game.homeId).catch(e => { recordError = recordError || `home(${game.homeId}): ${e.message || e}`; return null; }),
+    ]);
 
-    // College football's team endpoint frequently omits points for/against, which used to blank
-    // out the entire scoring section. Derive them from completed games when they're missing.
+    // Stand in a placeholder when the record endpoint failed, so scoring can still be derived
+    // from game results. Every field below is read with a `|| "—"` guard, so a sparse object
+    // renders the same as a missing one — it just no longer blocks the derivation.
+    if (!away) away = { name: game.away, avgPF: null, avgPA: null, recordUnavailable: true };
+    if (!home) home = { name: game.home, avgPF: null, avgPA: null, recordUnavailable: true };
+
+    // ESPN's team endpoint doesn't reliably carry points for/against on college teams (and here
+    // may not have answered at all), so derive them from real game results when they're missing.
     try {
       await Promise.all([
         ensureScoringAverages(away, state.league, game.awayId, state.year),
         ensureScoringAverages(home, state.league, game.homeId, state.year),
       ]);
     } catch (e) { /* derivation is best-effort — the Elo section doesn't depend on it */ }
+    window.__recordDiag = recordError;
 
     // Fall back to schedule names if the record fetch didn't provide them
     const awayName = (away && away.name) || game.away;
@@ -4345,7 +4354,7 @@ async function loadTrends(game, containerId) {
           </div>
         </div>`;
     } else {
-      scoringHtml = `<div class="trend-note">No scoring averages available — ESPN's team endpoint returned none, and both fallbacks came up empty.</div><div class="trend-note" style="color:#B4463A; font-size:10px;">diag — ${(() => { const d = window.__scoringDiag; if (!d) return "the week scan never ran"; if (d.error) return `week scan failed: ${d.error}`; return `scanned ${d.scanned} completed ${state.league} games for ${state.year}, saw ${d.distinctTeams} distinct team ids, looked for ${d.lookedFor} (${d.foundTeam ? "present in the scan" : "NOT present in the scan"}), matched ${d.matchedGames} games`; })()} · away id ${game.awayId} · home id ${game.homeId}</div>`;
+      scoringHtml = `<div class="trend-note">No scoring averages available — ESPN's team endpoint returned none, and both fallbacks came up empty.</div><div class="trend-note" style="color:#B4463A; font-size:10px;">diag — ${(() => { const d = window.__scoringDiag; if (!d) return "the week scan never ran"; if (d.error) return `week scan failed: ${d.error}`; return `scanned ${d.scanned} completed ${state.league} games for ${state.year}, saw ${d.distinctTeams} distinct team ids, looked for ${d.lookedFor} (${d.foundTeam ? "present in the scan" : "NOT present in the scan"}), matched ${d.matchedGames} games`; })()} · away id ${game.awayId} · home id ${game.homeId}${window.__recordDiag ? ` · record endpoint FAILED — ${window.__recordDiag}` : " · record endpoint answered"}</div>`;
     }
 
     // Manual flags (things you know that the model can't) — shown up top if set
