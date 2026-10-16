@@ -1190,6 +1190,102 @@ Broncos +2.5
 <script>
 const NFL_BASE = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard";
 const CFB_BASE = "https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard";
+
+// ---------- Top 25 (college only) ----------
+// Lives up here, next to the other endpoints, so EVERY part of the app can render a rank badge:
+// schedule, game detail, Edge scan, Season Tally, Pick 6, Survivor. ESPN publishes polls on
+// their own endpoint, free and uncredentialed like the rest of the ESPN data used here.
+//
+// The response nests several polls (AP, Coaches, and CFP once it starts in November) and ESPN
+// has not been consistent about their order, so AP is found by name rather than by index.
+// Every lookup is guarded: a shape surprise yields zero ranks and an explanation, never a throw
+// that would take a whole render down with it.
+const CFB_RANKINGS_URL = "https://site.api.espn.com/apis/site/v2/sports/football/college-football/rankings";
+const RANKS_CACHE_KEY = "cfb-ranks-v1";
+const cfbRanks = { byId: {}, poll: null, count: 0, error: null, loaded: false, loading: null };
+
+async function fetchCfbRankings(force) {
+  if (!force) {
+    try {
+      const raw = localStorage.getItem(RANKS_CACHE_KEY);
+      if (raw) {
+        const c = JSON.parse(raw);
+        // Polls move once a week; 6 hours keeps it fresh without hammering the endpoint.
+        if (c && c.at && Date.now() - c.at < 6 * 60 * 60 * 1000 && c.data) {
+          Object.assign(cfbRanks, c.data, { loaded: true });
+          return cfbRanks;
+        }
+      }
+    } catch (e) { /* unreadable cache is the same as no cache */ }
+  }
+  const result = { byId: {}, poll: null, count: 0, error: null };
+  try {
+    const res = await fetch(CFB_RANKINGS_URL);
+    if (!res.ok) {
+      result.error = `rankings request failed: status ${res.status}`;
+    } else {
+      const json = await res.json();
+      const lists = Array.isArray(json.rankings) ? json.rankings : [];
+      if (lists.length === 0) {
+        result.error = "rankings endpoint returned no polls";
+      } else {
+        const named = (l) => `${(l && l.name) || ""} ${(l && l.shortName) || ""}`.toLowerCase();
+        // Prefer AP; fall back to whichever poll came first rather than showing nothing at all.
+        const ap = lists.find(l => named(l).includes("ap ")) || lists.find(l => named(l).includes("associated press")) || lists[0];
+        const ranks = (ap && Array.isArray(ap.ranks)) ? ap.ranks : [];
+        ranks.forEach(r => {
+          const id = r && r.team && r.team.id;
+          const n = r && (r.current != null ? r.current : r.rank);
+          if (id != null && n != null && isFinite(n)) result.byId[String(id)] = Number(n);
+        });
+        result.poll = (ap && (ap.shortName || ap.name)) || "poll";
+        result.count = Object.keys(result.byId).length;
+        if (result.count === 0) result.error = `found poll "${result.poll}" but no team ranks in it`;
+      }
+    }
+  } catch (e) {
+    result.error = e.message || String(e);
+  }
+  Object.assign(cfbRanks, result, { loaded: true });
+  if (result.count > 0) {
+    try { localStorage.setItem(RANKS_CACHE_KEY, JSON.stringify({ at: Date.now(), data: result })); } catch (e) { /* optional */ }
+  }
+  return cfbRanks;
+}
+
+// Loads once per session (or per cache window) and de-duplicates concurrent callers, so six
+// render paths asking at the same time still make one request.
+function ensureCfbRanks() {
+  if (cfbRanks.loaded) return Promise.resolve(cfbRanks);
+  if (!cfbRanks.loading) {
+    cfbRanks.loading = fetchCfbRankings(false).finally(() => { cfbRanks.loading = null; });
+  }
+  return cfbRanks.loading;
+}
+
+function rankNum(teamId) {
+  if (teamId == null) return null;
+  const n = cfbRanks.byId[String(teamId)];
+  return n || null;
+}
+
+// The badge every render site uses. Returns "" for NFL, for unranked teams, and before the poll
+// has loaded — so it's always safe to interpolate inline with no placeholder and no layout shift.
+function rankBadge(teamId, opts) {
+  if (state.league !== "cfb") return "";
+  const n = rankNum(teamId);
+  if (!n) return "";
+  const o = opts || {};
+  const size = o.small ? "8px" : "9px";
+  return `<span style="display:inline-block; background:#1A4A8A; color:#fff; font-size:${size}; font-weight:800; padding:1px 4px; border-radius:4px; margin-right:4px; vertical-align:middle; letter-spacing:0.2px;">#${n}</span>`;
+}
+
+// Plain-text form, for places that build strings rather than HTML (toasts, exported text).
+function rankPrefix(teamId) {
+  if (state.league !== "cfb") return "";
+  const n = rankNum(teamId);
+  return n ? `#${n} ` : "";
+}
 const RESULTS = ["Pending", "Win", "Loss", "Push"];
 const SEASON_WEEKS = { 2: 18, 1: 4, 3: 5 };
 
@@ -4056,8 +4152,8 @@ async function loadAtsTrends(game, containerId, year) {
     ]);
     const fmtSplit = (s) => `${s.w}-${s.l}-${s.p}`;
     const fmtOuSplit = (s) => `${s.o}-${s.u}-${s.p}`;
-    const renderTeam = (name, t) => `
-      <div class="trend-team-name">${name}</div>
+    const renderTeam = (name, t, teamId) => `
+      <div class="trend-team-name">${rankBadge(teamId)}${name}</div>
       ${t.totalGames === 0
         ? `<div class="trend-note">No completed games found for ${year} yet.</div>`
         : `<div class="trend-line"><b>ATS overall:</b> ${t.atsWins}-${t.atsLosses}-${t.atsPushes}</div>
@@ -4068,8 +4164,8 @@ async function loadAtsTrends(game, containerId, year) {
     `;
     el.innerHTML = `
       <div class="trend-cols">
-        <div>${renderTeam(game.away, awayTrends)}</div>
-        <div>${renderTeam(game.home, homeTrends)}</div>
+        <div>${renderTeam(game.away, awayTrends, game.awayId)}</div>
+        <div>${renderTeam(game.home, homeTrends, game.homeId)}</div>
       </div>
       <div class="trend-note" style="margin-top:8px;">Based on the closing line available at each game's kickoff time from historical odds data. Some games may be missing if no historical snapshot matched.</div>
     `;
@@ -4115,7 +4211,7 @@ async function loadTrends(game, containerId) {
         ? `<div class="trend-note">Week 1 rating is seeded from each team's final 6 weeks of last season, regressed toward neutral for offseason turnover — not from this season's results yet.</div>`
         : "";
       eloHtml = `
-        <div class="trend-score" id="eloScore-${game.id}">${homeName} ${(winProbHome * 100).toFixed(0)}% — ${((1 - winProbHome) * 100).toFixed(0)}% ${awayName}</div>
+        <div class="trend-score" id="eloScore-${game.id}">${rankBadge(game.homeId)}${homeName} ${(winProbHome * 100).toFixed(0)}% — ${((1 - winProbHome) * 100).toFixed(0)}% ${rankBadge(game.awayId)}${awayName}</div>
         <div class="trend-sub" id="eloLine-${game.id}">Implied line: <b>${favorite} -${impliedLine}</b></div>
         <div class="trend-line" style="margin-top:6px;">Elo ratings — ${homeName}: ${rh.toFixed(0)} · ${awayName}: ${ra.toFixed(0)}</div>
         ${seedNote}
@@ -4135,19 +4231,19 @@ async function loadTrends(game, containerId) {
       projHome = (home.avgPF + away.avgPA) / 2 + HOME_BONUS;
       baseTotal = projAway + projHome;
       scoringHtml = `
-        <div class="trend-score" id="scoreProj-${game.id}">${awayName} ${projAway.toFixed(1)} — ${projHome.toFixed(1)} ${homeName}</div>
+        <div class="trend-score" id="scoreProj-${game.id}">${rankBadge(game.awayId)}${awayName} ${projAway.toFixed(1)} — ${projHome.toFixed(1)} ${rankBadge(game.homeId)}${homeName}</div>
         <div class="trend-note" id="totalNote-${game.id}">Simple blend of season scoring averages, shown alongside Elo as a second, independent signal — projected total: ${baseTotal.toFixed(1)}.</div>`;
       colsHtml = `
         <div class="trend-cols">
           <div>
-            <div class="trend-team-name">${awayName} (away)</div>
+            <div class="trend-team-name">${rankBadge(game.awayId)}${awayName} (away)</div>
             <div class="trend-line">Record: ${away.overallSummary || "—"}</div>
             <div class="trend-line">Away record: ${away.awaySummary || "—"}</div>
             <div class="trend-line">Streak: ${away.streak || "—"}</div>
             <div class="trend-line">${away.avgPF.toFixed(1)} PF/g · ${away.avgPA.toFixed(1)} PA/g</div>
           </div>
           <div>
-            <div class="trend-team-name">${homeName} (home)</div>
+            <div class="trend-team-name">${rankBadge(game.homeId)}${homeName} (home)</div>
             <div class="trend-line">Record: ${home.overallSummary || "—"}</div>
             <div class="trend-line">Home record: ${home.homeSummary || "—"}</div>
             <div class="trend-line">Streak: ${home.streak || "—"}</div>
@@ -4729,6 +4825,12 @@ async function loadSchedule() {
   }
   renderGames();
   loadOddsForSchedule();
+  // Top 25 badges. Fired after the first render rather than awaited before it, so a slow or
+  // failing rankings call can never delay or block the schedule itself. When it lands, re-render
+  // so the badges appear; if it fails, the games are already on screen unbadged.
+  if (state.league === "cfb") {
+    ensureCfbRanks().then((r) => { if (r && r.count > 0 && state.league === "cfb") renderGames(); }).catch(() => {});
+  }
 }
 
 // NFL preseason lives under a completely separate sport key on The Odds API — using the
@@ -4922,7 +5024,7 @@ function renderGames() {
     card.innerHTML = `
       <div class="game-header" data-id="${g.id}" style="${isFinal ? "cursor:default;" : ""}">
         <div>
-          <div class="game-title">${g.away} @ ${g.home}${isLive ? ` <span class="live-dot">🔴 LIVE</span>` : ""}</div>
+          <div class="game-title">${rankBadge(g.awayId)}${g.away} @ ${rankBadge(g.homeId)}${g.home}${isLive ? ` <span class="live-dot">🔴 LIVE</span>` : ""}</div>
           <div class="game-sub">${statusText}</div>
           ${finalScoreHtml}
           ${showWeatherBadge ? `<div class="game-sub" id="cardWeather-${g.id}" style="color:#3B7DD8;">Loading weather…</div>` : ""}
@@ -5856,7 +5958,7 @@ async function runEdgeScan() {
     });
     out.innerHTML = rows.map(r => {
       const isValidatedEdge = r.spread && r.spread.meaningful; // 2+ pt spread gap — the zone the ATS backtest has checked, NOT a threshold confirmed to beat break-even (latest no-hindsight run: 50.9% ATS, under the 52.4% break-even line — variable name kept for now, meaning is "tested range" not "validated edge")
-      let line = `<div class="trend-line" style="margin-top:6px;"><b>${r.game}</b> <span style="color:#5C6B78;font-weight:400;">(${r.bookCount} book${r.bookCount > 1 ? "s" : ""})</span>${isValidatedEdge ? ` <span class="edge-badge">🔥 2+ PT EDGE</span>` : ""}</div>`;
+      let line = `<div class="trend-line" style="margin-top:6px;"><b>${r.awayName && r.homeName ? `${rankBadge(r.awayId)}${r.awayName} @ ${rankBadge(r.homeId)}${r.homeName}` : r.game}</b> <span style="color:#5C6B78;font-weight:400;">(${r.bookCount} book${r.bookCount > 1 ? "s" : ""})</span>${isValidatedEdge ? ` <span class="edge-badge">🔥 2+ PT EDGE</span>` : ""}</div>`;
       if (r.injuryNote) line += `<div class="trend-note" style="color:#B4463A;">${r.injuryNote.replace(" · ", "")}</div>`;
       const moveBadge = (m, unit) => {
         if (!m) return "";
@@ -7880,59 +7982,10 @@ loadWeekDogFromDb();
 // A past closing line never changes, so every game is paid for at most once, ever. These are the
 // same cache keys the ATS Backtest uses, so anything it already pulled shows up here for free.
 
-const tallyState = { sortKey: "ats", dir: -1, weeksCache: {}, rows: null, coverage: null, missing: null, busy: false, diag: null, ranks: null };
+const tallyState = { sortKey: "ats", dir: -1, weeksCache: {}, rows: null, coverage: null, missing: null, busy: false, diag: null, ranks: null, wanted: null, builtFor: null };
 
 function tallySportKey(league) { return league === "nfl" ? "americanfootball_nfl" : "americanfootball_ncaaf"; }
 function tallyNormDate(iso) { return new Date(iso).toISOString().replace(/\.\d{3}Z$/, "Z"); }
-
-// ---------- Top 25 (college only) ----------
-// ESPN publishes polls on their own endpoint, separate from the scoreboard. It's free and
-// uncredentialed, same as the rest of the ESPN data this app uses. Cached for 6 hours since
-// polls only move once a week.
-//
-// The response nests several polls (AP, Coaches, and CFP once it starts in November), and
-// ESPN has not been consistent about their order, so this finds AP by name rather than
-// trusting an index. Every lookup is guarded: if the shape isn't what's expected, this
-// returns zero ranks and says why instead of throwing and taking the whole tally down.
-const CFB_RANKINGS_URL = "https://site.api.espn.com/apis/site/v2/sports/football/college-football/rankings";
-const RANKS_CACHE_KEY = "cfb-ranks-v1";
-
-async function fetchCfbRankings(force) {
-  if (!force) {
-    try {
-      const raw = localStorage.getItem(RANKS_CACHE_KEY);
-      if (raw) {
-        const c = JSON.parse(raw);
-        if (c && c.at && Date.now() - c.at < 6 * 60 * 60 * 1000) return c.data;
-      }
-    } catch (e) { /* unreadable cache is the same as no cache */ }
-  }
-  const empty = { byId: {}, poll: null, count: 0, error: null };
-  try {
-    const res = await fetch(CFB_RANKINGS_URL);
-    if (!res.ok) { empty.error = `rankings request failed: status ${res.status}`; return empty; }
-    const json = await res.json();
-    const lists = Array.isArray(json.rankings) ? json.rankings : [];
-    if (lists.length === 0) { empty.error = "rankings endpoint returned no polls"; return empty; }
-    // Prefer the AP poll; fall back to whichever poll came first rather than showing nothing.
-    const named = (l) => `${(l && l.name) || ""} ${(l && l.shortName) || ""}`.toLowerCase();
-    const ap = lists.find(l => named(l).includes("ap ")) || lists.find(l => named(l).includes("associated press")) || lists[0];
-    const ranks = (ap && Array.isArray(ap.ranks)) ? ap.ranks : [];
-    const byId = {};
-    ranks.forEach(r => {
-      const id = r && r.team && r.team.id;
-      const n = r && (r.current != null ? r.current : r.rank);
-      if (id != null && n != null && isFinite(n)) byId[String(id)] = Number(n);
-    });
-    const out = { byId, poll: (ap && (ap.shortName || ap.name)) || "poll", count: Object.keys(byId).length, error: null };
-    if (out.count === 0) out.error = `found poll "${out.poll}" but no team ranks in it`;
-    try { localStorage.setItem(RANKS_CACHE_KEY, JSON.stringify({ at: Date.now(), data: out })); } catch (e) { /* cache write is optional */ }
-    return out;
-  } catch (e) {
-    empty.error = e.message || String(e);
-    return empty;
-  }
-}
 
 // Completed regular-season games, week by week.
 // This used to `break` on the first week that came back with zero completed games, which made
@@ -8035,7 +8088,7 @@ async function tallyBuild(league, year) {
   const games = await tallyLoadGames(league, year);
   const sportKey = tallySportKey(league);
   // Top 25 is a college-only concept — the NFL has no poll, so don't even ask for it there.
-  tallyState.ranks = league === "cfb" ? await fetchCfbRankings(false) : null;
+  tallyState.ranks = league === "cfb" ? await ensureCfbRanks() : null;
   const teams = {};
   const get = (id, name) => (teams[id] = teams[id] || {
     id, name,
@@ -8125,6 +8178,9 @@ function renderSeasonTally() {
   if (!body) return;
   const rows = tallyState.rows;
   if (!rows) return;
+  // Belt and braces for the sort-click path: never paint rows that were built for a league or
+  // season the user has since switched away from.
+  if (tallyState.builtFor && (tallyState.builtFor.league !== state.league || tallyState.builtFor.year !== state.year)) return;
   if (rows.length === 0) {
     const d = tallyState.diag;
     body.innerHTML = `<div class="trend-note">No completed games found for ${state.league === "cfb" ? "college football" : "the NFL"} in ${state.year} yet.</div>
@@ -8160,18 +8216,10 @@ function renderSeasonTally() {
     const thin = s.w + s.l < 4;
     return `<td style="text-align:center; font-size:12px; ${thin ? "opacity:0.5;" : ""}">${cell(rec(s.w, s.l, s.p), p)}</td>`;
   };
-  // Top 25 badge, college only. A ranked team gets its poll number ahead of the name; everyone
-  // else renders exactly as before, with no placeholder taking up space.
-  const ranksById = (tallyState.ranks && tallyState.ranks.byId) || {};
-  const rankBadge = (t) => {
-    const n = ranksById[String(t.id)];
-    if (!n) return "";
-    return `<span style="display:inline-block; background:#1A4A8A; color:#fff; font-size:9px; font-weight:800; padding:1px 4px; border-radius:4px; margin-right:4px; vertical-align:middle;">#${n}</span>`;
-  };
   const tr = sorted.map(t => {
     const atsN = t.ats.w + t.ats.l + t.ats.p, ouN = t.ou.o + t.ou.u + t.ou.p;
     return `<tr style="border-top:1px solid #E4E8EC;">
-      <td style="padding:6px 4px; font-weight:700; font-size:12px; white-space:nowrap;">${rankBadge(t)}${t.name}</td>
+      <td style="padding:6px 4px; font-weight:700; font-size:12px; white-space:nowrap;">${rankBadge(t.id)}${t.name}</td>
       <td style="text-align:center; font-size:12px; ${atsN && t.ats.w + t.ats.l < 4 ? "opacity:0.5;" : ""}">${atsN ? cell(rec(t.ats.w, t.ats.l, t.ats.p), tallyPct(t.ats.w, t.ats.l)) : `<span style="color:#8A96A1;">–</span>`}</td>
       <td style="text-align:center; font-size:12px;">${cell(rec(t.su.w, t.su.l, t.su.t), tallyPct(t.su.w, t.su.l))}</td>
       <td style="text-align:center; font-size:12px;">${unitCell(t)}</td>
@@ -8209,18 +8257,43 @@ function renderSeasonTally() {
   if (btn) btn.addEventListener("click", tallyEstimateUpdate);
 }
 
+// Switching leagues mid-build used to leave the old league's teams on screen. Two reasons, both
+// fixed here:
+//   1. The old `if (tallyState.busy) return` DISCARDED the new request outright. Clicking College
+//      while the NFL build was still running did nothing at all, and then the NFL build finished
+//      and rendered NFL rows.
+//   2. Even if it hadn't been discarded, an in-flight build that finished late would render its
+//      stale rows over the newer league's.
+// So: record what's currently wanted, and have the running build loop until what it finished
+// building matches what's still wanted. Nothing renders unless it's for the current selection.
 async function refreshSeasonTally() {
   const body = document.getElementById("tallyBody");
-  if (!body || tallyState.busy) return;
+  if (!body) return;
+  tallyState.wanted = { league: state.league, year: state.year };
+  if (tallyState.busy) return; // the loop below will pick up the new selection on its next pass
   tallyState.busy = true;
-  body.innerHTML = `<div class="refresh-note">Loading ${state.year} results…</div>`;
   try {
-    await tallyBuild(state.league, state.year);
-    renderSeasonTally();
-  } catch (e) {
-    body.innerHTML = `<div class="error">Couldn't build the tally: ${e.message}</div>`;
+    for (;;) {
+      const want = tallyState.wanted;
+      body.innerHTML = `<div class="refresh-note">Loading ${want.league === "cfb" ? "college football" : "NFL"} ${want.year} results…</div>`;
+      try {
+        await tallyBuild(want.league, want.year);
+      } catch (e) {
+        body.innerHTML = `<div class="error">Couldn't build the tally: ${e.message}</div>`;
+        break;
+      }
+      const still = tallyState.wanted;
+      if (still.league === want.league && still.year === want.year) {
+        tallyState.builtFor = want;
+        renderSeasonTally();
+        break;
+      }
+      // Selection changed while that build was running — throw the result away and build again
+      // for what's wanted now, rather than painting rows for a league the user left.
+    }
+  } finally {
+    tallyState.busy = false;
   }
-  tallyState.busy = false;
 }
 
 function tallyEstimateUpdate() {
