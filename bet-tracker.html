@@ -2360,12 +2360,59 @@ async function fetchTeamScoringFromSchedule(league, teamId, year) {
   return { avgPF: pf / n, avgPA: pa / n, gamesPlayed: n, derivedFromSchedule: true };
 }
 
+// Second derivation path, and the one that actually works for college.
+//
+// The team-schedule endpoint above turned out to return nothing usable for CFB, so this instead
+// reuses `tallyLoadGames` — the week-by-week scoreboard scan that the Season Tally runs on and
+// that is demonstrably working for college (that's where the college tally's records come from).
+// It shares tallyState.weeksCache, so when the tally has already loaded this costs no new fetches.
+//
+// Records the scan's own numbers in `window.__scoringDiag` so a failure can say what it saw
+// instead of blaming the offseason.
+async function fetchTeamScoringFromWeekScan(league, teamId, year) {
+  if (!teamId) return null;
+  let games = [];
+  try { games = await tallyLoadGames(league, year); } catch (e) {
+    window.__scoringDiag = { scanned: 0, error: e.message || String(e) };
+    return null;
+  }
+  let pf = 0, pa = 0, n = 0;
+  games.forEach(g => {
+    const isHome = String(g.homeId) === String(teamId);
+    const isAway = String(g.awayId) === String(teamId);
+    if (!isHome && !isAway) return;
+    const mine = isHome ? g.homeScore : g.awayScore;
+    const theirs = isHome ? g.awayScore : g.homeScore;
+    if (!isFinite(mine) || !isFinite(theirs)) return;
+    pf += mine; pa += theirs; n++;
+  });
+  // Keep a sample of the IDs actually present, so an ID-space mismatch is visible rather than
+  // looking identical to "no games played".
+  const ids = new Set();
+  games.slice(0, 400).forEach(g => { ids.add(String(g.homeId)); ids.add(String(g.awayId)); });
+  window.__scoringDiag = {
+    scanned: games.length,
+    distinctTeams: ids.size,
+    lookedFor: String(teamId),
+    foundTeam: ids.has(String(teamId)),
+    matchedGames: n,
+    error: null,
+  };
+  if (n === 0) return null;
+  return { avgPF: pf / n, avgPA: pa / n, gamesPlayed: n, derivedFromSchedule: true };
+}
+
 // Fills in avgPF/avgPA on a record object when the team endpoint didn't supply them.
 // Mutates and returns the same object so callers don't have to care where the numbers came from.
+// Tries the cheap team-schedule path first, then the week scan, which is the one proven on CFB.
 async function ensureScoringAverages(rec, league, teamId, year) {
   if (!rec) return rec;
   if (rec.avgPF != null && rec.avgPA != null && (rec.avgPF > 0 || rec.avgPA > 0)) return rec;
-  const derived = await fetchTeamScoringFromSchedule(league, teamId, year);
+  let derived = null;
+  try { derived = await fetchTeamScoringFromSchedule(league, teamId, year); } catch (e) { /* try the next path */ }
+  if (!derived) {
+    try { derived = await fetchTeamScoringFromWeekScan(league, teamId, year); } catch (e) { /* out of options */ }
+  }
   if (derived) {
     rec.avgPF = derived.avgPF;
     rec.avgPA = derived.avgPA;
@@ -4298,7 +4345,7 @@ async function loadTrends(game, containerId) {
           </div>
         </div>`;
     } else {
-      scoringHtml = `<div class="trend-note">No scoring averages available — ESPN's team endpoint returned none for ${state.league === "cfb" ? "these college teams" : "these teams"}, and deriving them from completed ${state.year} games came up empty too. Expected in the offseason or before a team has played. Records, streaks and scoring averages all come from the current season.</div>`;
+      scoringHtml = `<div class="trend-note">No scoring averages available — ESPN's team endpoint returned none, and both fallbacks came up empty.</div><div class="trend-note" style="color:#B4463A; font-size:10px;">diag — ${(() => { const d = window.__scoringDiag; if (!d) return "the week scan never ran"; if (d.error) return `week scan failed: ${d.error}`; return `scanned ${d.scanned} completed ${state.league} games for ${state.year}, saw ${d.distinctTeams} distinct team ids, looked for ${d.lookedFor} (${d.foundTeam ? "present in the scan" : "NOT present in the scan"}), matched ${d.matchedGames} games`; })()} · away id ${game.awayId} · home id ${game.homeId}</div>`;
     }
 
     // Manual flags (things you know that the model can't) — shown up top if set
