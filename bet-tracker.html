@@ -8207,6 +8207,28 @@ function renderSeasonTally() {
   };
   const rec = (a, b, c) => c ? `${a}-${b}-${c}` : `${a}-${b}`;
   const cell = (recText, p) => `<div>${recText}</div><div style="font-size:10px; color:#8A96A1;">${tallyFmtPct(p)}</div>`;
+
+  // This week's matchup for each team, taken from whatever week the Schedule page currently has
+  // loaded. Lets the Team column answer "who do they play?" without scrolling up to hunt for it,
+  // and gives the click target something to jump to.
+  const slate = {};
+  (state.games || []).forEach(g => {
+    if (g.homeId != null) slate[String(g.homeId)] = { oppName: g.away, oppId: g.awayId, atHome: true, gameId: g.id };
+    if (g.awayId != null) slate[String(g.awayId)] = { oppName: g.home, oppId: g.homeId, atHome: false, gameId: g.id };
+  });
+  const teamCell = (t) => {
+    const m = slate[String(t.id)];
+    const name = `${rankBadge(t.id)}${t.name}`;
+    if (!m) {
+      return `<td style="padding:6px 4px; font-weight:700; font-size:12px; white-space:nowrap;">${name}
+        <div style="font-size:10px; color:#A8B2BB; font-weight:400;">not on week ${state.week}</div></td>`;
+    }
+    const opp = `${m.atHome ? "vs" : "@"} ${rankBadge(m.oppId)}${m.oppName}`;
+    return `<td class="tally-jump" data-jump="${m.gameId}" title="Jump to this game above"
+      style="padding:6px 4px; font-weight:700; font-size:12px; white-space:nowrap; cursor:pointer;">
+      <span style="text-decoration:underline; text-decoration-color:#CBD3DA; text-underline-offset:2px;">${name}</span>
+      <div style="font-size:10px; color:#5C6B78; font-weight:400;">${opp} <span style="color:#3B7DD8;">↑</span></div></td>`;
+  };
   // A role split is only worth reading once there are a few games in it, so anything under 4
   // is shown but greyed — a 1-0 "100%" next to a 9-4 shouldn't look like the stronger number.
   const splitCell = (s) => {
@@ -8219,7 +8241,7 @@ function renderSeasonTally() {
   const tr = sorted.map(t => {
     const atsN = t.ats.w + t.ats.l + t.ats.p, ouN = t.ou.o + t.ou.u + t.ou.p;
     return `<tr style="border-top:1px solid #E4E8EC;">
-      <td style="padding:6px 4px; font-weight:700; font-size:12px; white-space:nowrap;">${rankBadge(t.id)}${t.name}</td>
+      ${teamCell(t)}
       <td style="text-align:center; font-size:12px; ${atsN && t.ats.w + t.ats.l < 4 ? "opacity:0.5;" : ""}">${atsN ? cell(rec(t.ats.w, t.ats.l, t.ats.p), tallyPct(t.ats.w, t.ats.l)) : `<span style="color:#8A96A1;">–</span>`}</td>
       <td style="text-align:center; font-size:12px;">${cell(rec(t.su.w, t.su.l, t.su.t), tallyPct(t.su.w, t.su.l))}</td>
       <td style="text-align:center; font-size:12px;">${unitCell(t)}</td>
@@ -8242,7 +8264,7 @@ function renderSeasonTally() {
         <tbody>${tr}</tbody>
       </table>
     </div>
-    <div class="trend-note" style="margin-top:6px;">Tap a column to sort; tap again to flip (for Over/Under, flipping shows the best "under" teams). Sorting is weighted by how many games a record covers, so a 5-0 outranks a 1-0 and a 9-3 outranks a 2-0 — the percentage shown is always the raw one, only the order accounts for sample size. ML profit = units won betting that team to win straight up every game at the first book's closing price. ATS/over-under are graded against the closing line at kickoff. The last four columns split that same ATS record by the role the team held: laying points at home, getting them at home, laying them on the road, getting them on the road. Pick'em games (line exactly 0) count in ATS but in none of the four. Any faded cell has fewer than 4 decided games — shown, but too thin to read anything into. Records describe the past — early in the season they're a handful of games, mostly noise, and team ATS records tend to drift back toward 50%. Expect these splits to stay noisy longest, since each carries roughly a quarter of the games.</div>
+    <div class="trend-note" style="margin-top:6px;">Tap a column to sort; tap again to flip (for Over/Under, flipping shows the best "under" teams). Under each team is its week ${state.week} matchup — tap the team to jump up to that game and open it. Sorting is weighted by how many games a record covers, so a 5-0 outranks a 1-0 and a 9-3 outranks a 2-0 — the percentage shown is always the raw one, only the order accounts for sample size. ML profit = units won betting that team to win straight up every game at the first book's closing price. ATS/over-under are graded against the closing line at kickoff. The last four columns split that same ATS record by the role the team held: laying points at home, getting them at home, laying them on the road, getting them on the road. Pick'em games (line exactly 0) count in ATS but in none of the four. Any faded cell has fewer than 4 decided games — shown, but too thin to read anything into. Records describe the past — early in the season they're a handful of games, mostly noise, and team ATS records tend to drift back toward 50%. Expect these splits to stay noisy longest, since each carries roughly a quarter of the games.</div>
     <div id="tallyUpdateArea" style="margin-top:8px;">
       ${missCount > 0 ? `<button class="save-btn full" id="tallyUpdateBtn">Update ATS / O-U / ML lines (see cost first)</button>` : `<div class="trend-note">All lines for completed games are already cached — nothing to update.</div>`}
     </div>`;
@@ -8253,8 +8275,32 @@ function renderSeasonTally() {
     else { tallyState.sortKey = k; tallyState.dir = k === "name" ? 1 : -1; }
     renderSeasonTally();
   }));
+  body.querySelectorAll(".tally-jump").forEach(el => el.addEventListener("click", () => {
+    tallyJumpToGame(el.dataset.jump);
+  }));
   const btn = document.getElementById("tallyUpdateBtn");
   if (btn) btn.addEventListener("click", tallyEstimateUpdate);
+}
+
+// Clicking a team in the tally scrolls up to that team's game card and opens it. Completed games
+// have no expandable panel in this app, so those just get scrolled to and highlighted.
+function tallyJumpToGame(gameId) {
+  const g = (state.games || []).find(x => String(x.id) === String(gameId));
+  if (!g) { showToast("That game isn't in the week currently loaded above."); return; }
+  state.openGameId = String(gameId);
+  renderGames();
+  // renderGames rebuilds the list, so wait a frame before looking for the card.
+  requestAnimationFrame(() => {
+    const header = document.querySelector(`.game-header[data-id="${gameId}"]`);
+    if (!header) return;
+    header.scrollIntoView({ behavior: "smooth", block: "center" });
+    const card = header.closest(".card");
+    if (!card) return;
+    // Brief outline so it's obvious which game it landed on.
+    card.style.transition = "box-shadow 0.25s ease";
+    card.style.boxShadow = "0 0 0 3px #3B7DD8";
+    setTimeout(() => { card.style.boxShadow = ""; }, 1800);
+  });
 }
 
 // Switching leagues mid-build used to leave the old league's teams on screen. Two reasons, both
