@@ -8301,6 +8301,15 @@ function tallySortValue(t, key) {
   if (key === "homeFav" || key === "homeDog" || key === "awayFav" || key === "awayDog") {
     return tallyWeighted(t[key].w, t[key].l);
   }
+  if (key === "kickoff") {
+    const m = (tallyState.slate || {})[String(t.id)];
+    if (!m || !m.date) return null; // not on this week's slate — sinks to the bottom
+    const ts = new Date(m.date).getTime();
+    if (!isFinite(ts)) return null;
+    // Games already played are pushed behind everything still to come, so sorting ascending
+    // puts the next kickoff first rather than last season's results.
+    return /final/i.test(m.status || "") ? ts + 1e13 : ts;
+  }
   return t.name.toLowerCase();
 }
 
@@ -8333,6 +8342,18 @@ function renderSeasonTally() {
       ${d ? `<div class="trend-note" style="color:#B4463A;">Scanned weeks 1-${state.league === "nfl" ? 18 : 16}: ${d.empty} came back empty, ${d.failed} failed to load.${d.firstError ? ` First failure — ${d.firstError}.` : ""} If every week is empty but the schedule above shows games, that's a data-shape mismatch, not a missing season.</div>` : ""}`;
     return;
   }
+  // This week's matchup for each team, taken from whatever week the Schedule page currently has
+  // loaded. Lets the Team column answer "who do they play?" without scrolling up to hunt for it,
+  // and gives the click target something to jump to.
+  const slate = {};
+  (state.games || []).forEach(g => {
+    const common = { gameId: g.id, date: g.date, status: g.status };
+    if (g.homeId != null) slate[String(g.homeId)] = { ...common, oppName: g.away, oppId: g.awayId, atHome: true };
+    if (g.awayId != null) slate[String(g.awayId)] = { ...common, oppName: g.home, oppId: g.homeId, atHome: false };
+  });
+  // Stashed so tallySortValue can sort by kickoff without rebuilding this.
+  tallyState.slate = slate;
+
   const { sortKey, dir } = tallyState;
   const sorted = rows.slice().sort((a, b) => {
     const va = tallySortValue(a, sortKey), vb = tallySortValue(b, sortKey);
@@ -8354,15 +8375,6 @@ function renderSeasonTally() {
   const rec = (a, b, c) => c ? `${a}-${b}-${c}` : `${a}-${b}`;
   const cell = (recText, p) => `<div>${recText}</div><div style="font-size:10px; color:#8A96A1;">${tallyFmtPct(p)}</div>`;
 
-  // This week's matchup for each team, taken from whatever week the Schedule page currently has
-  // loaded. Lets the Team column answer "who do they play?" without scrolling up to hunt for it,
-  // and gives the click target something to jump to.
-  const slate = {};
-  (state.games || []).forEach(g => {
-    const common = { gameId: g.id, date: g.date, status: g.status };
-    if (g.homeId != null) slate[String(g.homeId)] = { ...common, oppName: g.away, oppId: g.awayId, atHome: true };
-    if (g.awayId != null) slate[String(g.awayId)] = { ...common, oppName: g.home, oppId: g.homeId, atHome: false };
-  });
   const teamCell = (t) => {
     const m = slate[String(t.id)];
     const name = `${rankBadge(t.id)}${t.name}`;
@@ -8409,6 +8421,10 @@ function renderSeasonTally() {
     ${tallyState.ranks ? (tallyState.ranks.count > 0
       ? `<div class="trend-note" style="margin-bottom:6px;">Blue <b>#</b> badges are the current ${tallyState.ranks.poll} — ${tallyState.ranks.count} ranked teams. Polls update weekly; cached for 6 hours.</div>`
       : `<div class="trend-note" style="color:#B4463A; margin-bottom:6px;">Top 25 badges unavailable — ${tallyState.ranks.error || "no ranks returned"}.</div>`) : ""}
+    <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px;">
+      <button class="load-trends-btn" id="tallyKickoffBtn" style="margin-bottom:0; ${sortKey === "kickoff" ? "border-color:#3B7DD8; color:#1A4A8A; font-weight:800;" : ""}">⏱ Next kickoff first</button>
+      <button class="load-trends-btn" id="tallyAtsBtn" style="margin-bottom:0; ${sortKey === "ats" ? "border-color:#3B7DD8; color:#1A4A8A; font-weight:800;" : ""}">Best ATS first</button>
+    </div>
     <div style="overflow-x:auto;">
       <table style="width:100%; border-collapse:collapse;">
         <thead><tr>${th("name", "Team")}${th("ats", "ATS")}${th("su", "Straight-up")}${th("units", "ML profit")}${th("ou", "Over/Under")}${th("homeFav", "Home fav")}${th("homeDog", "Home dog")}${th("awayFav", "Away fav")}${th("awayDog", "Away dog")}</tr></thead>
@@ -8423,12 +8439,22 @@ function renderSeasonTally() {
   body.querySelectorAll(".tally-th").forEach(el => el.addEventListener("click", () => {
     const k = el.dataset.k;
     if (tallyState.sortKey === k) tallyState.dir = -tallyState.dir;
-    else { tallyState.sortKey = k; tallyState.dir = k === "name" ? 1 : -1; }
+    // name and kickoff read naturally ascending (A-Z, soonest first); records read descending.
+    else { tallyState.sortKey = k; tallyState.dir = (k === "name" || k === "kickoff") ? 1 : -1; }
     renderSeasonTally();
   }));
   body.querySelectorAll(".tally-jump").forEach(el => el.addEventListener("click", () => {
     tallyJumpToGame(el.dataset.jump);
   }));
+  const kickBtn = document.getElementById("tallyKickoffBtn");
+  if (kickBtn) kickBtn.addEventListener("click", () => {
+    // Ascending: the game closest to kicking off sits at the top.
+    tallyState.sortKey = "kickoff"; tallyState.dir = 1; renderSeasonTally();
+  });
+  const atsBtn = document.getElementById("tallyAtsBtn");
+  if (atsBtn) atsBtn.addEventListener("click", () => {
+    tallyState.sortKey = "ats"; tallyState.dir = -1; renderSeasonTally();
+  });
   const btn = document.getElementById("tallyUpdateBtn");
   if (btn) btn.addEventListener("click", tallyEstimateUpdate);
 }
