@@ -7880,10 +7880,59 @@ loadWeekDogFromDb();
 // A past closing line never changes, so every game is paid for at most once, ever. These are the
 // same cache keys the ATS Backtest uses, so anything it already pulled shows up here for free.
 
-const tallyState = { sortKey: "ats", dir: -1, weeksCache: {}, rows: null, coverage: null, missing: null, busy: false, diag: null };
+const tallyState = { sortKey: "ats", dir: -1, weeksCache: {}, rows: null, coverage: null, missing: null, busy: false, diag: null, ranks: null };
 
 function tallySportKey(league) { return league === "nfl" ? "americanfootball_nfl" : "americanfootball_ncaaf"; }
 function tallyNormDate(iso) { return new Date(iso).toISOString().replace(/\.\d{3}Z$/, "Z"); }
+
+// ---------- Top 25 (college only) ----------
+// ESPN publishes polls on their own endpoint, separate from the scoreboard. It's free and
+// uncredentialed, same as the rest of the ESPN data this app uses. Cached for 6 hours since
+// polls only move once a week.
+//
+// The response nests several polls (AP, Coaches, and CFP once it starts in November), and
+// ESPN has not been consistent about their order, so this finds AP by name rather than
+// trusting an index. Every lookup is guarded: if the shape isn't what's expected, this
+// returns zero ranks and says why instead of throwing and taking the whole tally down.
+const CFB_RANKINGS_URL = "https://site.api.espn.com/apis/site/v2/sports/football/college-football/rankings";
+const RANKS_CACHE_KEY = "cfb-ranks-v1";
+
+async function fetchCfbRankings(force) {
+  if (!force) {
+    try {
+      const raw = localStorage.getItem(RANKS_CACHE_KEY);
+      if (raw) {
+        const c = JSON.parse(raw);
+        if (c && c.at && Date.now() - c.at < 6 * 60 * 60 * 1000) return c.data;
+      }
+    } catch (e) { /* unreadable cache is the same as no cache */ }
+  }
+  const empty = { byId: {}, poll: null, count: 0, error: null };
+  try {
+    const res = await fetch(CFB_RANKINGS_URL);
+    if (!res.ok) { empty.error = `rankings request failed: status ${res.status}`; return empty; }
+    const json = await res.json();
+    const lists = Array.isArray(json.rankings) ? json.rankings : [];
+    if (lists.length === 0) { empty.error = "rankings endpoint returned no polls"; return empty; }
+    // Prefer the AP poll; fall back to whichever poll came first rather than showing nothing.
+    const named = (l) => `${(l && l.name) || ""} ${(l && l.shortName) || ""}`.toLowerCase();
+    const ap = lists.find(l => named(l).includes("ap ")) || lists.find(l => named(l).includes("associated press")) || lists[0];
+    const ranks = (ap && Array.isArray(ap.ranks)) ? ap.ranks : [];
+    const byId = {};
+    ranks.forEach(r => {
+      const id = r && r.team && r.team.id;
+      const n = r && (r.current != null ? r.current : r.rank);
+      if (id != null && n != null && isFinite(n)) byId[String(id)] = Number(n);
+    });
+    const out = { byId, poll: (ap && (ap.shortName || ap.name)) || "poll", count: Object.keys(byId).length, error: null };
+    if (out.count === 0) out.error = `found poll "${out.poll}" but no team ranks in it`;
+    try { localStorage.setItem(RANKS_CACHE_KEY, JSON.stringify({ at: Date.now(), data: out })); } catch (e) { /* cache write is optional */ }
+    return out;
+  } catch (e) {
+    empty.error = e.message || String(e);
+    return empty;
+  }
+}
 
 // Completed regular-season games, week by week.
 // This used to `break` on the first week that came back with zero completed games, which made
@@ -7985,6 +8034,8 @@ function tallyGradeGame(g, spreadData, mlData) {
 async function tallyBuild(league, year) {
   const games = await tallyLoadGames(league, year);
   const sportKey = tallySportKey(league);
+  // Top 25 is a college-only concept — the NFL has no poll, so don't even ask for it there.
+  tallyState.ranks = league === "cfb" ? await fetchCfbRankings(false) : null;
   const teams = {};
   const get = (id, name) => (teams[id] = teams[id] || {
     id, name,
@@ -8109,10 +8160,18 @@ function renderSeasonTally() {
     const thin = s.w + s.l < 4;
     return `<td style="text-align:center; font-size:12px; ${thin ? "opacity:0.5;" : ""}">${cell(rec(s.w, s.l, s.p), p)}</td>`;
   };
+  // Top 25 badge, college only. A ranked team gets its poll number ahead of the name; everyone
+  // else renders exactly as before, with no placeholder taking up space.
+  const ranksById = (tallyState.ranks && tallyState.ranks.byId) || {};
+  const rankBadge = (t) => {
+    const n = ranksById[String(t.id)];
+    if (!n) return "";
+    return `<span style="display:inline-block; background:#1A4A8A; color:#fff; font-size:9px; font-weight:800; padding:1px 4px; border-radius:4px; margin-right:4px; vertical-align:middle;">#${n}</span>`;
+  };
   const tr = sorted.map(t => {
     const atsN = t.ats.w + t.ats.l + t.ats.p, ouN = t.ou.o + t.ou.u + t.ou.p;
     return `<tr style="border-top:1px solid #E4E8EC;">
-      <td style="padding:6px 4px; font-weight:700; font-size:12px;">${t.name}</td>
+      <td style="padding:6px 4px; font-weight:700; font-size:12px; white-space:nowrap;">${rankBadge(t)}${t.name}</td>
       <td style="text-align:center; font-size:12px; ${atsN && t.ats.w + t.ats.l < 4 ? "opacity:0.5;" : ""}">${atsN ? cell(rec(t.ats.w, t.ats.l, t.ats.p), tallyPct(t.ats.w, t.ats.l)) : `<span style="color:#8A96A1;">–</span>`}</td>
       <td style="text-align:center; font-size:12px;">${cell(rec(t.su.w, t.su.l, t.su.t), tallyPct(t.su.w, t.su.l))}</td>
       <td style="text-align:center; font-size:12px;">${unitCell(t)}</td>
@@ -8126,6 +8185,9 @@ function renderSeasonTally() {
   body.innerHTML = `
     <div class="trend-note" style="margin-bottom:6px;">${c.games} completed games${tallyState.diag && tallyState.diag.weeksWithGames.length ? ` across weeks ${tallyState.diag.weeksWithGames[0]}-${tallyState.diag.weeksWithGames[tallyState.diag.weeksWithGames.length - 1]}` : ""}. Lines found for ${c.withSpread} (ATS and over/under) and ${c.withMl} (moneyline $).${c.withSpread < c.games ? ` Teams show "–" or partial records where lines haven't been pulled yet.` : ""}</div>
     ${tallyState.diag && tallyState.diag.failed > 0 ? `<div class="trend-note" style="color:#B4463A; margin-bottom:6px;">${tallyState.diag.failed} week${tallyState.diag.failed === 1 ? "" : "s"} failed to load, so those games are missing from these records.${tallyState.diag.firstError ? ` First failure — ${tallyState.diag.firstError}.` : ""}</div>` : ""}
+    ${tallyState.ranks ? (tallyState.ranks.count > 0
+      ? `<div class="trend-note" style="margin-bottom:6px;">Blue <b>#</b> badges are the current ${tallyState.ranks.poll} — ${tallyState.ranks.count} ranked teams. Polls update weekly; cached for 6 hours.</div>`
+      : `<div class="trend-note" style="color:#B4463A; margin-bottom:6px;">Top 25 badges unavailable — ${tallyState.ranks.error || "no ranks returned"}.</div>`) : ""}
     <div style="overflow-x:auto;">
       <table style="width:100%; border-collapse:collapse;">
         <thead><tr>${th("name", "Team")}${th("ats", "ATS")}${th("su", "Straight-up")}${th("units", "ML profit")}${th("ou", "Over/Under")}${th("homeFav", "Home fav")}${th("homeDog", "Home dog")}${th("awayFav", "Away fav")}${th("awayDog", "Away dog")}</tr></thead>
