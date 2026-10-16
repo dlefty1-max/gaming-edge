@@ -7943,7 +7943,7 @@ function tallyMlUnits(price, won) {
 
 // Grades one game from whatever cached line data exists. Anything missing stays null (not guessed).
 function tallyGradeGame(g, spreadData, mlData) {
-  const out = { ats: null, ou: null, ml: null };
+  const out = { ats: null, ou: null, ml: null, homeLine: null };
   if (spreadData) {
     const match = spreadData.find(o => nameMatchesHistorical(o.home_team, g.homeName) && nameMatchesHistorical(o.away_team, g.awayName));
     if (match) {
@@ -7952,6 +7952,9 @@ function tallyGradeGame(g, spreadData, mlData) {
       if (hs && hs.point != null) {
         const adj = g.homeScore + hs.point;
         out.ats = adj > g.awayScore ? { home: "W", away: "L" } : adj < g.awayScore ? { home: "L", away: "W" } : { home: "P", away: "P" };
+        // kept so the caller can bucket this game into home/away favorite/underdog.
+        // negative = home was favored, positive = home was the dog, 0 = pick'em.
+        out.homeLine = hs.point;
       }
       const tt = tallyFirstMarket(spreadData, match, "totals");
       const over = tt && tt.outcomes.find(o => o.name === "Over");
@@ -7983,7 +7986,16 @@ async function tallyBuild(league, year) {
   const games = await tallyLoadGames(league, year);
   const sportKey = tallySportKey(league);
   const teams = {};
-  const get = (id, name) => (teams[id] = teams[id] || { id, name, ats: { w: 0, l: 0, p: 0 }, ou: { o: 0, u: 0, p: 0 }, su: { w: 0, l: 0, t: 0 }, units: 0, mlGames: 0 });
+  const get = (id, name) => (teams[id] = teams[id] || {
+    id, name,
+    ats: { w: 0, l: 0, p: 0 }, ou: { o: 0, u: 0, p: 0 }, su: { w: 0, l: 0, t: 0 },
+    units: 0, mlGames: 0,
+    // ATS record split by the role the team actually held in each game. A team's overall ATS
+    // number hides this: a side can be strong at home as a dog and bad on the road laying points,
+    // and those are different bets.
+    homeFav: { w: 0, l: 0, p: 0 }, homeDog: { w: 0, l: 0, p: 0 },
+    awayFav: { w: 0, l: 0, p: 0 }, awayDog: { w: 0, l: 0, p: 0 },
+  });
   const missingSpread = new Set(), missingMl = new Set();
   let withSpread = 0, withMl = 0;
 
@@ -8002,7 +8014,15 @@ async function tallyBuild(league, year) {
     const r = tallyGradeGame(g, spreadData, mlData);
     if (r.ats) {
       withSpread++;
-      home.ats[r.ats.home.toLowerCase()]++; away.ats[r.ats.away.toLowerCase()]++;
+      const hk = r.ats.home.toLowerCase(), ak = r.ats.away.toLowerCase();
+      home.ats[hk]++; away.ats[ak]++;
+      // Bucket by role. A positive home line means the home team was getting points (home dog,
+      // so the road team was favored); negative means home was laying them. A true pick'em (0)
+      // belongs to neither bucket, so it's counted in the overall ATS column only.
+      if (r.homeLine != null && r.homeLine !== 0) {
+        if (r.homeLine > 0) { home.homeDog[hk]++; away.awayFav[ak]++; }
+        else { home.homeFav[hk]++; away.awayDog[ak]++; }
+      }
     }
     if (r.ou) {
       const k = r.ou.toLowerCase();
@@ -8019,11 +8039,31 @@ async function tallyBuild(league, year) {
 }
 
 function tallyPct(a, b) { return a + b > 0 ? a / (a + b) : null; }
+
+// Sorting on raw percentage put every 1-0 team above every 5-0 team (both "100%", tie broken
+// alphabetically) and above genuinely strong records like 9-3. So the sort runs on a
+// sample-size-weighted rate instead: each team is credited with TALLY_PRIOR phantom .500 games,
+// which pulls a thin record toward the middle and leaves a long one almost untouched. The
+// DISPLAYED record and percentage stay raw — this only changes the order.
+//   1-0  -> 60.0%   (was 100%, outranked everything)
+//   5-0  -> 77.8%
+//   9-3  -> 68.8%
+//  12-5  -> 66.7%
+//   0-1  -> 40.0%
+// 50% is the right thing to pull toward here: team ATS genuinely regresses to about a coin flip.
+const TALLY_PRIOR = 4;
+function tallyWeighted(w, l) {
+  if (w + l === 0) return null;
+  return (w + TALLY_PRIOR / 2) / (w + l + TALLY_PRIOR);
+}
 function tallySortValue(t, key) {
-  if (key === "ats") return tallyPct(t.ats.w, t.ats.l);
-  if (key === "su") return tallyPct(t.su.w, t.su.l);
+  if (key === "ats") return tallyWeighted(t.ats.w, t.ats.l);
+  if (key === "su") return tallyWeighted(t.su.w, t.su.l);
   if (key === "units") return t.mlGames > 0 ? t.units : null;
-  if (key === "ou") return tallyPct(t.ou.o, t.ou.u);
+  if (key === "ou") return tallyWeighted(t.ou.o, t.ou.u);
+  if (key === "homeFav" || key === "homeDog" || key === "awayFav" || key === "awayDog") {
+    return tallyWeighted(t[key].w, t[key].l);
+  }
   return t.name.toLowerCase();
 }
 
@@ -8060,14 +8100,24 @@ function renderSeasonTally() {
   };
   const rec = (a, b, c) => c ? `${a}-${b}-${c}` : `${a}-${b}`;
   const cell = (recText, p) => `<div>${recText}</div><div style="font-size:10px; color:#8A96A1;">${tallyFmtPct(p)}</div>`;
+  // A role split is only worth reading once there are a few games in it, so anything under 4
+  // is shown but greyed — a 1-0 "100%" next to a 9-4 shouldn't look like the stronger number.
+  const splitCell = (s) => {
+    const n = s.w + s.l + s.p;
+    if (n === 0) return `<td style="text-align:center; font-size:12px; color:#8A96A1;">–</td>`;
+    const p = tallyPct(s.w, s.l);
+    const thin = s.w + s.l < 4;
+    return `<td style="text-align:center; font-size:12px; ${thin ? "opacity:0.5;" : ""}">${cell(rec(s.w, s.l, s.p), p)}</td>`;
+  };
   const tr = sorted.map(t => {
     const atsN = t.ats.w + t.ats.l + t.ats.p, ouN = t.ou.o + t.ou.u + t.ou.p;
     return `<tr style="border-top:1px solid #E4E8EC;">
       <td style="padding:6px 4px; font-weight:700; font-size:12px;">${t.name}</td>
-      <td style="text-align:center; font-size:12px;">${atsN ? cell(rec(t.ats.w, t.ats.l, t.ats.p), tallyPct(t.ats.w, t.ats.l)) : `<span style="color:#8A96A1;">–</span>`}</td>
+      <td style="text-align:center; font-size:12px; ${atsN && t.ats.w + t.ats.l < 4 ? "opacity:0.5;" : ""}">${atsN ? cell(rec(t.ats.w, t.ats.l, t.ats.p), tallyPct(t.ats.w, t.ats.l)) : `<span style="color:#8A96A1;">–</span>`}</td>
       <td style="text-align:center; font-size:12px;">${cell(rec(t.su.w, t.su.l, t.su.t), tallyPct(t.su.w, t.su.l))}</td>
       <td style="text-align:center; font-size:12px;">${unitCell(t)}</td>
-      <td style="text-align:center; font-size:12px;">${ouN ? cell(`${t.ou.o}O-${t.ou.u}U${t.ou.p ? "-" + t.ou.p : ""}`, tallyPct(t.ou.o, t.ou.u)) : `<span style="color:#8A96A1;">–</span>`}</td>
+      <td style="text-align:center; font-size:12px; ${ouN && t.ou.o + t.ou.u < 4 ? "opacity:0.5;" : ""}">${ouN ? cell(`${t.ou.o}O-${t.ou.u}U${t.ou.p ? "-" + t.ou.p : ""}`, tallyPct(t.ou.o, t.ou.u)) : `<span style="color:#8A96A1;">–</span>`}</td>
+      ${splitCell(t.homeFav)}${splitCell(t.homeDog)}${splitCell(t.awayFav)}${splitCell(t.awayDog)}
     </tr>`;
   }).join("");
 
@@ -8078,11 +8128,11 @@ function renderSeasonTally() {
     ${tallyState.diag && tallyState.diag.failed > 0 ? `<div class="trend-note" style="color:#B4463A; margin-bottom:6px;">${tallyState.diag.failed} week${tallyState.diag.failed === 1 ? "" : "s"} failed to load, so those games are missing from these records.${tallyState.diag.firstError ? ` First failure — ${tallyState.diag.firstError}.` : ""}</div>` : ""}
     <div style="overflow-x:auto;">
       <table style="width:100%; border-collapse:collapse;">
-        <thead><tr>${th("name", "Team")}${th("ats", "ATS")}${th("su", "Straight-up")}${th("units", "ML profit")}${th("ou", "Over/Under")}</tr></thead>
+        <thead><tr>${th("name", "Team")}${th("ats", "ATS")}${th("su", "Straight-up")}${th("units", "ML profit")}${th("ou", "Over/Under")}${th("homeFav", "Home fav")}${th("homeDog", "Home dog")}${th("awayFav", "Away fav")}${th("awayDog", "Away dog")}</tr></thead>
         <tbody>${tr}</tbody>
       </table>
     </div>
-    <div class="trend-note" style="margin-top:6px;">Tap a column to sort; tap again to flip (for Over/Under, flipping shows the best "under" teams). ML profit = units won betting that team to win straight up every game at the first book's closing price. ATS/over-under are graded against the closing line at kickoff. Records describe the past — early in the season they're a handful of games, mostly noise, and team ATS records tend to drift back toward 50%.</div>
+    <div class="trend-note" style="margin-top:6px;">Tap a column to sort; tap again to flip (for Over/Under, flipping shows the best "under" teams). Sorting is weighted by how many games a record covers, so a 5-0 outranks a 1-0 and a 9-3 outranks a 2-0 — the percentage shown is always the raw one, only the order accounts for sample size. ML profit = units won betting that team to win straight up every game at the first book's closing price. ATS/over-under are graded against the closing line at kickoff. The last four columns split that same ATS record by the role the team held: laying points at home, getting them at home, laying them on the road, getting them on the road. Pick'em games (line exactly 0) count in ATS but in none of the four. Any faded cell has fewer than 4 decided games — shown, but too thin to read anything into. Records describe the past — early in the season they're a handful of games, mostly noise, and team ATS records tend to drift back toward 50%. Expect these splits to stay noisy longest, since each carries roughly a quarter of the games.</div>
     <div id="tallyUpdateArea" style="margin-top:8px;">
       ${missCount > 0 ? `<button class="save-btn full" id="tallyUpdateBtn">Update ATS / O-U / ML lines (see cost first)</button>` : `<div class="trend-note">All lines for completed games are already cached — nothing to update.</div>`}
     </div>`;
