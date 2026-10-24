@@ -2263,6 +2263,46 @@ async function getGamesPlayedCount(league, priorYear) {
   return counts;
 }
 
+// Counts THIS season's completed games per team, weeks 1 through the week being scanned.
+// Separate from getGamesPlayedCount because that one deliberately samples a prior season's LATE
+// weeks (13-18 for the NFL), a range that hasn't happened yet in the current season.
+// Cache key carries the week, so it can't go stale as the season fills in.
+async function getGamesPlayedThisSeason(league, year, throughWeek) {
+  const upto = Math.max(1, Math.min(throughWeek || 1, league === "cfb" ? 16 : 18));
+  const cacheKey = `gamesplayed-cur-${league}-${year}-w${upto}`;
+  try {
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) return JSON.parse(cached);
+  } catch (e) {}
+  const counts = {};
+  for (let w = 1; w <= upto; w++) {
+    let results = [];
+    try { results = await fetchWeekResults(league, year, w); } catch (e) { continue; }
+    results.forEach(g => {
+      counts[g.homeId] = (counts[g.homeId] || 0) + 1;
+      counts[g.awayId] = (counts[g.awayId] || 0) + 1;
+    });
+  }
+  try { localStorage.setItem(cacheKey, JSON.stringify(counts)); } catch (e) {}
+  return counts;
+}
+
+// The "is this rating backed by enough real games" gate used to count LAST season only. By
+// Week 8 that's backwards: a team with seven 2026 games but no 2025 history was treated as
+// untrustworthy and skipped, while a team with a full 2025 and zero 2026 games sailed through.
+// Take the better of the two counts, so the current season carries the weight once it exists
+// without breaking Week 1, when only last season has anything in it.
+async function getGamesPlayedCombined(league, year, throughWeek) {
+  const [cur, prev] = await Promise.all([
+    getGamesPlayedThisSeason(league, year, throughWeek).catch(() => ({})),
+    getGamesPlayedCount(league, year - 1).catch(() => ({})),
+  ]);
+  const out = {};
+  Object.keys(cur || {}).forEach(k => { out[k] = Math.max(out[k] || 0, cur[k] || 0); });
+  Object.keys(prev || {}).forEach(k => { out[k] = Math.max(out[k] || 0, prev[k] || 0); });
+  return out;
+}
+
 function resultColor(r) {
   if (r === "Win") return "#4C8B5A";
   if (r === "Loss") return "#C4564B";
@@ -2428,13 +2468,20 @@ async function fetchTeamScoringFromWeekScan(league, teamId, year) {
 // Fills in avgPF/avgPA on a record object when the team endpoint didn't supply them.
 // Mutates and returns the same object so callers don't have to care where the numbers came from.
 // Tries the cheap team-schedule path first, then the week scan, which is the one proven on CFB.
-async function ensureScoringAverages(rec, league, teamId, year) {
+async function ensureScoringAverages(rec, league, teamId, year, opts) {
   if (!rec) return rec;
   if (rec.avgPF != null && rec.avgPA != null && (rec.avgPF > 0 || rec.avgPA > 0)) return rec;
+  // Path order matters for cost. One game at a time (the Trends panel) is cheapest via the
+  // team's own schedule: one fetch. A whole slate (the Edge scan) is far cheaper via the week
+  // scan, which is ~8-16 scoreboard fetches shared and cached across every team, instead of one
+  // schedule fetch per team — 120+ on a college Saturday.
+  const weekScanFirst = !!(opts && opts.preferWeekScan);
+  const first = weekScanFirst ? fetchTeamScoringFromWeekScan : fetchTeamScoringFromSchedule;
+  const second = weekScanFirst ? fetchTeamScoringFromSchedule : fetchTeamScoringFromWeekScan;
   let derived = null;
-  try { derived = await fetchTeamScoringFromSchedule(league, teamId, year); } catch (e) { /* try the next path */ }
+  try { derived = await first(league, teamId, year); } catch (e) { /* try the next path */ }
   if (!derived) {
-    try { derived = await fetchTeamScoringFromWeekScan(league, teamId, year); } catch (e) { /* out of options */ }
+    try { derived = await second(league, teamId, year); } catch (e) { /* out of options */ }
   }
   if (derived) {
     rec.avgPF = derived.avgPF;
@@ -2455,9 +2502,26 @@ async function ensureScoringAverages(rec, league, teamId, year) {
 // Wraps fetchTeamRecord with a fallback to last season's final record when this season
 // has zero games played yet (true for basically every team in Week 1) — showing "0-0, no
 // stats" for a season-opener buy game is technically accurate but tells you nothing useful.
+//
+// THE BUG THIS FIXES: the only test for "does this season have data" was ESPN's own
+// gamesPlayed, which is 0 whenever the team endpoint omits wins/losses or fails outright —
+// routine for college football. So in Week 8, with seven games of real results sitting in the
+// scoreboard, the Edge scan's totals were still built from LAST season's scoring averages and
+// merely labelled as such. Now this season's results are derived from actual games before last
+// season is ever considered.
 async function fetchTeamRecordWithFallback(league, teamId, year) {
   let rec = await fetchTeamRecord(league, teamId).catch(() => null);
   if (rec && rec.gamesPlayed > 0) return { ...rec, fromLastSeason: false };
+
+  // Derive the current season from real game results (shared week scan first — see the note in
+  // ensureScoringAverages about cost on a full slate).
+  const seed = rec ? { ...rec } : { avgPF: null, avgPA: null, recordUnavailable: true };
+  let current = null;
+  try { current = await ensureScoringAverages(seed, league, teamId, year, { preferWeekScan: true }); } catch (e) { /* fall through */ }
+  if (current && current.avgPF != null && current.avgPA != null && current.gamesPlayed > 0) {
+    return { ...current, fromLastSeason: false };
+  }
+
   const lastYearRec = await fetchLastSeasonRecordFromSchedule(league, teamId, year - 1).catch(() => null);
   if (lastYearRec) return lastYearRec;
   return rec ? { ...rec, fromLastSeason: false } : null;
@@ -3520,7 +3584,7 @@ async function runPropScan(matchedEvents, apiKey) {
         <button class="odds-btn" style="flex:none; padding:6px 10px;" data-add-prop="${i}">+ Add</button>
       </div>`;
     }).join("")}
-    <div class="trend-note" style="margin-top:8px;">Ranked by edge — real hit rate minus what the price implies (vig removed when both sides are priced) — <b>scaled down when the sample is small</b>, since a 100% rate over 3 games is far less trustworthy than 73% over 33. Anything under 10 games is flagged as a thin sample. <b>Tap any player's name</b> to see their game-by-game history for that stat. Weather is shown for outdoor games when wind, precipitation or cold is notable — green when it supports the pick, red when it argues against it. Every prop now shows extra verification where available: TD-scorer props show an opportunity trend (targets/carries, since TDs themselves are the noisiest stat in football); yardage/reception props show the stat's own recent trend directly (more meaningful there, since usage IS the stat); all props show history against this exact opponent when any exists. ${defStatsForScan ? `Opponent-defense context is on, using the <b>${defStatsForScan.sourceYear}</b> build (${defStatsForScan.positionCoveragePct != null ? `${defStatsForScan.positionCoveragePct.toFixed(0)}% position coverage` : "team totals only"}).` : `<b>No defensive data loaded</b> — build it with the card at the top of this tab to see how each opponent actually defends this stat.`} "No price to compare" means only one side had odds available. Once ${state.year} games start piling up, a blue ${state.year}-only figure appears next to the multi-season one. ${skipped.length ? `${skipped.length} props skipped along the way (name mismatches, missing stat data, or too few games to judge).` : ""}</div>
+    <div class="trend-note" style="margin-top:8px;">Ranked by edge — real hit rate minus what the price implies (vig removed when both sides are priced) — <b>scaled down when the sample is small</b>, since a 100% rate over 3 games is far less trustworthy than 73% over 33. Anything under 10 games is flagged as a thin sample. <b>Tap any player's name</b> to see their game-by-game history for that stat. Weather is shown for outdoor games when wind, precipitation or cold is notable — green when it supports the pick, red when it argues against it. Every prop now shows extra verification where available: TD-scorer props show an opportunity trend (targets/carries, since TDs themselves are the noisiest stat in football); yardage/reception props show the stat's own recent trend directly (more meaningful there, since usage IS the stat); all props show history against this exact opponent when any exists. ${defStatsForScan ? `Opponent-defense context is on, using the <b>${defStatsForScan.sourceYear}</b> build (${defStatsForScan.positionCoveragePct != null ? `${defStatsForScan.positionCoveragePct.toFixed(0)}% position coverage` : "team totals only"}).${defStatsForScan.sourceYear < state.year ? ` <span style="color:#B4463A;font-weight:700;">That is LAST season\u2019s defense \u2014 rebuild it for ${state.year} with the card at the top of this tab to use this year\u2019s numbers.</span>` : ""}` : `<b>No defensive data loaded</b> — build it with the card at the top of this tab to see how each opponent actually defends this stat.`} "No price to compare" means only one side had odds available. Once ${state.year} games start piling up, a blue ${state.year}-only figure appears next to the multi-season one. ${skipped.length ? `${skipped.length} props skipped along the way (name mismatches, missing stat data, or too few games to judge).` : ""}</div>
     ${skipped.some(s => s.startsWith("DIAG")) ? `<div class="trend-title" style="margin-top:10px;">Diagnostic</div>${skipped.filter(s => s.startsWith("DIAG")).map(s => `<div class="trend-line" style="font-size:11px;">${s}</div>`).join("")}` : ""}
   `;
 
@@ -5763,7 +5827,7 @@ async function runEdgeScan() {
     if (!res.ok) throw new Error(`Odds API returned ${res.status} — check your key/plan`);
     const oddsData = await res.json();
     const elo = await buildEloRatings(state.league, state.year, state.week);
-    const gamesPlayed = await getGamesPlayedCount(state.league, state.year - 1);
+    const gamesPlayed = await getGamesPlayedCombined(state.league, state.year, state.week);
     const MIN_GAMES_TO_TRUST = 3; // fewer real games than this (e.g. a lone FCS buy-game appearance) isn't enough to trust a rating
 
     // Fit the model's spread scale to this slate BEFORE judging any game. The Elo model runs
@@ -6015,6 +6079,11 @@ async function runEdgeScan() {
               odds: totalGap > 0 ? (overOutcome ? overOutcome.price : "-110") : (underOutcome ? underOutcome.price : "-110"),
               numBooks: totalPts.length,
               usingLastSeason: awayRec.fromLastSeason || homeRec.fromLastSeason,
+              // Name the side that forced it, so "last season's scoring" in Week 8 is a lead
+              // rather than a shrug. Also carry the game counts when it IS current.
+              lastSeasonWho: [awayRec.fromLastSeason ? g.away : null, homeRec.fromLastSeason ? g.home : null].filter(Boolean).join(" & "),
+              currentGames: (!awayRec.fromLastSeason && !homeRec.fromLastSeason)
+                ? Math.min(awayRec.gamesPlayed || 0, homeRec.gamesPlayed || 0) : null,
               weatherNote,
               rawMarketTotal: marketTotal,
               sideKey: totalGap > 0 ? "over" : "under",
@@ -6109,7 +6178,7 @@ async function runEdgeScan() {
         if (r.moneyline.numBooks > 1) line += `<div class="trend-note">Best price: ${r.moneyline.side} ${r.moneyline.bestOdds} at ${r.moneyline.bestBook}</div>`;
       }
       if (r.total) {
-        line += `<div class="trend-line" style="${r.total.meaningful ? "font-weight:700;" : ""}">Total — consensus ${r.total.marketTotal}, model implies ${r.total.modelTotal}${r.total.usingLastSeason ? " (last season's scoring)" : ""}${r.total.weatherNote || ""} — ${r.total.meaningful ? `⚑ ${r.total.gapPts}-pt gap, leans <b>${r.total.side}</b> (${r.total.odds})` : `${r.total.gapPts}-pt gap, below threshold`}${moveBadge(r.total.movement, " pts")}</div>`;
+        line += `<div class="trend-line" style="${r.total.meaningful ? "font-weight:700;" : ""}">Total — consensus ${r.total.marketTotal}, model implies ${r.total.modelTotal}${r.total.usingLastSeason ? ` <span style="color:#B4463A;">(last season's scoring — no ${state.year} games found for ${r.total.lastSeasonWho || "one side"})</span>` : (r.total.currentGames ? ` <span style="color:#8A96A1;">(${state.year}, ${r.total.currentGames}+ games)</span>` : "")}${r.total.weatherNote || ""} — ${r.total.meaningful ? `⚑ ${r.total.gapPts}-pt gap, leans <b>${r.total.side}</b> (${r.total.odds})` : `${r.total.gapPts}-pt gap, below threshold`}${moveBadge(r.total.movement, " pts")}</div>`;
       }
       return `<div class="${isValidatedEdge ? "edge-highlight-card" : ""}">${line}</div>`;
     }).join("") + `<div class="trend-note" style="margin-top:10px;">${edgeScaleFit ? `Model spreads scaled ×${edgeScaleFit.k.toFixed(2)} to match this slate's market scale (${edgeScaleFit.n} games, R²=${edgeScaleFit.r2.toFixed(2)}) — without it the model's compressed numbers make every flag an underdog by arithmetic alone.${edgeScaleFit.r2 < 0.3 ? ` <b style="color:#B4463A;">Low R²: the model's ordering disagrees with the market's, not just its scale — treat flags cautiously.</b>` : ""} ` : ""}🔥 = a 2+ point spread gap specifically — the zone the ATS Backtest (Backtest tab) has actually checked, not a proven winner: the latest no-hindsight run (50% efficiency weight, full 2025 season) put this zone at 50.9% ATS on 163 games, under the ~52.4% break-even line. Treat 🔥 as "in the tested range," a reference point, not a confirmed edge — re-run the ATS Backtest any time for the current number. ⚑ = model and book disagree meaningfully (2+ pts on spread, 5%+ on moneyline, 3+ pts on total) but not all of these thresholds have been backtested individually. "Best line/price" shows the most favorable number found across all books returned for that game — worth grabbing regardless of the model's opinion. The total's model number is the same scoring-average blend shown in each game's trends panel, not the Elo model.${mismatchGames.length > 0 ? ` ${mismatchGames.length} lopsided game${mismatchGames.length > 1 ? "s" : ""} (likely FCS opponents) couldn't get a model comparison — real team info shown below instead.` : ""}</div>` + (mismatchGames.length > 0 ? `
@@ -8115,7 +8184,18 @@ loadWeekDogFromDb();
 // A past closing line never changes, so every game is paid for at most once, ever. These are the
 // same cache keys the ATS Backtest uses, so anything it already pulled shows up here for free.
 
-const tallyState = { sortKey: "ats", dir: -1, weeksCache: {}, rows: null, coverage: null, missing: null, busy: false, diag: null, ranks: null, wanted: null, builtFor: null };
+const tallyState = { sortKey: "ats", dir: -1, weeksCache: {}, rows: null, coverage: null, missing: null, busy: false, diag: null, ranks: null, wanted: null, builtFor: null, showSplits: null };
+
+// Nine columns don't fit a phone, so the four role-split columns collapse behind a toggle.
+// Default: on for a wide window, off for a narrow one. The choice is remembered once made.
+function tallySplitsVisible() {
+  if (tallyState.showSplits === null) {
+    let saved = null;
+    try { saved = localStorage.getItem("tally-splits"); } catch (e) {}
+    tallyState.showSplits = saved === null ? (window.innerWidth >= 760) : saved === "1";
+  }
+  return tallyState.showSplits;
+}
 
 function tallySportKey(league) { return league === "nfl" ? "americanfootball_nfl" : "americanfootball_ncaaf"; }
 function tallyNormDate(iso) { return new Date(iso).toISOString().replace(/\.\d{3}Z$/, "Z"); }
@@ -8353,6 +8433,7 @@ function renderSeasonTally() {
   });
   // Stashed so tallySortValue can sort by kickoff without rebuilding this.
   tallyState.slate = slate;
+  const showSplits = tallySplitsVisible();
 
   const { sortKey, dir } = tallyState;
   const sorted = rows.slice().sort((a, b) => {
@@ -8366,7 +8447,8 @@ function renderSeasonTally() {
   });
 
   const arrow = (k) => sortKey === k ? (dir === -1 ? " ▼" : " ▲") : "";
-  const th = (k, label) => `<th class="tally-th" data-k="${k}" style="text-align:${k === "name" ? "left" : "center"}; padding:6px 4px; font-size:11px; cursor:pointer; white-space:nowrap; color:#3B7DD8;">${label}${arrow(k)}</th>`;
+  // The Team column is sticky, so a name stays visible while the stats scroll sideways under it.
+  const th = (k, label) => `<th class="tally-th" data-k="${k}" style="text-align:${k === "name" ? "left" : "center"}; padding:5px 3px; font-size:10px; cursor:pointer; white-space:nowrap; color:#3B7DD8;${k === "name" ? " position:sticky; left:0; background:#fff; z-index:2;" : ""}">${label}${arrow(k)}</th>`;
   const unitCell = (t) => {
     if (t.mlGames === 0) return `<span style="color:#8A96A1;">–</span>`;
     const u = Math.round(t.units * 10) / 10;
@@ -8379,7 +8461,7 @@ function renderSeasonTally() {
     const m = slate[String(t.id)];
     const name = `${rankBadge(t.id)}${t.name}`;
     if (!m) {
-      return `<td style="padding:6px 4px; font-weight:700; font-size:12px; white-space:nowrap;">${name}
+      return `<td style="padding:5px 3px; font-weight:700; font-size:11px; white-space:nowrap; position:sticky; left:0; background:#fff; z-index:1;">${name}
         <div style="font-size:10px; color:#A8B2BB; font-weight:400;">not on week ${state.week}</div></td>`;
     }
     const opp = `${m.atHome ? "vs" : "@"} ${rankBadge(m.oppId)}${m.oppName}`;
@@ -8388,7 +8470,7 @@ function renderSeasonTally() {
     const kick = tallyFmtKickoff(m.date);
     const when = /final/i.test(m.status || "") ? (m.status || "") : kick;
     return `<td class="tally-jump" data-jump="${m.gameId}" title="Jump to this game above"
-      style="padding:6px 4px; font-weight:700; font-size:12px; white-space:nowrap; cursor:pointer;">
+      style="padding:5px 3px; font-weight:700; font-size:11px; white-space:nowrap; cursor:pointer; position:sticky; left:0; background:#fff; z-index:1;">
       <span style="text-decoration:underline; text-decoration-color:#CBD3DA; text-underline-offset:2px;">${name}</span>
       <div style="font-size:10px; color:#5C6B78; font-weight:400;">${opp}${when ? ` <span style="color:#8A96A1;">· ${when}</span>` : ""} <span style="color:#3B7DD8;">↑</span></div></td>`;
   };
@@ -8396,20 +8478,20 @@ function renderSeasonTally() {
   // is shown but greyed — a 1-0 "100%" next to a 9-4 shouldn't look like the stronger number.
   const splitCell = (s) => {
     const n = s.w + s.l + s.p;
-    if (n === 0) return `<td style="text-align:center; font-size:12px; color:#8A96A1;">–</td>`;
+    if (n === 0) return `<td style="text-align:center; font-size:11px; padding:5px 3px; color:#8A96A1;">–</td>`;
     const p = tallyPct(s.w, s.l);
     const thin = s.w + s.l < 4;
-    return `<td style="text-align:center; font-size:12px; ${thin ? "opacity:0.5;" : ""}">${cell(rec(s.w, s.l, s.p), p)}</td>`;
+    return `<td style="text-align:center; font-size:11px; padding:5px 3px; ${thin ? "opacity:0.5;" : ""}">${cell(rec(s.w, s.l, s.p), p)}</td>`;
   };
   const tr = sorted.map(t => {
     const atsN = t.ats.w + t.ats.l + t.ats.p, ouN = t.ou.o + t.ou.u + t.ou.p;
     return `<tr style="border-top:1px solid #E4E8EC;">
       ${teamCell(t)}
-      <td style="text-align:center; font-size:12px; ${atsN && t.ats.w + t.ats.l < 4 ? "opacity:0.5;" : ""}">${atsN ? cell(rec(t.ats.w, t.ats.l, t.ats.p), tallyPct(t.ats.w, t.ats.l)) : `<span style="color:#8A96A1;">–</span>`}</td>
-      <td style="text-align:center; font-size:12px;">${cell(rec(t.su.w, t.su.l, t.su.t), tallyPct(t.su.w, t.su.l))}</td>
-      <td style="text-align:center; font-size:12px;">${unitCell(t)}</td>
-      <td style="text-align:center; font-size:12px; ${ouN && t.ou.o + t.ou.u < 4 ? "opacity:0.5;" : ""}">${ouN ? cell(`${t.ou.o}O-${t.ou.u}U${t.ou.p ? "-" + t.ou.p : ""}`, tallyPct(t.ou.o, t.ou.u)) : `<span style="color:#8A96A1;">–</span>`}</td>
-      ${splitCell(t.homeFav)}${splitCell(t.homeDog)}${splitCell(t.awayFav)}${splitCell(t.awayDog)}
+      <td style="text-align:center; font-size:11px; padding:5px 3px; ${atsN && t.ats.w + t.ats.l < 4 ? "opacity:0.5;" : ""}">${atsN ? cell(rec(t.ats.w, t.ats.l, t.ats.p), tallyPct(t.ats.w, t.ats.l)) : `<span style="color:#8A96A1;">–</span>`}</td>
+      <td style="text-align:center; font-size:11px; padding:5px 3px;">${cell(rec(t.su.w, t.su.l, t.su.t), tallyPct(t.su.w, t.su.l))}</td>
+      <td style="text-align:center; font-size:11px; padding:5px 3px;">${unitCell(t)}</td>
+      <td style="text-align:center; font-size:11px; padding:5px 3px; ${ouN && t.ou.o + t.ou.u < 4 ? "opacity:0.5;" : ""}">${ouN ? cell(`${t.ou.o}O-${t.ou.u}U${t.ou.p ? "-" + t.ou.p : ""}`, tallyPct(t.ou.o, t.ou.u)) : `<span style="color:#8A96A1;">–</span>`}</td>
+      ${showSplits ? `${splitCell(t.homeFav)}${splitCell(t.homeDog)}${splitCell(t.awayFav)}${splitCell(t.awayDog)}` : ""}
     </tr>`;
   }).join("");
 
@@ -8424,14 +8506,15 @@ function renderSeasonTally() {
     <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px;">
       <button class="load-trends-btn" id="tallyKickoffBtn" style="margin-bottom:0; ${sortKey === "kickoff" ? "border-color:#3B7DD8; color:#1A4A8A; font-weight:800;" : ""}">⏱ Next kickoff first</button>
       <button class="load-trends-btn" id="tallyAtsBtn" style="margin-bottom:0; ${sortKey === "ats" ? "border-color:#3B7DD8; color:#1A4A8A; font-weight:800;" : ""}">Best ATS first</button>
+      <button class="load-trends-btn" id="tallySplitsBtn" style="margin-bottom:0;">${showSplits ? "− Hide role splits" : "+ Role splits (4 cols)"}</button>
     </div>
     <div style="overflow-x:auto;">
       <table style="width:100%; border-collapse:collapse;">
-        <thead><tr>${th("name", "Team")}${th("ats", "ATS")}${th("su", "Straight-up")}${th("units", "ML profit")}${th("ou", "Over/Under")}${th("homeFav", "Home fav")}${th("homeDog", "Home dog")}${th("awayFav", "Away fav")}${th("awayDog", "Away dog")}</tr></thead>
+        <thead><tr>${th("name", "Team")}${th("ats", "ATS")}${th("su", "SU")}${th("units", "ML $")}${th("ou", "O/U")}${showSplits ? `${th("homeFav", "H fav")}${th("homeDog", "H dog")}${th("awayFav", "A fav")}${th("awayDog", "A dog")}` : ""}</tr></thead>
         <tbody>${tr}</tbody>
       </table>
     </div>
-    <div class="trend-note" style="margin-top:6px;">Tap a column to sort; tap again to flip (for Over/Under, flipping shows the best "under" teams). Under each team is its week ${state.week} matchup and kickoff in your local time — tap the team to jump up to that game and open it. Sorting is weighted by how many games a record covers, so a 5-0 outranks a 1-0 and a 9-3 outranks a 2-0 — the percentage shown is always the raw one, only the order accounts for sample size. ML profit = units won betting that team to win straight up every game at the first book's closing price. ATS/over-under are graded against the closing line at kickoff. The last four columns split that same ATS record by the role the team held: laying points at home, getting them at home, laying them on the road, getting them on the road. Pick'em games (line exactly 0) count in ATS but in none of the four. Any faded cell has fewer than 4 decided games — shown, but too thin to read anything into. Records describe the past — early in the season they're a handful of games, mostly noise, and team ATS records tend to drift back toward 50%. Expect these splits to stay noisy longest, since each carries roughly a quarter of the games.</div>
+    <div class="trend-note" style="margin-top:6px;">Tap a column to sort; tap again to flip (for Over/Under, flipping shows the best "under" teams). Under each team is its week ${state.week} matchup and kickoff in your local time — tap the team to jump up to that game and open it. Sorting is weighted by how many games a record covers, so a 5-0 outranks a 1-0 and a 9-3 outranks a 2-0 — the percentage shown is always the raw one, only the order accounts for sample size. ML profit = units won betting that team to win straight up every game at the first book's closing price. ATS/over-under are graded against the closing line at kickoff. SU = straight-up, ML $ = moneyline profit, O/U = over/under. The four optional columns (H fav, H dog, A fav, A dog) split that same ATS record by the role the team held: laying points at home, getting them at home, laying them on the road, getting them on the road. Pick'em games (line exactly 0) count in ATS but in none of the four. Any faded cell has fewer than 4 decided games — shown, but too thin to read anything into. Records describe the past — early in the season they're a handful of games, mostly noise, and team ATS records tend to drift back toward 50%. Expect these splits to stay noisy longest, since each carries roughly a quarter of the games.</div>
     <div id="tallyUpdateArea" style="margin-top:8px;">
       ${missCount > 0 ? `<button class="save-btn full" id="tallyUpdateBtn">Update ATS / O-U / ML lines (see cost first)</button>` : `<div class="trend-note">All lines for completed games are already cached — nothing to update.</div>`}
     </div>`;
@@ -8450,6 +8533,16 @@ function renderSeasonTally() {
   if (kickBtn) kickBtn.addEventListener("click", () => {
     // Ascending: the game closest to kicking off sits at the top.
     tallyState.sortKey = "kickoff"; tallyState.dir = 1; renderSeasonTally();
+  });
+  const splitsBtn = document.getElementById("tallySplitsBtn");
+  if (splitsBtn) splitsBtn.addEventListener("click", () => {
+    tallyState.showSplits = !tallySplitsVisible();
+    try { localStorage.setItem("tally-splits", tallyState.showSplits ? "1" : "0"); } catch (e) {}
+    // If a split column was the active sort and it's now hidden, fall back to ATS.
+    if (!tallyState.showSplits && ["homeFav", "homeDog", "awayFav", "awayDog"].includes(tallyState.sortKey)) {
+      tallyState.sortKey = "ats"; tallyState.dir = -1;
+    }
+    renderSeasonTally();
   });
   const atsBtn = document.getElementById("tallyAtsBtn");
   if (atsBtn) atsBtn.addEventListener("click", () => {
