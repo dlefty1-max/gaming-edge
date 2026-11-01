@@ -699,6 +699,8 @@
       <label for="restoreFileInput" class="save-btn" style="display:inline-block; text-align:center; cursor:pointer; padding:8px; flex:1; font-size:12px; border-radius:8px;">📂 Restore Backup</label>
       <input type="file" id="restoreFileInput" accept=".json" style="display:none;">
     </div>
+    <div id="storageStatus" class="trend-note" style="margin-top:6px;"></div>
+    <button class="load-trends-btn" id="pruneCachesBtn" style="margin-top:4px;">🧹 Free up space (keeps your bets)</button>
     <div class="toolbar">
       <button id="checkResultsBtn">🔄 Check Results</button>
       <button id="checkClvBtn">📈 Check Closing Lines</button>
@@ -1340,19 +1342,78 @@ function loadData() {
     }
   } catch (e) {}
 }
-function saveData() {
+// Caches that can always be rebuilt from scratch. Cleared to make room when a real save fails.
+// NOTHING the user typed or earned is in here: bets, Pick 6 entries, the API key, team flags and
+// the UI preferences are all deliberately excluded.
+const RECOMPUTABLE_PREFIXES = ["elo-v", "gamesplayed-cur-", "week-dog-result-", "cfb-ranks-"];
+const PROTECTED_KEYS = ["bettracker-data", "picksix-data", "picksix-book", "odds-api-key", "preferred-book", "eff-weight", "tally-open", "tally-splits"];
+
+function storageBytesUsed() {
+  let total = 0;
   try {
-    localStorage.setItem("bettracker-data", JSON.stringify({ bets: state.ledger, startingBankroll: state.startingBankroll }));
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      total += (k || "").length + ((localStorage.getItem(k) || "").length);
+    }
+  } catch (e) { return null; }
+  return total * 2; // UTF-16 code units
+}
+
+function pruneRecomputableCaches() {
+  let freed = 0, removed = 0;
+  try {
+    const doomed = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k) continue;
+      if (PROTECTED_KEYS.includes(k) || k.startsWith("team-flag-")) continue;
+      if (RECOMPUTABLE_PREFIXES.some(pre => k.startsWith(pre))) doomed.push(k);
+    }
+    doomed.forEach(k => {
+      freed += ((k.length + (localStorage.getItem(k) || "").length) * 2);
+      localStorage.removeItem(k);
+      removed++;
+    });
+  } catch (e) {}
+  return { freed, removed };
+}
+
+// Returns true only when the write actually landed.
+//
+// THE BUG THIS FIXES: this used to return nothing, and every caller showed its own success
+// message straight afterwards — so when the write threw (storage full, most likely), the
+// "Couldn't save" toast was overwritten a millisecond later by "Added to My Bets". The pick
+// looked saved, and was gone on reload. Now a failure is reported, and the first thing tried is
+// clearing rebuildable caches so the save can succeed rather than just complain.
+function saveData() {
+  const payload = JSON.stringify({ bets: state.ledger, startingBankroll: state.startingBankroll });
+  try {
+    localStorage.setItem("bettracker-data", payload);
+    window.__saveError = null;
+    return true;
   } catch (e) {
-    showToast("Couldn't save — your browser may be blocking storage.");
+    const pruned = pruneRecomputableCaches();
+    try {
+      localStorage.setItem("bettracker-data", payload);
+      window.__saveError = null;
+      if (pruned.removed > 0) {
+        showToast(`Storage was full — cleared ${pruned.removed} rebuildable caches (${Math.round(pruned.freed / 1024)} KB) and saved.`, 6000);
+      }
+      return true;
+    } catch (e2) {
+      window.__saveError = (e2 && e2.name ? e2.name + ": " : "") + (e2 && e2.message ? e2.message : String(e2));
+      showToast(`NOT SAVED — ${window.__saveError}. Storage used: ${Math.round((storageBytesUsed() || 0) / 1024)} KB. Export a CSV backup, then clear old data.`, 12000);
+      return false;
+    }
   }
 }
 
-function showToast(msg) {
+function showToast(msg, ms) {
   const t = document.getElementById("toast");
   t.textContent = msg;
   t.style.display = "block";
-  setTimeout(() => { t.style.display = "none"; }, 2200);
+  clearTimeout(window.__toastTimer);
+  window.__toastTimer = setTimeout(() => { t.style.display = "none"; }, ms || 2200);
 }
 
 function americanProfit(oddsStr, stake) {
@@ -3641,8 +3702,13 @@ async function runPropScan(matchedEvents, apiKey) {
         placedAt: new Date().toISOString(),
       };
       state.ledger.unshift(entry);
-      saveData();
-      showToast(`Added ${r.player} ${r.desc} to My Bets — set your stake there.`);
+      // Only claim success if the write actually landed — the old code toasted "Added" either
+      // way, which is exactly why saved props kept disappearing without a word.
+      if (saveData()) {
+        showToast(`Added ${r.player} ${r.desc} to My Bets — set your stake there.`);
+      } else {
+        state.ledger.shift(); // don't leave a phantom in memory that won't survive a reload
+      }
     });
   });
 }
@@ -7827,6 +7893,7 @@ function computeParlayResult(legs) {
 
 // ---------- ledger ----------
 function renderLedger() {
+  try { renderStorageStatus(); } catch (e) {}
   const totalProfit = state.ledger.reduce((sum, b) => {
     if (b.result === "Win") return sum + americanProfit(b.odds, b.stake);
     if (b.result === "Loss") return sum - b.stake;
@@ -8158,6 +8225,27 @@ document.getElementById("startingBankrollInput").addEventListener("change", (e) 
   state.startingBankroll = parseFloat(e.target.value) || 0;
   saveData();
   renderLedger();
+});
+// Storage readout. Browsers cap localStorage at roughly 5 MB per site, and when it fills, a
+// save throws — which is how saved props went missing with no message. Showing the number makes
+// the ceiling visible before it's hit.
+function renderStorageStatus() {
+  const el = document.getElementById("storageStatus");
+  if (!el) return;
+  const used = storageBytesUsed();
+  if (used == null) { el.innerHTML = `<span style="color:#B4463A;">Can't read storage — your browser may be blocking it entirely, which would stop every save.</span>`; return; }
+  const kb = Math.round(used / 1024);
+  const pct = Math.min(100, Math.round((used / (5 * 1024 * 1024)) * 100));
+  let bets = 0;
+  try { bets = ((localStorage.getItem("bettracker-data") || "").length * 2) / 1024; } catch (e) {}
+  const warn = pct >= 80;
+  el.innerHTML = `Storage used: <b${warn ? ' style="color:#B4463A;"' : ''}>${kb} KB</b> of roughly 5,120 KB (${pct}%) — your bets account for ${Math.round(bets)} KB of that.${warn ? ` <span style="color:#B4463A;font-weight:700;">Close to the limit. Saves start failing at the ceiling.</span>` : ""}${window.__saveError ? ` <span style="color:#B4463A;font-weight:700;">Last save FAILED — ${window.__saveError}</span>` : ""}`;
+}
+document.getElementById("pruneCachesBtn").addEventListener("click", () => {
+  const before = storageBytesUsed() || 0;
+  const r = pruneRecomputableCaches();
+  renderStorageStatus();
+  showToast(`Cleared ${r.removed} rebuildable cache${r.removed === 1 ? "" : "s"}, freed ${Math.round(r.freed / 1024)} KB. Ratings and week trends will recompute on next use.`, 6000);
 });
 document.getElementById("backupAllBtn").addEventListener("click", backupAll);
 document.getElementById("restoreFileInput").addEventListener("change", (e) => {
