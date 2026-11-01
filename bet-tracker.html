@@ -708,7 +708,7 @@
     </div>
     <div class="card" style="padding:14px; margin-top:12px; border:2px solid #1A4A8A;">
       <div class="trend-title" style="margin-bottom:4px;">🎯 Closing Line Value — the real scoreboard</div>
-      <div class="trend-note" style="margin-bottom:8px;">Whether your bets beat the number the market closed at. This matters more than your win rate and settles far sooner: win rate needs hundreds of bets to tell a 4-point edge from a coin flip, because even a real edge loses ~44% of the time. CLV is low-variance — a few dozen bets already say something. If you consistently get a better number than the close, you are ahead of the market whatever this week did. If you don't, no amount of model tuning fixes it.</div>
+      <div class="trend-note" style="margin-bottom:8px;">Whether your bets beat the number the market closed at. It settles sooner than win rate — win rate needs thousands of bets to tell a 2% edge from a coin flip, since a real edge still loses ~44% of the time — but it is not instant: reckon on 200-300 bets before average CLV says much. It is also a leading indicator by reasoning rather than by proof; the widely-cited sources assert the link to profit without measuring it. Still the best early read available: if the market keeps moving past the numbers you took, that is information you do not have.</div>
       <div id="clvSummary"></div>
     </div>
     <div class="filter-row">
@@ -7925,11 +7925,14 @@ function renderClvSummary() {
     const beatPct = (beat / n) * 100;
     // Rule-of-thumb bands. Deliberately conservative, and grey below 20 bets because the number
     // simply isn't settled yet.
-    const thin = n < 20;
+    // 20 was far too permissive. Betting-analytics convention puts the bar at 200-300 bets before
+    // average CLV is strong evidence of skill, and ~200 before it even stabilizes. Numbers are
+    // still shown below that, just marked as unsettled rather than coloured as a verdict.
+    const thin = n < 100;
     const good = unit === "pts" ? avg >= 0.5 : avg >= 1.0;
     const okish = unit === "pts" ? avg > 0 : avg > 0;
     const color = thin ? "#8A96A1" : (good ? "#4C8B5A" : okish ? "#C9A227" : "#C4564B");
-    const verdict = thin ? "too few bets to read" : (good ? "beating the market" : okish ? "marginally ahead" : "behind the market");
+    const verdict = thin ? `unsettled — ${n} of the ~200 bets this needs` : (good ? "beating the market" : okish ? "marginally ahead" : "behind the market");
     return `<div class="trend-line"><b>${label}</b> (${n} bet${n === 1 ? "" : "s"}): avg CLV <span style="color:${color};font-weight:700;">${avg > 0 ? "+" : ""}${avg.toFixed(2)} ${unit}</span> · beat the close ${beatPct.toFixed(0)}% of the time — <span style="color:${color};">${verdict}</span></div>`;
   };
 
@@ -7941,9 +7944,9 @@ function renderClvSummary() {
     ${block("Spread", spreadVals, "pts")}
     ${block("Total", totalVals, "pts")}
     ${block("Moneyline", mlVals, "% implied")}
-    ${ptsVals.length >= 20 ? `<div class="trend-score" style="margin-top:8px;">Spread + total combined: ${ptsAvg > 0 ? "+" : ""}${ptsAvg.toFixed(2)} pts average CLV over ${ptsVals.length} bets</div>` : ""}
-    <div class="trend-note" style="margin-top:8px;">How to read it: positive means you took a number the market later moved past, which is the one retail signal that predicts long-run profit. Rough industry bands — <b>+0.5 pts or better</b> is a real edge, <b>0 to +0.5</b> is marginal and may just be line shopping, <b>negative</b> means the market disagreed with you and was right to. These bands are convention, not something measured here. Fewer than 20 bets in a market shows grey because the number isn't settled.</div>
-    ${ptsAvg != null && ptsVals.length >= 20 && ptsAvg <= 0 ? `<div class="trend-note" style="color:#B4463A;font-weight:700;">Negative CLV over a real sample is the clearest signal there is that the model isn't finding an edge. Tuning weights won't change that — the line moving away from your bets is the market telling you it has information you don't.</div>` : ""}`;
+    ${ptsVals.length >= 100 ? `<div class="trend-score" style="margin-top:8px;">Spread + total combined: ${ptsAvg > 0 ? "+" : ""}${ptsAvg.toFixed(2)} pts average CLV over ${ptsVals.length} bets</div>` : ""}
+    <div class="trend-note" style="margin-top:8px;">How to read it: positive means you took a number the market later moved past — the earliest read available on whether you are ahead of the market. Rough industry bands — <b>+0.5 pts or better</b> is a real edge, <b>0 to +0.5</b> is marginal and may just be line shopping, <b>negative</b> means the market disagreed with you and was right to. These bands are convention, not something measured here. Fewer than 100 bets in a market shows grey: average CLV needs roughly 200 bets to stabilise and 200-300 before it is strong evidence either way. Those sample figures are industry convention, asserted rather than demonstrated — the popular write-ups on CLV give no measured correlation between CLV and realised profit, so treat it as a sensible leading indicator, not a proven law.</div>
+    ${ptsAvg != null && ptsVals.length >= 100 && ptsAvg <= 0 ? `<div class="trend-note" style="color:#B4463A;font-weight:700;">Negative CLV over a real sample is the clearest signal there is that the model isn't finding an edge. Tuning weights won't change that — the line moving away from your bets is the market telling you it has information you don't.</div>` : ""}`;
 }
 
 function renderLedger() {
