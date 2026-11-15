@@ -113,7 +113,7 @@
       <div class="bankroll-value" id="bankrollValue" style="color: rgb(111, 207, 142);">$0.00</div>
     </div>
   </div>
-  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;" title="If this date is older than the build you just deployed, you are looking at a cached copy.">Build 2026-11-01 12:05 UTC · 6f2f40b4</div>
+  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;" title="If this date is older than the build you just deployed, you are looking at a cached copy.">Build 2026-11-15 12:22 UTC · 6b4fcc52</div>
   <nav>
     <button id="tabScheduleBtn" class="active">Schedule</button>
     <button id="tabLedgerBtn">My Bets</button>
@@ -6863,6 +6863,35 @@ async function runTrackRecordReport() {
     const spreadFlagged = flagged.filter(p => p.market === "spread");
     const bucket = (lo, hi) => spreadFlagged.filter(p => p.gap >= lo && (hi == null || p.gap < hi));
 
+    // ---- "would fading it have worked?" ----
+    // Taking the other side of every flagged call. The point most people miss: this is NOT
+    // simply the inverse of being unprofitable. At -110 you need 52.4% to profit, so the fade
+    // only profits if the model's own rate is below 47.6%. Between 47.6% and 52.4% BOTH sides
+    // lose, because each pays the same vig — that band is the vig, and it is where a merely
+    // noisy model lands. A model worth fading has to be systematically wrong, not just useless.
+    const DEAD_LO = 47.6, DEAD_HI = 52.4;
+    const fadeRow = (label, list) => {
+      const t = tally(list);
+      if (t.n === 0) return "";
+      const fadePct = 100 - t.pct;
+      const thin = t.n < 30;
+      let verdict, vcolor;
+      if (thin) {
+        verdict = `unsettled — ${t.n} result${t.n === 1 ? "" : "s"}, needs 30+ before this means anything`;
+        vcolor = "#8A96A1";
+      } else if (t.pct < DEAD_LO) {
+        verdict = "fading would have profited — the model is systematically wrong here";
+        vcolor = "#4C8B5A";
+      } else if (t.pct > DEAD_HI) {
+        verdict = "the model side profited; fading would have lost";
+        vcolor = "#C4564B";
+      } else {
+        verdict = "neither side profits — this is inside the vig band";
+        vcolor = "#C9A227";
+      }
+      return `<div class="trend-line"><b>${label}</b>: model ${t.w}-${t.l} (${t.pct.toFixed(1)}%) → fade ${t.l}-${t.w} (${fadePct.toFixed(1)}%) — <span style="color:${vcolor};font-weight:700;">${verdict}</span></div>`;
+    };
+
     out.innerHTML = `
       <div class="trend-score">All flagged calls: ${tally(flagged).w}-${tally(flagged).l} (${tally(flagged).pct.toFixed(1)}%)</div>
       <div class="trend-note">Break-even is 52.4% at standard -110. Grey means fewer than 20 results — too few to read anything into.</div>
@@ -6876,6 +6905,14 @@ async function runTrackRecordReport() {
       ${row("2-10 pt gap", bucket(2, 10), "the range the full-season backtest validated")}
       ${row("10-20 pt gap", bucket(10, 20))}
       ${row("20+ pt gap", bucket(20, null))}
+
+      <div class="trend-title" style="margin-top:12px;">Would Fading It Have Worked?</div>
+      ${fadeRow("All flagged", flagged)}
+      ${fadeRow("Spread flags", flagged.filter(p => p.market === "spread"))}
+      ${fadeRow("Moneyline flags", flagged.filter(p => p.market === "moneyline"))}
+      ${fadeRow("Total flags", flagged.filter(p => p.market === "total"))}
+      ${fadeRow("2-10 pt gap", bucket(2, 10))}
+      <div class="trend-note">At -110 you need <b>52.4%</b> to profit, so the fade needs the model below <b>47.6%</b>. Anything between those two numbers means <b>both sides lose</b> — that gap is the house edge, and it is where a model that is merely noisy ends up. Fading only pays if the model is reliably, repeatably <i>wrong</i>, which is much rarer than being useless. Ignores pushes, since those refund either way.</div>
 
       <div class="trend-title" style="margin-top:12px;">Unflagged (below threshold)</div>
       ${row("All unflagged", picks.filter(p => !p.flagged), "sanity check — these shouldn't beat the flagged ones")}
