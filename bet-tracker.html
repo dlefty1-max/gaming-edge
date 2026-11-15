@@ -113,7 +113,7 @@
       <div class="bankroll-value" id="bankrollValue" style="color: rgb(111, 207, 142);">$0.00</div>
     </div>
   </div>
-  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;" title="If this date is older than the build you just deployed, you are looking at a cached copy.">Build 2026-11-15 12:22 UTC · 6b4fcc52</div>
+  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;" title="If this date is older than the build you just deployed, you are looking at a cached copy.">Build 2026-11-15 12:32 UTC · 47bef4c8</div>
   <nav>
     <button id="tabScheduleBtn" class="active">Schedule</button>
     <button id="tabLedgerBtn">My Bets</button>
@@ -6870,6 +6870,42 @@ async function runTrackRecordReport() {
     // lose, because each pays the same vig — that band is the vig, and it is where a merely
     // noisy model lands. A model worth fading has to be systematically wrong, not just useless.
     const DEAD_LO = 47.6, DEAD_HI = 52.4;
+
+    // ---- moneyline needs PRICE, not win rate ----
+    // A 52.4% break-even is a -110 spread/total number. Applying it to moneylines is simply
+    // wrong: a bet at +200 breaks even at 33%, one at -300 needs 75%. If the model flags
+    // moneylines where it disagrees with the market, it mostly lands on dogs, so a low win rate
+    // can be perfectly fine. Each saved moneyline pick stores the market's NO-VIG implied
+    // probability for the home side, so the honest test is: did the pick win more often than the
+    // fair line said it would?
+    //
+    // ROI below is computed at FAIR (no-vig) odds, so it measures whether the model has real
+    // predictive signal against the market's own number. Actual book prices are worse, so take
+    // another ~2-4 points off for real-world moneyline vig before calling anything profitable.
+    const mlEval = (list) => {
+      const usable = list.filter(p => p.market === "moneyline" && typeof p.price === "number"
+        && isFinite(p.price) && p.price > 0.01 && p.price < 0.99
+        && (p.outcome === "win" || p.outcome === "loss"));
+      if (usable.length === 0) return null;
+      let roi = 0, fadeRoi = 0, expSum = 0, wins = 0;
+      usable.forEach(pk => {
+        const pr = pk.side === "home" ? pk.price : 1 - pk.price; // no-vig, so the two sides sum to 1
+        expSum += pr;
+        if (pk.outcome === "win") { wins++; roi += (1 / pr) - 1; fadeRoi -= 1; }
+        else { roi -= 1; fadeRoi += (1 / (1 - pr)) - 1; }
+      });
+      const n = usable.length;
+      return { n, winPct: (wins / n) * 100, expPct: (expSum / n) * 100, roi: (roi / n) * 100, fadeRoi: (fadeRoi / n) * 100 };
+    };
+    const mlBlock = (label, list) => {
+      const m = mlEval(list);
+      if (!m) return "";
+      const edgePP = m.winPct - m.expPct;
+      const thin = m.n < 30;
+      const col = thin ? "#8A96A1" : (m.roi > 0 ? "#4C8B5A" : "#C4564B");
+      return `<div class="trend-line"><b>${label}</b> (${m.n}): won <b>${m.winPct.toFixed(1)}%</b> where the fair line expected <b>${m.expPct.toFixed(1)}%</b> — ${edgePP >= 0 ? "+" : ""}${edgePP.toFixed(1)} pts vs the market.<br>
+        <span style="color:${col};font-weight:700;">ROI at fair odds: ${m.roi >= 0 ? "+" : ""}${m.roi.toFixed(1)}%</span> · fading it: ${m.fadeRoi >= 0 ? "+" : ""}${m.fadeRoi.toFixed(1)}%${thin ? ' <span style="color:#8A96A1;">(under 30 — unsettled)</span>' : ""}</div>`;
+    };
     const fadeRow = (label, list) => {
       const t = tally(list);
       if (t.n === 0) return "";
@@ -6909,10 +6945,15 @@ async function runTrackRecordReport() {
       <div class="trend-title" style="margin-top:12px;">Would Fading It Have Worked?</div>
       ${fadeRow("All flagged", flagged)}
       ${fadeRow("Spread flags", flagged.filter(p => p.market === "spread"))}
-      ${fadeRow("Moneyline flags", flagged.filter(p => p.market === "moneyline"))}
+      <div class="trend-note" style="margin-top:4px;">Moneyline is measured against its own prices below, not against 52.4% — that number only applies to spreads and totals.</div>
       ${fadeRow("Total flags", flagged.filter(p => p.market === "total"))}
       ${fadeRow("2-10 pt gap", bucket(2, 10))}
       <div class="trend-note">At -110 you need <b>52.4%</b> to profit, so the fade needs the model below <b>47.6%</b>. Anything between those two numbers means <b>both sides lose</b> — that gap is the house edge, and it is where a model that is merely noisy ends up. Fading only pays if the model is reliably, repeatably <i>wrong</i>, which is much rarer than being useless. Ignores pushes, since those refund either way.</div>
+
+      <div class="trend-title" style="margin-top:12px;">Moneyline, Priced Properly</div>
+      ${mlBlock("Flagged moneylines", flagged.filter(p => p.market === "moneyline")) || `<div class="trend-note">No moneyline picks with a usable stored price yet.</div>`}
+      ${mlBlock("Unflagged moneylines", picks.filter(p => !p.flagged && p.market === "moneyline"))}
+      <div class="trend-note">Win rate alone says nothing here. A +200 dog breaks even at 33%; a -300 favorite needs 75%. What matters is whether the picks won more often than the fair price implied. ROI is at no-vig odds, so knock another 2-4 points off for the real spread a book charges.</div>
 
       <div class="trend-title" style="margin-top:12px;">Unflagged (below threshold)</div>
       ${row("All unflagged", picks.filter(p => !p.flagged), "sanity check — these shouldn't beat the flagged ones")}
