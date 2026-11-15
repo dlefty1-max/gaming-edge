@@ -113,7 +113,7 @@
       <div class="bankroll-value" id="bankrollValue" style="color: rgb(111, 207, 142);">$0.00</div>
     </div>
   </div>
-  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;" title="If this date is older than the build you just deployed, you are looking at a cached copy.">Build 2026-11-15 12:41 UTC · 5b907d61</div>
+  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;" title="If this date is older than the build you just deployed, you are looking at a cached copy.">Build 2026-11-15 12:49 UTC · 4c37614d</div>
   <nav>
     <button id="tabScheduleBtn" class="active">Schedule</button>
     <button id="tabLedgerBtn">My Bets</button>
@@ -701,6 +701,7 @@
     </div>
     <div id="storageStatus" class="trend-note" style="margin-top:6px;"></div>
     <button class="load-trends-btn" id="pruneCachesBtn" style="margin-top:4px;">🧹 Free up space (keeps your bets)</button>
+    <button class="load-trends-btn" id="purgeCachesBtn" style="margin-top:4px;">🗑 Clear ALL caches — keeps bets, Pick 6, props log, API key, flags</button>
     <div class="toolbar">
       <button id="checkResultsBtn">🔄 Check Results</button>
       <button id="checkClvBtn">📈 Check Closing Lines</button>
@@ -1362,6 +1363,30 @@ function storageBytesUsed() {
     }
   } catch (e) { return null; }
   return total * 2; // UTF-16 code units
+}
+
+// Biggest keys first, so a full store names its own culprit instead of being a mystery.
+function storageBreakdown() {
+  const rows = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k) continue;
+      rows.push({ key: k, kb: ((k.length + (localStorage.getItem(k) || "").length) * 2) / 1024 });
+    }
+  } catch (e) { return []; }
+  // Group the per-week cache families, otherwise 80 tiny elo keys hide the real hog.
+  const groups = {};
+  rows.forEach(r => {
+    const fam = RECOMPUTABLE_PREFIXES.find(pre => r.key.startsWith(pre))
+      || (r.key.startsWith("team-flag-") ? "team-flag-" : null);
+    const name = fam ? fam + "* " : r.key;
+    const protectedKey = PROTECTED_KEYS.includes(r.key) || r.key.startsWith("team-flag-");
+    if (!groups[name]) groups[name] = { key: name, kb: 0, n: 0, recomputable: !!fam, protected: protectedKey };
+    groups[name].kb += r.kb;
+    groups[name].n++;
+  });
+  return Object.values(groups).sort((a, b) => b.kb - a.kb);
 }
 
 function pruneRecomputableCaches() {
@@ -8371,17 +8396,53 @@ function renderStorageStatus() {
   const used = storageBytesUsed();
   if (used == null) { el.innerHTML = `<span style="color:#B4463A;">Can't read storage — your browser may be blocking it entirely, which would stop every save.</span>`; return; }
   const kb = Math.round(used / 1024);
-  const pct = Math.min(100, Math.round((used / (5 * 1024 * 1024)) * 100));
+  // Browsers cap localStorage at about 5 million characters, which is ~10,240 KB in the UTF-16
+  // accounting used here. The earlier 5,120 KB figure was out by a factor of two and understated
+  // how much room was left, right up until writes began failing.
+  const CAP_KB = 10240;
+  const pct = Math.min(100, Math.round((kb / CAP_KB) * 100));
   let bets = 0;
   try { bets = ((localStorage.getItem("bettracker-data") || "").length * 2) / 1024; } catch (e) {}
   const warn = pct >= 80;
-  el.innerHTML = `Storage used: <b${warn ? ' style="color:#B4463A;"' : ''}>${kb} KB</b> of roughly 5,120 KB (${pct}%) — your bets account for ${Math.round(bets)} KB of that.${warn ? ` <span style="color:#B4463A;font-weight:700;">Close to the limit. Saves start failing at the ceiling.</span>` : ""}${window.__saveError ? ` <span style="color:#B4463A;font-weight:700;">Last save FAILED — ${window.__saveError}</span>` : ""}`;
+  const top = storageBreakdown().slice(0, 6);
+  el.innerHTML = `Storage used: <b${warn ? ' style="color:#B4463A;"' : ''}>${kb} KB</b> of about ${CAP_KB.toLocaleString()} KB (${pct}%) — your bets are ${Math.round(bets)} KB of that.${warn ? ` <span style="color:#B4463A;font-weight:700;">At the ceiling: saves are failing.</span>` : ""}${window.__saveError ? ` <span style="color:#B4463A;font-weight:700;">Last save FAILED — ${window.__saveError}</span>` : ""}
+    ${top.length ? `<div style="margin-top:4px;font-size:10px;color:#5C6B78;">Biggest: ${top.map(t => `${t.key}${t.n > 1 ? `(${t.n})` : ""} <b>${Math.round(t.kb)} KB</b>${t.protected ? " \u2014 kept" : t.recomputable ? "" : " \u2014 needs the full purge"}`).join(" \u00b7 ")}</div>` : ""}`;
 }
 document.getElementById("pruneCachesBtn").addEventListener("click", () => {
   const before = storageBytesUsed() || 0;
   const r = pruneRecomputableCaches();
   renderStorageStatus();
-  showToast(`Cleared ${r.removed} rebuildable cache${r.removed === 1 ? "" : "s"}, freed ${Math.round(r.freed / 1024)} KB. Ratings and week trends will recompute on next use.`, 6000);
+  const after = storageBytesUsed() || 0;
+  showToast(`Cleared ${r.removed} rebuildable cache${r.removed === 1 ? "" : "s"}, freed ${Math.round(r.freed / 1024)} KB. Now at ${Math.round(after / 1024)} KB (was ${Math.round(before / 1024)} KB).`, 7000);
+});
+// Deletes every localStorage key that is NOT on the protected list. Safe by construction:
+// anything removed here is derived data the app rebuilds on demand. Used when the store is full
+// and the targeted prune isn't enough, which is what happens when something unanticipated is
+// occupying the space.
+document.getElementById("purgeCachesBtn").addEventListener("click", () => {
+  const before = storageBytesUsed() || 0;
+  const doomed = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k) continue;
+      if (PROTECTED_KEYS.includes(k) || k.startsWith("team-flag-")) continue;
+      doomed.push(k);
+    }
+  } catch (e) {}
+  if (doomed.length === 0) {
+    showToast("Nothing to clear — everything left is protected data (bets, Pick 6, props log, API key, flags).", 6000);
+    return;
+  }
+  const names = doomed.slice(0, 8).join(", ");
+  if (!confirm(`Clear ${doomed.length} cache entries?\n\nKEPT: your bets, Pick 6 picks, props log, Odds API key, team flags.\nCLEARED: ${names}${doomed.length > 8 ? ` and ${doomed.length - 8} more` : ""}\n\nAll of it rebuilds automatically when next needed.`)) return;
+  let freed = 0;
+  doomed.forEach(k => {
+    try { freed += ((k.length + (localStorage.getItem(k) || "").length) * 2); localStorage.removeItem(k); } catch (e) {}
+  });
+  renderStorageStatus();
+  const after = storageBytesUsed() || 0;
+  showToast(`Cleared ${doomed.length} entries, freed ${Math.round(freed / 1024)} KB. Now at ${Math.round(after / 1024)} KB (was ${Math.round(before / 1024)} KB). Paste your props again.`, 9000);
 });
 document.getElementById("backupAllBtn").addEventListener("click", backupAll);
 document.getElementById("restoreFileInput").addEventListener("change", (e) => {
