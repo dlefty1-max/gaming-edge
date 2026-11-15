@@ -113,7 +113,7 @@
       <div class="bankroll-value" id="bankrollValue" style="color: rgb(111, 207, 142);">$0.00</div>
     </div>
   </div>
-  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;" title="If this date is older than the build you just deployed, you are looking at a cached copy.">Build 2026-11-15 12:49 UTC · 4c37614d</div>
+  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;" title="If this date is older than the build you just deployed, you are looking at a cached copy.">Build 2026-11-15 12:58 UTC · 5d7b9bdb</div>
   <nav>
     <button id="tabScheduleBtn" class="active">Schedule</button>
     <button id="tabLedgerBtn">My Bets</button>
@@ -701,6 +701,7 @@
     </div>
     <div id="storageStatus" class="trend-note" style="margin-top:6px;"></div>
     <button class="load-trends-btn" id="pruneCachesBtn" style="margin-top:4px;">🧹 Free up space (keeps your bets)</button>
+    <button class="save-btn full" id="migrateHistBtn" style="margin-top:6px;">♻️ Move old odds cache to IndexedDB — frees space, keeps the paid data</button>
     <button class="load-trends-btn" id="purgeCachesBtn" style="margin-top:4px;">🗑 Clear ALL caches — keeps bets, Pick 6, props log, API key, flags</button>
     <div class="toolbar">
       <button id="checkResultsBtn">🔄 Check Results</button>
@@ -8419,6 +8420,56 @@ document.getElementById("pruneCachesBtn").addEventListener("click", () => {
 // anything removed here is derived data the app rebuilds on demand. Used when the store is full
 // and the targeted prune isn't enough, which is what happens when something unanticipated is
 // occupying the space.
+// One-time migration for `hist-odds-*` keys stranded in localStorage by an older build.
+//
+// These are historical odds snapshots bought with real Odds API credits. The app moved this
+// cache to IndexedDB a while back, and now reads it ONLY from there — so these copies are both
+// the thing filling localStorage to its ceiling AND invisible to the backtests that paid for
+// them. Moving rather than deleting frees the space and may restore weeks the app can no longer
+// see. Anything already in IndexedDB is just dropped from localStorage.
+async function migrateLegacyHistOdds() {
+  const btn = document.getElementById("migrateHistBtn");
+  const keys = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith("hist-odds-")) keys.push(k);
+    }
+  } catch (e) {}
+  if (keys.length === 0) {
+    showToast("No stranded odds snapshots found in localStorage — nothing to move.", 5000);
+    return;
+  }
+  const before = storageBytesUsed() || 0;
+  let moved = 0, already = 0, failed = 0, freed = 0;
+  for (let i = 0; i < keys.length; i++) {
+    const k = keys[i];
+    if (btn) btn.textContent = `Moving ${i + 1} of ${keys.length}…`;
+    let raw = null;
+    try { raw = localStorage.getItem(k); } catch (e) {}
+    if (raw == null) continue;
+    let val = null;
+    try { val = JSON.parse(raw); } catch (e) { failed++; continue; } // unparseable: leave it alone
+    try {
+      const existing = await histDbGet(k);
+      if (existing != null) {
+        already++;
+      } else {
+        const ok = await histDbSet(k, val);
+        if (!ok) { failed++; continue; }   // never drop the localStorage copy unless the move worked
+        moved++;
+      }
+      freed += (k.length + raw.length) * 2;
+      localStorage.removeItem(k);
+    } catch (e) { failed++; }
+  }
+  if (btn) btn.textContent = "♻️ Move old odds cache to IndexedDB — frees space, keeps the paid data";
+  renderStorageStatus();
+  const after = storageBytesUsed() || 0;
+  showToast(`Moved ${moved} snapshot${moved === 1 ? "" : "s"} into IndexedDB${already ? `, ${already} already there` : ""}${failed ? `, ${failed} could not be moved and were left in place` : ""}. Freed ${Math.round(freed / 1024)} KB — now at ${Math.round(after / 1024)} KB (was ${Math.round(before / 1024)} KB).`, 12000);
+}
+document.getElementById("migrateHistBtn").addEventListener("click", migrateLegacyHistOdds);
+
 document.getElementById("purgeCachesBtn").addEventListener("click", () => {
   const before = storageBytesUsed() || 0;
   const doomed = [];
@@ -8433,6 +8484,11 @@ document.getElementById("purgeCachesBtn").addEventListener("click", () => {
   if (doomed.length === 0) {
     showToast("Nothing to clear — everything left is protected data (bets, Pick 6, props log, API key, flags).", 6000);
     return;
+  }
+  // Historical odds cost real API credits. Never let a cleanup throw them away silently.
+  const paid = doomed.filter(k => k.startsWith("hist-odds-"));
+  if (paid.length > 0) {
+    if (!confirm(`WARNING: ${paid.length} of these are historical odds snapshots bought with Odds API credits. Deleting them means paying again to re-run any backtest that needs those weeks.\n\nUse "Move old odds cache to IndexedDB" instead — it frees the same space and keeps the data.\n\nDelete them anyway?`)) return;
   }
   const names = doomed.slice(0, 8).join(", ");
   if (!confirm(`Clear ${doomed.length} cache entries?\n\nKEPT: your bets, Pick 6 picks, props log, Odds API key, team flags.\nCLEARED: ${names}${doomed.length > 8 ? ` and ${doomed.length - 8} more` : ""}\n\nAll of it rebuilds automatically when next needed.`)) return;
