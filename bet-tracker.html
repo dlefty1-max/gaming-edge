@@ -113,7 +113,7 @@
       <div class="bankroll-value" id="bankrollValue" style="color: rgb(111, 207, 142);">$0.00</div>
     </div>
   </div>
-  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;" title="If this date is older than the build you just deployed, you are looking at a cached copy.">Build 2026-11-15 13:02 UTC · 894d399b</div>
+  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;" title="If this date is older than the build you just deployed, you are looking at a cached copy.">Build 2026-11-15 13:10 UTC · 5b5562ec</div>
   <nav>
     <button id="tabScheduleBtn" class="active">Schedule</button>
     <button id="tabLedgerBtn">My Bets</button>
@@ -1030,7 +1030,13 @@
       <div class="trend-title" style="margin-bottom:6px;">Props Track Record</div>
       <div class="refresh-note">Every Weekly Props Scan is saved here automatically (the full list it showed, at the lines and prices it showed). After the games finish, tap Update results and each prop is graded against the real box score. A new scan in the same week replaces that week's saved list.</div>
       <details style="margin-top:8px;"><summary class="refresh-note" style="cursor:pointer;">Already ran a scan? Paste its list here to save it</summary>
-        <textarea id="propsLogPaste" rows="5" style="width:100%; margin-top:6px;" placeholder="Paste the scanner's list exactly as it printed (open the Schedule tab on that week first)"></textarea>
+        <textarea id="propsLogPaste" rows="5" style="width:100%; margin-top:6px;" placeholder="Paste the scanner's list exactly as it printed"></textarea>
+        <div style="display:flex; gap:8px; align-items:flex-end; margin-top:6px; flex-wrap:wrap;">
+          <label style="font-size:11px; color:#5C6B78;">Season<br><input id="propsLogYear" type="number" inputmode="numeric" style="width:76px;"></label>
+          <label style="font-size:11px; color:#5C6B78;">Week<br><input id="propsLogWeek" type="number" inputmode="numeric" min="1" max="20" style="width:62px;"></label>
+          <label style="font-size:11px; color:#5C6B78;">League<br><select id="propsLogLeague" style="width:92px;"><option value="nfl">NFL</option><option value="cfb">College</option></select></label>
+        </div>
+        <div class="trend-note" style="margin-top:4px;">Which week these props were for. Defaults to the week your Schedule tab is on, but you can set any week — the games are looked up directly, so you no longer have to switch the Schedule tab first.</div>
         <button class="save-btn full" id="propsLogImportBtn" style="margin-top:6px;">Save pasted scan</button>
       </details>
       <button class="save-btn full" id="propsLogUpdateBtn" style="margin-top:8px;">Update results</button>
@@ -9845,13 +9851,37 @@ function renderPropsLog() {
     .map(([sd, t]) => `${sd} ${fmt(t)}${pct(t)} ${units(t)}`).join(" · ");
   const thin = propTotals(log, p => p.sample < 10), solid = propTotals(log, p => p.sample >= 10);
   const claimedTxt = all.n ? `The scanner's own claimed hit rate averaged <b>${(all.claimed / all.n).toFixed(0)}%</b> on these props; they actually hit <b>${graded ? (all.w / graded * 100).toFixed(0) : 0}%</b>.` : "";
+  // Calibration. The scanner claims a hit rate for every prop; this checks whether those claims
+  // hold. A model whose 90%+ bucket performs no better than its 70% bucket has confidence that
+  // carries no information, which is the same failure the Edge scan's flag turned out to have.
+  const band = (lo, hi, label) => {
+    const t = propTotals(log, p => p.hitPct != null && p.hitPct >= lo && (hi == null || p.hitPct < hi));
+    const n = t.w + t.l;
+    if (n === 0) return "";
+    const actual = (t.w / n) * 100;
+    const mid = hi == null ? lo : (lo + hi) / 2;
+    const col = n < 20 ? "#8A96A1" : (actual >= 52.4 ? "#4C8B5A" : "#C4564B");
+    return `<div class="trend-line" style="font-size:12px;"><b>${label}</b>: ${fmt(t)} — actually hit <span style="color:${col};font-weight:700;">${actual.toFixed(1)}%</span> ${units(t)}${n < 20 ? ' <span style="color:#8A96A1;">(under 20, unsettled)</span>' : ""}</div>`;
+  };
+  const bands = [band(90, null, "Model claimed 90-100%"), band(80, 90, "Model claimed 80-90%"), band(70, 80, "Model claimed 70-80%"), band(0, 70, "Model claimed under 70%")].filter(Boolean).join("");
+  const calib = graded > 0 && bands
+    ? `<div class="trend-title" style="margin-top:12px;">Did the Model's Confidence Mean Anything?</div>${bands}
+       <div class="trend-note">If the top band doesn't beat the bottom one, the scanner's claimed hit rate carries no information and the ranking is noise. Break-even is about 52.4% at -110. These are historical frequencies, not probabilities — "hit 90% of last 20" says nothing about why the book set that line.</div>`
+    : "";
+
   const scans = log.slice().reverse().map(e => {
     const t = propTotals([e]);
     const rows = e.props.map(p => {
       const color = p.result === "W" ? "#4C8B5A" : p.result === "L" ? "#B4463A" : "#8A96A1";
       const tag = p.result === "V" ? "void" : (p.result || "…");
       const what = p.isBoolean ? `${p.desc}` : `${p.desc} ${p.side} ${p.line}`;
-      return `<div style="font-size:12px; padding:2px 0;"><b style="color:${color};">${tag}</b> ${p.player} ${what} <span style="color:#8A96A1;">@ ${p.price != null && p.price > 0 ? "+" : ""}${p.price}${p.actual != null ? ` · actual ${p.actual}` : p.result ? "" : " · not graded yet"}</span></div>`;
+      // What the model claimed, beside what actually happened. Without this the log recorded the
+      // outcome but not the prediction, so there was no way to see whether its confidence meant
+      // anything.
+      const claim = p.hitPct != null
+        ? `<span style="color:#5C6B78;">model: ${p.hitPct}% of last ${p.sample != null ? p.sample : "?"}${p.edge != null ? `, edge ${p.edge > 0 ? "+" : ""}${p.edge}%` : ""}${p.sample != null && p.sample < 10 ? ' <span style="color:#C9A227;">thin</span>' : ""}</span>`
+        : "";
+      return `<div style="font-size:12px; padding:3px 0; border-bottom:1px solid #F0F2F4;"><b style="color:${color};">${tag}</b> ${p.player} ${what} <span style="color:#8A96A1;">@ ${p.price != null && p.price > 0 ? "+" : ""}${p.price}${p.actual != null ? ` · actual ${p.actual}` : p.result ? "" : " · not graded yet"}</span>${claim ? `<br><span style="font-size:10px; padding-left:14px;">${claim}</span>` : ""}</div>`;
     }).join("");
     return `<details style="margin-top:8px;"><summary class="trend-line" style="cursor:pointer;"><b>${e.year} Week ${e.week}</b> — ${fmt(t)}${t.w + t.l ? ` ${units(t)}` : ""}${t.pending ? `, ${t.pending} pending` : ""}${t.v ? `, ${t.v} void` : ""}</summary>${rows}</details>`;
   }).join("");
@@ -9859,6 +9889,7 @@ function renderPropsLog() {
     <div class="trend-score">${fmt(all)}${pct(all)} · ${units(all)} at flat 1 unit${all.pending ? ` · ${all.pending} pending` : ""}${all.v ? ` · ${all.v} void` : ""}</div>
     <div class="trend-note">${bySide}</div>
     <div class="trend-note">Samples under 10 games: ${fmt(thin)}${pct(thin)} · 10 or more: ${fmt(solid)}${pct(solid)}. ${claimedTxt}</div>
+    ${calib}
     ${graded < 100 ? `<div class="trend-note">Only ${graded} graded props so far — far too few to judge. Most props pay about -110, so you need roughly 52-53% to break even, and a few weeks of results can swing well above or below that on luck alone.</div>` : ""}
     ${scans}`;
 }
@@ -9903,10 +9934,36 @@ function parsePastedProps(text) {
   return kept;
 }
 
-function importPastedProps() {
+// All games in a week with names and kickoff times, played or not. fetchWeekGamesWithNames
+// filters to completed games, which is wrong for importing a slate that hasn't kicked off.
+async function fetchWeekScheduleNames(league, year, week) {
+  const base = league === "nfl" ? NFL_BASE : CFB_BASE;
+  const params = new URLSearchParams({ week, seasontype: 2, dates: year });
+  if (league === "cfb") params.set("groups", "80");
+  const res = await fetch(`${base}?${params.toString()}`);
+  if (!res.ok) throw new Error(`ESPN schedule request failed (HTTP ${res.status}) for ${year} week ${week}`);
+  const json = await res.json();
+  return (json.events || []).map(ev => {
+    const comp = ev.competitions && ev.competitions[0];
+    const comps = (comp && comp.competitors) || [];
+    const home = comps.find(c => c.homeAway === "home");
+    const away = comps.find(c => c.homeAway === "away");
+    if (!home || !away || !home.team || !away.team) return null;
+    return {
+      date: ev.date,
+      home: home.team.shortDisplayName || home.team.abbreviation,
+      away: away.team.shortDisplayName || away.team.abbreviation,
+    };
+  }).filter(Boolean);
+}
+
+async function importPastedProps() {
   const note = document.getElementById("propsLogNote");
   const box = document.getElementById("propsLogPaste");
   const parsed = parsePastedProps(box.value);
+  const tgtYear = parseInt((document.getElementById("propsLogYear") || {}).value, 10) || state.year;
+  const tgtWeek = parseInt((document.getElementById("propsLogWeek") || {}).value, 10) || state.week;
+  const tgtLeague = ((document.getElementById("propsLogLeague") || {}).value) || state.league;
   if (parsed.length === 0) {
     const d = window.__propsParseDiag || {};
     note.innerHTML = `<span style="color:#B4463A;font-weight:700;">Couldn't find any props in that text.</span><br>
@@ -9915,19 +9972,39 @@ function importPastedProps() {
       <br>Each prop needs to be one line, in the scanner's own format: <code style="font-size:10px;">Player (POS) rushing yds Over 45.5 — hit 72% of last 25 · Away @ Home · -110 · edge +8.1%</code>`;
     return;
   }
-  if (!state.games || state.games.length === 0) { note.textContent = "Open the Schedule tab on the week these props are for first, so I can look up the game times."; return; }
+  // Look the week up directly. Reuse the already-loaded schedule only when it IS that week.
+  let slate;
+  const sameAsLoaded = tgtLeague === state.league && tgtYear === state.year && tgtWeek === state.week
+    && state.games && state.games.length > 0;
+  if (sameAsLoaded) {
+    slate = state.games.map(g => ({ date: g.date, home: g.home, away: g.away }));
+  } else {
+    note.textContent = `Looking up ${tgtLeague.toUpperCase()} ${tgtYear} week ${tgtWeek}…`;
+    try { slate = await fetchWeekScheduleNames(tgtLeague, tgtYear, tgtWeek); }
+    catch (e) { note.innerHTML = `<span style="color:#B4463A;font-weight:700;">Couldn't load that week's schedule — ${e.message || e}</span>`; return; }
+  }
+  if (!slate || slate.length === 0) {
+    note.innerHTML = `<span style="color:#B4463A;font-weight:700;">${tgtLeague.toUpperCase()} ${tgtYear} week ${tgtWeek} returned no games.</span> Check the season and week numbers.`;
+    return;
+  }
   let skipped = 0;
+  const unmatched = [];
   const props = [];
   parsed.forEach(p => {
     const [away, home] = p.matchup.split(" @ ");
-    const g = state.games.find(x => x.away === away && x.home === home);
-    if (!g) { skipped++; return; }
+    // exact first, then the app's fuzzy team-name matcher, so "49ers"/"San Francisco" both land
+    let g = slate.find(x => x.away === away && x.home === home);
+    if (!g) g = slate.find(x => autoPickNameMatch(x.away, away) && autoPickNameMatch(x.home, home));
+    if (!g) { skipped++; if (unmatched.length < 3) unmatched.push(p.matchup); return; }
     props.push(Object.assign({}, p, { gameDate: g.date, result: null, actual: null }));
   });
-  if (props.length === 0) { note.textContent = "None of those games are on the week currently loaded in the Schedule tab — switch it to the right week and try again."; return; }
+  if (props.length === 0) {
+    note.innerHTML = `<span style="color:#B4463A;font-weight:700;">None of those ${parsed.length} props matched a game in ${tgtLeague.toUpperCase()} ${tgtYear} week ${tgtWeek}</span> (that week has ${slate.length} games).<br>Unmatched: ${unmatched.map(u => `"${u}"`).join(", ")}<br>Either the week number is wrong, or these props are from a different week.`;
+    return;
+  }
   const log = loadPropsLog();
-  let entry = log.find(e => e.year === state.year && e.week === state.week && e.league === state.league);
-  if (!entry) { entry = { year: state.year, week: state.week, league: state.league, seasonType: state.seasonType, savedAt: new Date().toISOString(), props: [] }; log.push(entry); }
+  let entry = log.find(e => e.year === tgtYear && e.week === tgtWeek && e.league === tgtLeague);
+  if (!entry) { entry = { year: tgtYear, week: tgtWeek, league: tgtLeague, seasonType: 2, savedAt: new Date().toISOString(), props: [] }; log.push(entry); }
   let added = 0;
   props.forEach(p => {
     if (entry.props.some(q => q.player === p.player && q.marketKey === p.marketKey && q.side === p.side && q.line === p.line)) return;
@@ -9937,7 +10014,7 @@ function importPastedProps() {
   const ok = savePropsLog(log);
   // Read it back. Claiming "saved" without checking is what left you with no record.
   const after = loadPropsLog();
-  const stored = after.find(e => e.year === state.year && e.week === state.week && e.league === state.league);
+  const stored = after.find(e => e.year === tgtYear && e.week === tgtWeek && e.league === tgtLeague);
   const storedCount = stored ? stored.props.length : 0;
   renderPropsLog();
   if (!ok || storedCount === 0) {
@@ -9945,7 +10022,7 @@ function importPastedProps() {
     return;
   }
   box.value = "";
-  note.innerHTML = `Saved — <b>${added} new</b> prop${added === 1 ? "" : "s"} added, <b>${storedCount} total</b> now stored for ${state.league.toUpperCase()} ${state.year} Week ${state.week}${skipped ? ` · ${skipped} skipped (game not on the loaded week)` : ""}${added < props.length ? ` · ${props.length - added} already there` : ""}.<br>Now tap <b>Update results</b> below to grade them against real box scores.`;
+  note.innerHTML = `Saved — <b>${added} new</b> prop${added === 1 ? "" : "s"} added, <b>${storedCount} total</b> now stored for ${tgtLeague.toUpperCase()} ${tgtYear} Week ${tgtWeek}${skipped ? ` · ${skipped} skipped (game not on the loaded week)` : ""}${added < props.length ? ` · ${props.length - added} already there` : ""}.<br>Now tap <b>Update results</b> below to grade them against real box scores.`;
 }
 
 document.getElementById("propsLogImportBtn").addEventListener("click", importPastedProps);
