@@ -113,7 +113,7 @@
       <div class="bankroll-value" id="bankrollValue" style="color: rgb(111, 207, 142);">$0.00</div>
     </div>
   </div>
-  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;" title="If this date is older than the build you just deployed, you are looking at a cached copy.">Build 2026-11-15 12:32 UTC · 47bef4c8</div>
+  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;" title="If this date is older than the build you just deployed, you are looking at a cached copy.">Build 2026-11-15 12:41 UTC · 5b907d61</div>
   <nav>
     <button id="tabScheduleBtn" class="active">Schedule</button>
     <button id="tabLedgerBtn">My Bets</button>
@@ -1351,7 +1351,7 @@ function loadData() {
 // NOTHING the user typed or earned is in here: bets, Pick 6 entries, the API key, team flags and
 // the UI preferences are all deliberately excluded.
 const RECOMPUTABLE_PREFIXES = ["elo-v", "gamesplayed-cur-", "week-dog-result-", "cfb-ranks-"];
-const PROTECTED_KEYS = ["bettracker-data", "picksix-data", "picksix-book", "odds-api-key", "preferred-book", "eff-weight", "tally-open", "tally-splits"];
+const PROTECTED_KEYS = ["bettracker-data", "picksix-data", "picksix-book", "odds-api-key", "preferred-book", "eff-weight", "tally-open", "tally-splits", "props-scan-log", "survivor-data"];
 
 function storageBytesUsed() {
   let total = 0;
@@ -6929,8 +6929,8 @@ async function runTrackRecordReport() {
     };
 
     out.innerHTML = `
-      <div class="trend-score">All flagged calls: ${tally(flagged).w}-${tally(flagged).l} (${tally(flagged).pct.toFixed(1)}%)</div>
-      <div class="trend-note">Break-even is 52.4% at standard -110. Grey means fewer than 20 results — too few to read anything into.</div>
+      <div class="trend-score">Flagged spread + total: ${tally(flagged.filter(p => p.market !== "moneyline")).w}-${tally(flagged.filter(p => p.market !== "moneyline")).l} (${tally(flagged.filter(p => p.market !== "moneyline")).pct.toFixed(1)}%)</div>
+      <div class="trend-note">Break-even is 52.4% at standard -110. Moneylines are deliberately excluded from this headline and from the fade rows — mixing them in against a -110 yardstick is what produced a false "fading would profit" verdict. They are judged on price further down. Grey means fewer than 20 results.</div>
 
       <div class="trend-title" style="margin-top:12px;">By Market (flagged only)</div>
       ${row("Spread", flagged.filter(p => p.market === "spread"))}
@@ -6943,7 +6943,7 @@ async function runTrackRecordReport() {
       ${row("20+ pt gap", bucket(20, null))}
 
       <div class="trend-title" style="margin-top:12px;">Would Fading It Have Worked?</div>
-      ${fadeRow("All flagged", flagged)}
+      ${fadeRow("All flagged spread + total", flagged.filter(p => p.market !== "moneyline"))}
       ${fadeRow("Spread flags", flagged.filter(p => p.market === "spread"))}
       <div class="trend-note" style="margin-top:4px;">Moneyline is measured against its own prices below, not against 52.4% — that number only applies to spreads and totals.</div>
       ${fadeRow("Total flags", flagged.filter(p => p.market === "total"))}
@@ -9500,8 +9500,28 @@ const PROPS_LOG_KEY = "props-scan-log";
 function loadPropsLog() {
   try { return JSON.parse(localStorage.getItem(PROPS_LOG_KEY) || "[]"); } catch (e) { return []; }
 }
+// Same silent-failure bug the bets save had: this swallowed a full-storage error, so the scan
+// looked saved and the log stayed empty — which is exactly why the props area gave no feedback.
+// Returns whether the write landed, and clears rebuildable caches and retries before giving up.
 function savePropsLog(log) {
-  try { localStorage.setItem(PROPS_LOG_KEY, JSON.stringify(log)); } catch (e) {}
+  const payload = JSON.stringify(log);
+  try {
+    localStorage.setItem(PROPS_LOG_KEY, payload);
+    window.__propsLogError = null;
+    return true;
+  } catch (e) {
+    const pruned = pruneRecomputableCaches();
+    try {
+      localStorage.setItem(PROPS_LOG_KEY, payload);
+      window.__propsLogError = null;
+      if (pruned.removed > 0) showToast(`Storage was full — cleared ${pruned.removed} rebuildable caches (${Math.round(pruned.freed / 1024)} KB) and saved the props log.`, 6000);
+      return true;
+    } catch (e2) {
+      window.__propsLogError = (e2 && e2.name ? e2.name + ": " : "") + (e2 && e2.message ? e2.message : String(e2));
+      showToast(`PROPS SCAN NOT SAVED — ${window.__propsLogError}. Storage used: ${Math.round((storageBytesUsed() || 0) / 1024)} KB. Use "Free up space" on the My Bets tab.`, 12000);
+      return false;
+    }
+  }
 }
 
 function logPropScan(top) {
@@ -9515,8 +9535,16 @@ function logPropScan(top) {
   const log = loadPropsLog().filter(e => !(e.year === state.year && e.week === state.week && e.league === state.league));
   log.push({ year: state.year, week: state.week, league: state.league, seasonType: state.seasonType, savedAt: new Date().toISOString(), props });
   log.sort((a, b) => (a.year - b.year) || (a.week - b.week));
-  savePropsLog(log);
+  const ok = savePropsLog(log);
   renderPropsLog();
+  // Say so either way. Silence after a scan was the whole complaint.
+  const note = document.getElementById("propsLogNote");
+  if (note) {
+    note.innerHTML = ok
+      ? `Saved ${props.length} props for ${state.league.toUpperCase()} ${state.year} week ${state.week} at ${new Date().toLocaleTimeString()}. Tap <b>Update results</b> once the games have finished to grade them.`
+      : `<span style="color:#B4463A;font-weight:700;">Scan NOT saved — ${window.__propsLogError || "storage write failed"}. Nothing will be graded until this is fixed.</span>`;
+  }
+  return ok;
 }
 
 // Pure: grade one prop given the player's actual stat value. "W" | "L" | "P"
@@ -9574,15 +9602,32 @@ async function updatePropResults() {
   const log = loadPropsLog();
   const logCache = {}; // athleteId|year -> game rows, so a player with several props is fetched once
   let graded = 0, voided = 0;
+  // Every skip below used to be a bare `continue`, so "nothing new to grade" covered five
+  // completely different causes. These counters name the reason instead.
+  const why = { weekFetchFailed: 0, gameNotFinal: 0, playerNotFound: 0, gamelogFailed: 0, statNotFound: 0, pending: 0, examples: [] };
+  const note1 = (msg) => { if (why.examples.length < 3) why.examples.push(msg); };
   for (const entry of log) {
     if (entry.props.every(p => p.result)) continue;
     let results;
-    try { results = await fetchWeekResults(entry.league, entry.year, entry.week, entry.seasonType || 2); } catch (e) { continue; }
+    try { results = await fetchWeekResults(entry.league, entry.year, entry.week, entry.seasonType || 2); } catch (e) {
+      why.weekFetchFailed++;
+      note1(`week ${entry.week} ${entry.league}: score fetch failed — ${e.message || e}`);
+      continue;
+    }
+    if (!results || results.length === 0) {
+      why.weekFetchFailed++;
+      note1(`week ${entry.week} ${entry.league} ${entry.year}: scoreboard returned 0 completed games`);
+      continue;
+    }
     for (const p of entry.props) {
       if (p.result) continue;
       const [away, home] = (p.matchup || "").split(" @ ");
       const final = results.some(r => autoPickNameMatch(r.homeName, home) && autoPickNameMatch(r.awayName, away));
-      if (!final) continue;
+      if (!final) {
+        why.gameNotFinal++;
+        note1(`"${p.matchup}" not found among week ${entry.week}'s ${results.length} completed games (name mismatch, or not played yet)`);
+        continue;
+      }
       if (!p.athleteId) {
         // imported from pasted text, so no player id yet — find him on the two teams' rosters
         const gm = results.find(r => autoPickNameMatch(r.homeName, home) && autoPickNameMatch(r.awayName, away));
@@ -9593,14 +9638,22 @@ async function updatePropResults() {
           const hit = logCache[rk].find(pl => { const n = (pl.name || "").toLowerCase(); return n === want || n.includes(want) || want.includes(n); });
           if (hit) { p.athleteId = hit.id; break; }
         }
-        if (!p.athleteId) continue; // couldn't identify the player — leave pending
+        if (!p.athleteId) {
+          why.playerNotFound++;
+          note1(`"${p.player}" not found on either roster for ${p.matchup}`);
+          continue;
+        }
       }
       const key = p.athleteId + "|" + entry.year;
       if (!logCache[key]) {
         try { logCache[key] = await fetchPlayerGameLog(entry.league, p.athleteId, entry.year); } catch (e) { logCache[key] = null; }
       }
       const rows = logCache[key];
-      if (!rows) continue; // lookup failed — try again next time rather than guessing
+      if (!rows) {
+        why.gamelogFailed++;
+        note1(`game log fetch failed for ${p.player} (id ${p.athleteId})`);
+        continue;
+      }
       const t0 = new Date(p.gameDate).getTime();
       let value = null;
       for (const row of rows) {
@@ -9610,12 +9663,35 @@ async function updatePropResults() {
       }
       if (value != null) { p.actual = value; p.result = gradePropValue(p, value); graded++; }
       else if (Date.now() - t0 > 2 * 24 * 3600 * 1000) { p.result = "V"; voided++; } // no stat row days after the game = didn't play
+      else {
+        why.statNotFound++;
+        note1(`no "${p.desc}" stat row within 36h of kickoff for ${p.player}`);
+      }
     }
   }
   savePropsLog(log);
   renderPropsLog();
   const n2 = document.getElementById("propsLogNote");
-  if (n2) n2.textContent = (graded || voided) ? `Graded ${graded} new prop${graded === 1 ? "" : "s"}${voided ? `, ${voided} marked void (no stats found — player likely didn't play)` : ""}.` : "Nothing new to grade yet.";
+  const ungraded = why.gameNotFinal + why.playerNotFound + why.gamelogFailed + why.statNotFound;
+  if (n2) {
+    if (graded || voided) {
+      n2.innerHTML = `Graded <b>${graded}</b> new prop${graded === 1 ? "" : "s"}${voided ? `, ${voided} marked void (no stats found — player likely didn't play)` : ""}.${ungraded ? ` ${ungraded} still ungraded — see below.` : ""}`;
+    } else {
+      n2.innerHTML = `<span style="color:#B4463A;font-weight:700;">Nothing graded.</span>`;
+    }
+    if (ungraded || why.weekFetchFailed) {
+      n2.innerHTML += `<div style="margin-top:6px;font-size:11px;">Reasons: ${[
+        why.weekFetchFailed ? `${why.weekFetchFailed} week(s) had no scores` : null,
+        why.gameNotFinal ? `${why.gameNotFinal} game not matched/not final` : null,
+        why.playerNotFound ? `${why.playerNotFound} player not found on a roster` : null,
+        why.gamelogFailed ? `${why.gamelogFailed} game-log fetch failed` : null,
+        why.statNotFound ? `${why.statNotFound} stat column not found` : null,
+      ].filter(Boolean).join(" · ") || "none recorded"}</div>`;
+      if (why.examples.length) {
+        n2.innerHTML += `<div style="margin-top:4px;font-size:10px;color:#8A96A1;">${why.examples.map(e => "• " + String(e).replace(/</g, "&lt;")).join("<br>")}</div>`;
+      }
+    }
+  }
 }
 
 function renderPropsLog() {
@@ -9662,12 +9738,22 @@ function parsePastedProps(text) {
   const descs = Object.keys(descToKey).sort((a, b) => b.length - a.length).map(d => d.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
   const re = new RegExp("^\\s*(.+?)\\s*\\((\\w+)\\)\\s+(" + descs + ")\\s*(Over|Under|Yes)?\\s*(-?\\d+(?:\\.\\d+)?)?\\s*—\\s*hit\\s+(\\d+(?:\\.\\d+)?)%\\s+of last\\s+(\\d+)(.*)$", "i");
   const out = [];
+  // Counters so a format mismatch reports itself instead of coming back as a bare
+  // "couldn't find any props", which told you nothing about WHY.
+  const diag = { lines: 0, nonEmpty: 0, headMatched: 0, tailFailed: 0, firstReject: null };
   String(text || "").split(/\r?\n/).forEach(line => {
+    diag.lines++;
+    if (line.trim()) diag.nonEmpty++;
     const m = line.match(re);
-    if (!m) return;
+    if (!m) {
+      // ignore the obvious non-prop lines so the reject sample is useful
+      if (line.trim() && !/^\s*(\+\s*Add|Recent form|Vs\.|Opponent|⚠)/i.test(line) && !diag.firstReject) diag.firstReject = line.trim().slice(0, 110);
+      return;
+    }
+    diag.headMatched++;
     const rest = m[8];
     const tail = rest.match(/·\s*([^·]+?)\s+@\s+([^·]+?)\s*·\s*([+-]?\d+)\s*(?:·\s*edge\s*([+-]?\d+(?:\.\d+)?)%)?/);
-    if (!tail) return;
+    if (!tail) { diag.tailFailed++; if (!diag.firstReject) diag.firstReject = line.trim().slice(0, 110); return; }
     const desc = m[3].toLowerCase(), key = descToKey[desc], isBoolean = PROP_MARKET_MAP[key].type === "boolean";
     out.push({
       player: m[1].trim(), pos: m[2].toUpperCase(), marketKey: key, desc: PROP_MARKET_MAP[key].desc,
@@ -9678,14 +9764,23 @@ function parsePastedProps(text) {
       matchup: `${tail[1].trim()} @ ${tail[2].trim()}`,
     });
   });
-  return out.filter(p => p.isBoolean || (p.side && p.line != null));
+  const kept = out.filter(p => p.isBoolean || (p.side && p.line != null));
+  window.__propsParseDiag = { ...diag, parsed: out.length, kept: kept.length };
+  return kept;
 }
 
 function importPastedProps() {
   const note = document.getElementById("propsLogNote");
   const box = document.getElementById("propsLogPaste");
   const parsed = parsePastedProps(box.value);
-  if (parsed.length === 0) { note.textContent = "Couldn't find any props in that text. Paste the scanner's list exactly as it printed."; return; }
+  if (parsed.length === 0) {
+    const d = window.__propsParseDiag || {};
+    note.innerHTML = `<span style="color:#B4463A;font-weight:700;">Couldn't find any props in that text.</span><br>
+      Read ${d.nonEmpty || 0} non-empty line${d.nonEmpty === 1 ? "" : "s"}; ${d.headMatched || 0} matched the player line; ${d.tailFailed || 0} matched but had no readable "· Away @ Home · price" tail.
+      ${d.firstReject ? `<br>First line it couldn't read: <code style="font-size:10px;">${d.firstReject.replace(/</g, "&lt;")}</code>` : ""}
+      <br>Each prop needs to be one line, in the scanner's own format: <code style="font-size:10px;">Player (POS) rushing yds Over 45.5 — hit 72% of last 25 · Away @ Home · -110 · edge +8.1%</code>`;
+    return;
+  }
   if (!state.games || state.games.length === 0) { note.textContent = "Open the Schedule tab on the week these props are for first, so I can look up the game times."; return; }
   let skipped = 0;
   const props = [];
@@ -9705,10 +9800,18 @@ function importPastedProps() {
     entry.props.push(p); added++;
   });
   log.sort((a, b) => (a.year - b.year) || (a.week - b.week));
-  savePropsLog(log);
+  const ok = savePropsLog(log);
+  // Read it back. Claiming "saved" without checking is what left you with no record.
+  const after = loadPropsLog();
+  const stored = after.find(e => e.year === state.year && e.week === state.week && e.league === state.league);
+  const storedCount = stored ? stored.props.length : 0;
   renderPropsLog();
+  if (!ok || storedCount === 0) {
+    note.innerHTML = `<span style="color:#B4463A;font-weight:700;">NOT SAVED.</span> Parsed ${added} prop${added === 1 ? "" : "s"} but the write did not persist${window.__propsLogError ? ` — ${window.__propsLogError}` : ""}. Storage used: ${Math.round((storageBytesUsed() || 0) / 1024)} KB. Use <b>Free up space</b> on the My Bets tab, then paste again.`;
+    return;
+  }
   box.value = "";
-  note.textContent = `Saved ${added} prop${added === 1 ? "" : "s"} to ${state.year} Week ${state.week}${skipped ? ` (${skipped} skipped — game not on the loaded week)` : ""}${added < props.length ? ` (${props.length - added} were already saved)` : ""}.`;
+  note.innerHTML = `Saved — <b>${added} new</b> prop${added === 1 ? "" : "s"} added, <b>${storedCount} total</b> now stored for ${state.league.toUpperCase()} ${state.year} Week ${state.week}${skipped ? ` · ${skipped} skipped (game not on the loaded week)` : ""}${added < props.length ? ` · ${props.length - added} already there` : ""}.<br>Now tap <b>Update results</b> below to grade them against real box scores.`;
 }
 
 document.getElementById("propsLogImportBtn").addEventListener("click", importPastedProps);
