@@ -113,7 +113,7 @@
       <div class="bankroll-value" id="bankrollValue" style="color: rgb(111, 207, 142);">$0.00</div>
     </div>
   </div>
-  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;" title="If this date is older than the build you just deployed, you are looking at a cached copy.">Build 2026-11-15 13:10 UTC · 5b5562ec</div>
+  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;" title="If this date is older than the build you just deployed, you are looking at a cached copy.">Build 2026-11-15 13:19 UTC · b0f8b320</div>
   <nav>
     <button id="tabScheduleBtn" class="active">Schedule</button>
     <button id="tabLedgerBtn">My Bets</button>
@@ -671,6 +671,12 @@
   </div>
 
   <div id="ledgerTab" style="display:none;">
+    <div class="card" style="padding:16px; margin-bottom:16px; border:2px solid #1A4A8A;">
+      <div class="trend-title" style="margin-bottom:6px;">📋 Overall Grade — everything in one place</div>
+      <div class="refresh-note">Grades the Edge model and the props scanner together, each against the right break-even for its market, with a verdict per area. Nothing here is a projection — it is only what has already happened.</div>
+      <button class="save-btn full" id="gradeEverythingBtn" style="margin-top:6px;">Grade everything now</button>
+      <div id="overallScorecard" style="margin-top:10px;"></div>
+    </div>
     <div class="card" style="padding:16px; margin-bottom:16px; border:2px solid #3B7DD8;">
       <div class="trend-title" style="margin-bottom:6px;">📊 Model Track Record</div>
       <div class="refresh-note">Every Edge scan is saved automatically. This grades those saved calls against real results — a live record of how the model actually performs, which is the one thing a backtest can't give you honestly (backtests can always smuggle in hindsight). Free, ESPN scores only. Only covers scans run after tracking was added.</div>
@@ -1036,7 +1042,8 @@
           <label style="font-size:11px; color:#5C6B78;">Week<br><input id="propsLogWeek" type="number" inputmode="numeric" min="1" max="20" style="width:62px;"></label>
           <label style="font-size:11px; color:#5C6B78;">League<br><select id="propsLogLeague" style="width:92px;"><option value="nfl">NFL</option><option value="cfb">College</option></select></label>
         </div>
-        <div class="trend-note" style="margin-top:4px;">Which week these props were for. Defaults to the week your Schedule tab is on, but you can set any week — the games are looked up directly, so you no longer have to switch the Schedule tab first.</div>
+        <div class="trend-note" style="margin-top:4px;" id="propsLogWeekHint"></div>
+        <div class="trend-note" style="font-size:10px;">The games for whichever week you pick are looked up directly, so you don't have to switch the Schedule tab first.</div>
         <button class="save-btn full" id="propsLogImportBtn" style="margin-top:6px;">Save pasted scan</button>
       </details>
       <button class="save-btn full" id="propsLogUpdateBtn" style="margin-top:8px;">Update results</button>
@@ -5141,6 +5148,10 @@ async function loadSchedule() {
   }
   renderGames();
   loadOddsForSchedule();
+  // Keep the Props Track Record's week selector in step with the schedule. The inputs were
+  // added without ever being populated, so they kept whatever was last typed and the week you
+  // were looking at had no effect on them.
+  try { if (typeof syncPropsLogWeekInputs === "function") syncPropsLogWeekInputs(); } catch (e) {}
   // Top 25 badges. Fired after the first render rather than awaited before it, so a slow or
   // failing rankings call can never delay or block the schedule itself. When it lands, re-render
   // so the badges appear; if it fails, the games are already on screen unbadged.
@@ -7008,6 +7019,17 @@ async function runTrackRecordReport() {
 
       <div class="trend-note" style="margin-top:10px;">${Object.keys(seen).length} picks recorded across ${edge.length} scan${edge.length === 1 ? "" : "s"}; ${picks.length} graded so far. When the same game appears in multiple scans, the earliest call counts — otherwise a revised pick could be scored with information the original didn't have.</div>
     `;
+
+    // Stash the headline numbers so the Overall Scorecard can summarise without re-grading.
+    window.__edgeSummary = {
+      spread: tally(flagged.filter(p => p.market === "spread")),
+      total: tally(flagged.filter(p => p.market === "total")),
+      spreadTotal: tally(flagged.filter(p => p.market !== "moneyline")),
+      unflagged: tally(picks.filter(p => !p.flagged && p.market !== "moneyline")),
+      ml: mlEval(flagged.filter(p => p.market === "moneyline")),
+      graded: picks.length, scans: edge.length,
+    };
+    try { renderOverallScorecard(); } catch (e) {}
   } catch (e) {
     out.innerHTML = `<div class="error">${e.message}</div>`;
   }
@@ -8031,6 +8053,87 @@ function computeParlayResult(legs) {
 //
 // The thresholds below are industry rules of thumb, not something this app measured. They're
 // stated as such.
+// One combined verdict across the Edge model, the props scanner and CLV.
+//
+// Each area is graded against ITS OWN break-even, which is the part that is easy to get wrong:
+// spreads and totals need ~52.4% at -110, moneylines need to beat their own price, props need
+// ~52.4% but at the price actually paid, and CLV is measured in points against the close.
+function renderOverallScorecard() {
+  const el = document.getElementById("overallScorecard");
+  if (!el) return;
+  const BE = 52.4;
+  const parts = [];
+  const verdict = (n, pct, min) => {
+    if (n < min) return { txt: `unsettled — ${n} of the ~${min} this needs`, col: "#8A96A1", grade: null };
+    if (pct >= BE + 2) return { txt: "beating the market", col: "#4C8B5A", grade: "A" };
+    if (pct >= BE) return { txt: "marginally profitable", col: "#4C8B5A", grade: "B" };
+    if (pct >= 47.6) return { txt: "inside the vig band — no edge either way", col: "#C9A227", grade: "C" };
+    return { txt: "losing to the market", col: "#C4564B", grade: "D" };
+  };
+  const grades = [];
+
+  const e = window.__edgeSummary;
+  if (e) {
+    const st = e.spreadTotal;
+    const v = verdict(st.n, st.pct, 100);
+    if (v.grade) grades.push(v.grade);
+    parts.push(`<div class="trend-line"><b>Edge model — spreads &amp; totals</b>: ${st.w}-${st.l} (${st.pct.toFixed(1)}%) vs ${BE}% break-even — <span style="color:${v.col};font-weight:700;">${v.txt}</span></div>`);
+    if (e.ml && e.ml.n > 0) {
+      const mlCol = e.ml.n < 100 ? "#8A96A1" : (e.ml.roi > 0 ? "#4C8B5A" : "#C4564B");
+      const mlTxt = e.ml.n < 100 ? `unsettled — ${e.ml.n} of ~100` : (e.ml.roi > 0 ? "ahead of the fair price" : "behind the fair price");
+      if (e.ml.n >= 100) grades.push(e.ml.roi > 2 ? "A" : e.ml.roi > 0 ? "B" : e.ml.roi > -5 ? "C" : "D");
+      parts.push(`<div class="trend-line"><b>Edge model — moneyline</b>: won ${e.ml.winPct.toFixed(1)}% where fair odds expected ${e.ml.expPct.toFixed(1)}%, ROI ${e.ml.roi >= 0 ? "+" : ""}${e.ml.roi.toFixed(1)}% at fair odds — <span style="color:${mlCol};font-weight:700;">${mlTxt}</span></div>`);
+    }
+    const u = e.unflagged;
+    if (u.n >= 30 && st.n >= 30) {
+      const flagWorks = st.pct > u.pct;
+      parts.push(`<div class="trend-line"><b>Does the 🔥 flag help?</b> flagged ${st.pct.toFixed(1)}% vs unflagged ${u.pct.toFixed(1)}% — <span style="color:${flagWorks ? "#4C8B5A" : "#C4564B"};font-weight:700;">${flagWorks ? "yes, flagged picks do better" : "no — unflagged picks did better, so the flag is not selecting good bets"}</span></div>`);
+    }
+  } else {
+    parts.push(`<div class="trend-note">Edge model: not graded yet — tap the button above.</div>`);
+  }
+
+  const plog = (typeof loadPropsLog === "function") ? loadPropsLog() : [];
+  const pt = (typeof propTotals === "function") ? propTotals(plog) : null;
+  if (pt && pt.w + pt.l > 0) {
+    const n = pt.w + pt.l, pct = (pt.w / n) * 100;
+    const v = verdict(n, pct, 100);
+    if (v.grade) grades.push(v.grade);
+    const u = Math.round(pt.units * 10) / 10;
+    parts.push(`<div class="trend-line"><b>Props scanner</b>: ${pt.w}-${pt.l}${pt.p ? "-" + pt.p : ""} (${pct.toFixed(1)}%), ${u >= 0 ? "+" : ""}${u.toFixed(1)}u at flat 1 unit — <span style="color:${v.col};font-weight:700;">${v.txt}</span></div>`);
+    if (pt.n) {
+      const claimed = pt.claimed / pt.n;
+      const gap = pct - claimed;
+      parts.push(`<div class="trend-line" style="font-size:12px;">└ the scanner claimed <b>${claimed.toFixed(0)}%</b> on these; they hit <b>${pct.toFixed(0)}%</b> — <span style="color:${Math.abs(gap) < 5 ? "#4C8B5A" : "#C4564B"};font-weight:700;">${gap >= 0 ? "+" : ""}${gap.toFixed(0)} pts vs its own claim</span></div>`);
+    }
+  } else {
+    parts.push(`<div class="trend-note">Props: nothing graded yet — save a week on the Props tab and tap Update results.</div>`);
+  }
+
+  const clvRows = (state.ledger || []).filter(b => b.clvValue != null && b.clvOpen && b.clvOpen.type !== "Moneyline");
+  if (clvRows.length > 0) {
+    const avg = clvRows.reduce((a, b) => a + b.clvValue, 0) / clvRows.length;
+    const thin = clvRows.length < 100;
+    const col = thin ? "#8A96A1" : (avg >= 0.5 ? "#4C8B5A" : avg > 0 ? "#C9A227" : "#C4564B");
+    parts.push(`<div class="trend-line"><b>Closing line value</b>: ${avg >= 0 ? "+" : ""}${avg.toFixed(2)} pts avg over ${clvRows.length} bet${clvRows.length === 1 ? "" : "s"} — <span style="color:${col};font-weight:700;">${thin ? `unsettled — ${clvRows.length} of ~200` : avg >= 0.5 ? "genuinely ahead of the close" : avg > 0 ? "marginally ahead" : "behind the close"}</span></div>`);
+  } else {
+    parts.push(`<div class="trend-note">CLV: nothing captured yet — place through the tap-to-bet buttons, then tap Check Closing Lines.</div>`);
+  }
+
+  const worst = grades.includes("D") ? "D" : grades.includes("C") ? "C" : grades.includes("B") ? "B" : grades.includes("A") ? "A" : null;
+  const headline = worst
+    ? { A: "Something here is genuinely working. Keep logging before trusting it.",
+        B: "Marginally positive. Not yet distinguishable from luck.",
+        C: "No edge in either direction. The vig eats both sides.",
+        D: "Losing to the market on real volume." }[worst]
+    : "Not enough graded results yet to grade anything.";
+
+  el.innerHTML = `
+    <div class="trend-score">${headline}</div>
+    ${parts.join("")}
+    <div class="trend-note" style="margin-top:8px;">Each line is judged against the break-even that applies to that market, not one shared number. Areas under their minimum sample show grey and are excluded from the headline. An area that is "unsettled" is not passing — it is unmeasured.</div>`;
+}
+
 function renderClvSummary() {
   const el = document.getElementById("clvSummary");
   if (!el) return;
@@ -8305,6 +8408,15 @@ document.getElementById("tabSurvivorBtn").addEventListener("click", () => {
 });
 document.getElementById("runSurvivorPlanBtn").addEventListener("click", runSurvivorPlan);
 document.getElementById("gradeTrackRecordBtn").addEventListener("click", runTrackRecordReport);
+document.getElementById("gradeEverythingBtn").addEventListener("click", async () => {
+  const btn = document.getElementById("gradeEverythingBtn");
+  btn.disabled = true; btn.textContent = "Grading Edge scans…";
+  try { await runTrackRecordReport(); } catch (e) {}
+  btn.textContent = "Grading props…";
+  try { if (typeof updatePropResults === "function") await updatePropResults(); } catch (e) {}
+  try { renderOverallScorecard(); } catch (e) {}
+  btn.disabled = false; btn.textContent = "Grade everything now";
+});
 document.getElementById("p6Book").addEventListener("change", (e) => {
   try { localStorage.setItem("picksix-book", e.target.value); } catch (e2) {}
   renderP6Rows();
@@ -9956,6 +10068,34 @@ async function fetchWeekScheduleNames(league, year, week) {
     };
   }).filter(Boolean);
 }
+
+// Mirrors the Schedule tab into the props-log week selector. Only overwrites a field the user
+// hasn't touched this session, so a deliberate override isn't clobbered by a schedule change.
+function syncPropsLogWeekInputs() {
+  const y = document.getElementById("propsLogYear");
+  const w = document.getElementById("propsLogWeek");
+  const l = document.getElementById("propsLogLeague");
+  if (!y || !w || !l) return;
+  if (!y.dataset.touched) y.value = state.year;
+  if (!w.dataset.touched) w.value = state.week;
+  if (!l.dataset.touched) l.value = state.league;
+  const hint = document.getElementById("propsLogWeekHint");
+  if (hint) {
+    const overridden = y.dataset.touched || w.dataset.touched || l.dataset.touched;
+    hint.innerHTML = overridden
+      ? `Set manually to <b>${l.value.toUpperCase()} ${y.value} week ${w.value}</b>. <span style="text-decoration:underline;cursor:pointer;" id="propsLogWeekReset">follow the Schedule tab again</span>`
+      : `Following your Schedule tab: <b>${state.league.toUpperCase()} ${state.year} week ${state.week}</b>. Change any field to log a different week.`;
+    const reset = document.getElementById("propsLogWeekReset");
+    if (reset) reset.addEventListener("click", () => {
+      delete y.dataset.touched; delete w.dataset.touched; delete l.dataset.touched;
+      syncPropsLogWeekInputs();
+    });
+  }
+}
+["propsLogYear", "propsLogWeek", "propsLogLeague"].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener("change", () => { el.dataset.touched = "1"; syncPropsLogWeekInputs(); });
+});
 
 async function importPastedProps() {
   const note = document.getElementById("propsLogNote");
