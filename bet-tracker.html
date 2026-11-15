@@ -113,7 +113,7 @@
       <div class="bankroll-value" id="bankrollValue" style="color: rgb(111, 207, 142);">$0.00</div>
     </div>
   </div>
-  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;" title="If this date is older than the build you just deployed, you are looking at a cached copy.">Build 2026-11-15 12:58 UTC · 5d7b9bdb</div>
+  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;" title="If this date is older than the build you just deployed, you are looking at a cached copy.">Build 2026-11-15 13:02 UTC · 894d399b</div>
   <nav>
     <button id="tabScheduleBtn" class="active">Schedule</button>
     <button id="tabLedgerBtn">My Bets</button>
@@ -1352,7 +1352,22 @@ function loadData() {
 // Caches that can always be rebuilt from scratch. Cleared to make room when a real save fails.
 // NOTHING the user typed or earned is in here: bets, Pick 6 entries, the API key, team flags and
 // the UI preferences are all deliberately excluded.
-const RECOMPUTABLE_PREFIXES = ["elo-v", "gamesplayed-cur-", "week-dog-result-", "cfb-ranks-"];
+// Rebuildable caches THIS app owns. "elo-v" used to be the prefix, which silently missed
+// elo-carryover-* keys; "elo-" covers both.
+const RECOMPUTABLE_PREFIXES = ["elo-", "gamesplayed-", "week-dog-result-", "cfb-ranks-", "defstats-", "poslookup-"];
+
+// Every key family this app is responsible for. Cleanup NEVER touches anything outside this
+// list.
+//
+// Why: GitHub Pages serves every one of these apps from the same origin
+// (dlefty1-max.github.io), so they all share one localStorage. The purge button as first written
+// deleted everything not explicitly protected — which would have wiped tradeiq_trades,
+// tradeiq_bot_log and tradeiq_anthropic_key, another app's real data and a live API key. An
+// allowlist makes that impossible rather than unlikely.
+const OWNED_PREFIXES = ["elo-", "gamesplayed-", "week-dog-result-", "cfb-ranks-", "defstats-", "poslookup-", "hist-odds-", "team-flag-", "props-scan-log", "survivor-data", "bettracker-", "picksix-", "odds-api-key", "preferred-book", "eff-weight", "tally-"];
+function isOwnedKey(k) {
+  return OWNED_PREFIXES.some(pre => k === pre || k.startsWith(pre));
+}
 const PROTECTED_KEYS = ["bettracker-data", "picksix-data", "picksix-book", "odds-api-key", "preferred-book", "eff-weight", "tally-open", "tally-splits", "props-scan-log", "survivor-data"];
 
 function storageBytesUsed() {
@@ -1383,7 +1398,8 @@ function storageBreakdown() {
       || (r.key.startsWith("team-flag-") ? "team-flag-" : null);
     const name = fam ? fam + "* " : r.key;
     const protectedKey = PROTECTED_KEYS.includes(r.key) || r.key.startsWith("team-flag-");
-    if (!groups[name]) groups[name] = { key: name, kb: 0, n: 0, recomputable: !!fam, protected: protectedKey };
+    const foreign = !isOwnedKey(r.key);
+    if (!groups[name]) groups[name] = { key: name, kb: 0, n: 0, recomputable: !!fam, protected: protectedKey, foreign };
     groups[name].kb += r.kb;
     groups[name].n++;
   });
@@ -8407,7 +8423,7 @@ function renderStorageStatus() {
   const warn = pct >= 80;
   const top = storageBreakdown().slice(0, 6);
   el.innerHTML = `Storage used: <b${warn ? ' style="color:#B4463A;"' : ''}>${kb} KB</b> of about ${CAP_KB.toLocaleString()} KB (${pct}%) — your bets are ${Math.round(bets)} KB of that.${warn ? ` <span style="color:#B4463A;font-weight:700;">At the ceiling: saves are failing.</span>` : ""}${window.__saveError ? ` <span style="color:#B4463A;font-weight:700;">Last save FAILED — ${window.__saveError}</span>` : ""}
-    ${top.length ? `<div style="margin-top:4px;font-size:10px;color:#5C6B78;">Biggest: ${top.map(t => `${t.key}${t.n > 1 ? `(${t.n})` : ""} <b>${Math.round(t.kb)} KB</b>${t.protected ? " \u2014 kept" : t.recomputable ? "" : " \u2014 needs the full purge"}`).join(" \u00b7 ")}</div>` : ""}`;
+    ${top.length ? `<div style="margin-top:4px;font-size:10px;color:#5C6B78;">Biggest: ${top.map(t => `${t.key}${t.n > 1 ? `(${t.n})` : ""} <b>${Math.round(t.kb)} KB</b>${t.foreign ? " \u2014 another app, left alone" : t.protected ? " \u2014 kept" : t.recomputable ? "" : " \u2014 cleared by the full purge"}`).join(" \u00b7 ")}</div>` : ""}`;
 }
 document.getElementById("pruneCachesBtn").addEventListener("click", () => {
   const before = storageBytesUsed() || 0;
@@ -8478,6 +8494,7 @@ document.getElementById("purgeCachesBtn").addEventListener("click", () => {
       const k = localStorage.key(i);
       if (!k) continue;
       if (PROTECTED_KEYS.includes(k) || k.startsWith("team-flag-")) continue;
+      if (!isOwnedKey(k)) continue; // belongs to another app on this domain — never touch it
       doomed.push(k);
     }
   } catch (e) {}
