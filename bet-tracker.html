@@ -113,7 +113,7 @@
       <div class="bankroll-value" id="bankrollValue" style="color: rgb(111, 207, 142);">$0.00</div>
     </div>
   </div>
-  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;" title="If this date is older than the build you just deployed, you are looking at a cached copy.">Build 2026-11-15 13:19 UTC · b0f8b320</div>
+  <div id="buildStamp" style="text-align:right;font-size:10px;color:#888;padding:2px 4px 0 0;" title="If this date is older than the build you just deployed, you are looking at a cached copy.">Build 2026-11-15 13:29 UTC · 9b12ad9c</div>
   <nav>
     <button id="tabScheduleBtn" class="active">Schedule</button>
     <button id="tabLedgerBtn">My Bets</button>
@@ -10076,26 +10076,18 @@ function syncPropsLogWeekInputs() {
   const w = document.getElementById("propsLogWeek");
   const l = document.getElementById("propsLogLeague");
   if (!y || !w || !l) return;
-  if (!y.dataset.touched) y.value = state.year;
-  if (!w.dataset.touched) w.value = state.week;
-  if (!l.dataset.touched) l.value = state.league;
+  // Unconditional. The first version remembered that you'd typed in the box and then refused to
+  // update it, so changing the Schedule tab appeared to do nothing — the box just sat on
+  // whatever week you last typed. Mirroring the schedule every time is the predictable rule:
+  // to log a different week, type it and save; changing the schedule resets the box.
+  y.value = state.year;
+  w.value = state.week;
+  l.value = state.league;
   const hint = document.getElementById("propsLogWeekHint");
   if (hint) {
-    const overridden = y.dataset.touched || w.dataset.touched || l.dataset.touched;
-    hint.innerHTML = overridden
-      ? `Set manually to <b>${l.value.toUpperCase()} ${y.value} week ${w.value}</b>. <span style="text-decoration:underline;cursor:pointer;" id="propsLogWeekReset">follow the Schedule tab again</span>`
-      : `Following your Schedule tab: <b>${state.league.toUpperCase()} ${state.year} week ${state.week}</b>. Change any field to log a different week.`;
-    const reset = document.getElementById("propsLogWeekReset");
-    if (reset) reset.addEventListener("click", () => {
-      delete y.dataset.touched; delete w.dataset.touched; delete l.dataset.touched;
-      syncPropsLogWeekInputs();
-    });
+    hint.innerHTML = `Will save to <b>${state.league.toUpperCase()} ${state.year} week ${state.week}</b> — follows your Schedule tab. To log a different week, change the boxes above and save straight away (switching the Schedule tab resets them).`;
   }
 }
-["propsLogYear", "propsLogWeek", "propsLogLeague"].forEach(id => {
-  const el = document.getElementById(id);
-  if (el) el.addEventListener("change", () => { el.dataset.touched = "1"; syncPropsLogWeekInputs(); });
-});
 
 async function importPastedProps() {
   const note = document.getElementById("propsLogNote");
